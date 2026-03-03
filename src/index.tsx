@@ -97,6 +97,7 @@ function renderApp(): string {
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     * { font-family: 'Inter', sans-serif; }
@@ -1171,65 +1172,188 @@ function renderApp(): string {
     if (file) processFile(file);
   }
 
-  function processFile(file) {
+  async function processFile(file) {
     document.getElementById('pdfParseProgress').classList.remove('hidden');
     document.getElementById('dropZone').classList.add('hidden');
     
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-      try {
-        // Try to extract text from PDF using basic approach
-        const arrayBuffer = e.target.result;
-        const text = await extractTextFromPDF(arrayBuffer);
-        
-        document.getElementById('intakeFormData').value = text || 
-          'PDF uploaded: ' + file.name + '\\n\\n[Could not auto-extract text - please review and add relevant intake information manually]';
-        
-        document.getElementById('pdfFileName').textContent = file.name;
-        document.getElementById('pdfStatus').classList.remove('hidden');
-        document.getElementById('pdfParseProgress').classList.add('hidden');
-      } catch (err) {
-        document.getElementById('intakeFormData').value = 'PDF: ' + file.name + '\\n\\n[Please add client intake information manually]';
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const text = await extractTextWithPDFJS(arrayBuffer);
+
+      if (text && text.length > 30) {
+        // Auto-parse and fill fields from the intake form
+        const parsed = parseIntakeFields(text);
+        autoFillClientFields(parsed);
+
+        // Build a clean formatted summary for the textarea
+        const formattedSummary = formatIntakeSummary(text, parsed);
+        document.getElementById('intakeFormData').value = formattedSummary;
+
+        // Show a green success pill with auto-filled field count
+        const filledCount = Object.values(parsed).filter(v => v && v !== 'Not provided').length;
+        document.getElementById('pdfFileName').textContent =
+          file.name + (filledCount > 0 ? ' — ' + filledCount + ' fields auto-filled ✓' : '');
+      } else {
+        document.getElementById('intakeFormData').value =
+          'PDF: ' + file.name + '\\n\\n[Text could not be extracted — please enter client information manually]';
         document.getElementById('pdfFileName').textContent = file.name + ' (manual entry needed)';
-        document.getElementById('pdfStatus').classList.remove('hidden');
-        document.getElementById('pdfParseProgress').classList.add('hidden');
-        document.getElementById('dropZone').classList.remove('hidden');
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+      document.getElementById('pdfStatus').classList.remove('hidden');
+      document.getElementById('pdfParseProgress').classList.add('hidden');
+    } catch (err) {
+      console.error('PDF error:', err);
+      document.getElementById('intakeFormData').value =
+        'PDF: ' + file.name + '\\n\\n[Please add client intake information manually]';
+      document.getElementById('pdfFileName').textContent = file.name + ' (manual entry needed)';
+      document.getElementById('pdfStatus').classList.remove('hidden');
+      document.getElementById('pdfParseProgress').classList.add('hidden');
+      document.getElementById('dropZone').classList.remove('hidden');
+    }
   }
 
-  async function extractTextFromPDF(arrayBuffer) {
-    // Simple PDF text extraction - reads raw text streams
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const decoder = new TextDecoder('utf-8', { fatal: false });
-    const rawText = decoder.decode(uint8Array);
-    
-    // Extract text between BT (Begin Text) and ET (End Text) markers
-    const texts = [];
-    const btEtRegex = /BT[\\s\\S]*?ET/g;
-    const matches = rawText.match(btEtRegex) || [];
-    
-    for (const block of matches) {
-      // Extract Tj and TJ operators
-      const tjMatches = block.match(/\\(([^)]+)\\)\\s*Tj/g) || [];
-      const TJMatches = block.match(/\\[([^\\]]+)\\]\\s*TJ/g) || [];
-      
-      for (const m of tjMatches) {
-        const txt = m.match(/\\(([^)]+)\\)/);
-        if (txt && txt[1].trim()) texts.push(txt[1]);
+  // ---- PDF.js text extraction ----
+  async function extractTextWithPDFJS(arrayBuffer) {
+    // Configure pdf.js worker
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        fullText += pageText + '\\n';
       }
-      for (const m of TJMatches) {
-        const parts = m.match(/\\(([^)]+)\\)/g) || [];
-        parts.forEach(p => {
-          const txt = p.slice(1,-1).trim();
-          if (txt) texts.push(txt);
-        });
-      }
+      return fullText.trim();
     }
-    
-    const extracted = texts.join(' ').replace(/\\s+/g, ' ').trim();
-    return extracted.length > 50 ? extracted : null;
+    return null;
+  }
+
+  // ---- Parse Flexion & Flow (and similar) intake form fields ----
+  // Strategy: extract each Q->A pair by finding the answer between a question
+  // keyword and the next recognisable keyword. Avoids complex regexes that
+  // break when embedded inside a TypeScript template literal.
+  function parseIntakeFields(text) {
+    const t = text.replace(/[ \\t]+/g, ' ').trim();
+
+    // Simple grab: find keyword, capture up to ~120 chars, trim at next cap word
+    function after(keyword) {
+      const idx = t.toLowerCase().indexOf(keyword.toLowerCase());
+      if (idx === -1) return '';
+      let chunk = t.slice(idx + keyword.length, idx + keyword.length + 200);
+      // strip leading punctuation / spaces
+      chunk = chunk.replace(/^[?:\\s]+/, '').trim();
+      // stop at the next sentence-like boundary or question word
+      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\/ )/);
+      if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
+      return chunk;
+    }
+
+    // ---- Name (appear before "Email" so no ambiguity) ----
+    const firstName = after('First name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
+    const lastName  = after('Last name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
+
+    // ---- DOB ----
+    const dobRaw = after('Birthday').split(' ').slice(0, 3).join(' ').trim();
+    let dobForInput = '';
+    if (dobRaw) {
+      try {
+        const d = new Date(dobRaw);
+        if (!isNaN(d.getTime())) dobForInput = d.toISOString().split('T')[0];
+      } catch(e) {}
+    }
+
+    // ---- Email ----
+    const emailMatch = t.match(/[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}/i);
+    const email = emailMatch ? emailMatch[0] : '';
+
+    // ---- Phone: first number after "Phone" (not "Emergency") ----
+    const phoneIdx = t.toLowerCase().indexOf('\\nphone ');
+    const phoneChunk = phoneIdx !== -1
+      ? t.slice(phoneIdx + 7, phoneIdx + 35)
+      : after('Phone +') || after('Phone ');
+    const phoneMatch2 = phoneChunk.match(/[+\\d][\\d\\s()+-]{6,18}/);
+    const phone = phoneMatch2 ? phoneMatch2[0].trim() : '';
+
+    // ---- Chief complaint ----
+    const chiefComplaint = (() => {
+      const raw = after('brings you to see me today');
+      if (!raw) return after('Reason for visit');
+      // stop before "How did you hear"
+      const cut = raw.toLowerCase().indexOf('how did you hear');
+      return cut > 3 ? raw.slice(0, cut).trim() : raw;
+    })();
+
+    // ---- Lifestyle ----
+    const occupation    = after('do for work').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
+    const sleep         = after('well do you sleep').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
+    const stress        = after('stress levels').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
+    const exercise      = after('do you ex').split(/\\s+(?:Do |Are |Have |When )/)[0].trim();
+    const lastTreatment = after('last treatment').split(/\\s+(?:Are |Do |Have )/)[0].trim();
+
+    // ---- Yes/No fields (suppress "No") ----
+    const no = /^no$/i;
+    const medsRaw    = after('taking any medications').split(/\\s+(?:Do |Are |Have )/)[0].trim();
+    const allergyRaw = after('any allergies').split(/\\s+(?:Have |Are |Do )/)[0].trim();
+    const injuryRaw  = after('accidents, injuries or surg').split(/\\s+(?:Do |Are |Have )/)[0].trim();
+    const condRaw    = after('medical conditions we need').split(/\\s+(?:Have |Are |Do )/)[0].trim();
+    const pregRaw    = after('pregnant or breastfeeding').split(/\\s+/)[0].trim();
+
+    return {
+      firstName, lastName, dobForInput, email, phone,
+      chiefComplaint,
+      occupation, sleep, stress, exercise, lastTreatment,
+      medications:  (!no.test(medsRaw)    && medsRaw)    ? medsRaw    : '',
+      allergies:    (!no.test(allergyRaw) && allergyRaw) ? allergyRaw : '',
+      injuries:     (!no.test(injuryRaw)  && injuryRaw)  ? injuryRaw  : '',
+      conditions:   (!no.test(condRaw)    && condRaw)    ? condRaw    : '',
+      pregnancy:    (!no.test(pregRaw)    && pregRaw)    ? pregRaw    : '',
+    };
+  }
+
+  // ---- Auto-fill the Step 1 client fields ----
+  function autoFillClientFields(p) {
+    if (p.firstName)  setIfEmpty('clientFirstName',  p.firstName);
+    if (p.lastName)   setIfEmpty('clientLastName',   p.lastName);
+    if (p.dobForInput) setIfEmpty('clientDOB',       p.dobForInput);
+    if (p.chiefComplaint) setIfEmpty('chiefComplaint', p.chiefComplaint);
+    if (p.medications)    setIfEmpty('medications',     p.medications);
+
+    // Show a brief toast
+    const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+    if (name) showCopyFeedback('\u2705 Client info auto-filled: ' + name);
+    updateSummaryPanel();
+  }
+
+  function setIfEmpty(id, value) {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = value;
+  }
+
+  // ---- Build a clean intake summary for the textarea ----
+  function formatIntakeSummary(rawText, p) {
+    const lines = [];
+    const add = (label, val) => { if (val && val.trim() && !/^no$/i.test(val.trim())) lines.push(label + ': ' + val.trim()); };
+    add('Client Name',       [p.firstName, p.lastName].filter(Boolean).join(' '));
+    add('Date of Birth',     p.dobForInput);
+    add('Email',             p.email);
+    add('Phone',             p.phone);
+    add('Reason for Visit',  p.chiefComplaint);
+    add('Occupation',        p.occupation);
+    add('Sleep Quality',     p.sleep);
+    add('Stress Level',      p.stress);
+    add('Exercise Frequency',p.exercise);
+    add('Last Treatment',    p.lastTreatment);
+    add('Medications',       p.medications);
+    add('Allergies',         p.allergies);
+    add('Injuries / Surgeries', p.injuries);
+    add('Medical Conditions',p.conditions);
+    add('Pregnancy / Breastfeeding', p.pregnancy);
+    return lines.length > 0
+      ? lines.join('\\n')
+      : rawText.replace(/\\s+/g, ' ').trim().slice(0, 1500);
   }
 
   function clearPDF() {
