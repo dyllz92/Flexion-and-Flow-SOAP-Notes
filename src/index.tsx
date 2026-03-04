@@ -11,6 +11,40 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './' }))
 
+// Intake webhook – receives structured client data from Flexion & Flow intake form
+// The intake form POSTs here after a successful submission so the therapist can
+// load the client into a new SOAP session without uploading a PDF manually.
+app.post('/api/intake-webhook', async (c) => {
+  try {
+    const body = await c.req.json()
+    // Validate minimum required fields
+    if (!body.firstName || !body.lastName) {
+      return c.json({ error: 'firstName and lastName are required' }, 400)
+    }
+    // Return the parsed profile so the browser can save it in localStorage
+    const profile = {
+      id: body.id || crypto.randomUUID(),
+      firstName:      String(body.firstName  || '').trim(),
+      lastName:       String(body.lastName   || '').trim(),
+      email:          String(body.email      || '').trim(),
+      phone:          String(body.phone      || '').trim(),
+      dob:            String(body.dob        || '').trim(),
+      occupation:     String(body.occupation || '').trim(),
+      chiefComplaint: String(body.primaryConcern || body.chiefComplaint || '').trim(),
+      painIntensity:  body.painIntensity != null ? Number(body.painIntensity) : null,
+      medications:    Array.isArray(body.medications) ? body.medications.join(', ') : String(body.medications || '').trim(),
+      allergies:      String(body.allergies  || '').trim(),
+      medicalConditions: Array.isArray(body.medicalConditions) ? body.medicalConditions.join(', ') : String(body.medicalConditions || '').trim(),
+      areasToAvoid:   String(body.areasToAvoid || '').trim(),
+      submittedAt:    body.submittedAt || new Date().toISOString(),
+      source:         'flexion-intake-form',
+    }
+    return c.json({ success: true, profile })
+  } catch (err) {
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+})
+
 // Generate SOAP notes via OpenAI
 app.post('/api/generate-soap', async (c) => {
   const apiKey = c.env?.OPENAI_API_KEY
@@ -250,6 +284,33 @@ function renderApp(): string {
     <!-- STEP 1: Client Intake -->
     <div id="panel1" class="step-panel">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Client Profiles (Flexion & Flow Integration) -->
+        <div class="bg-white rounded-2xl shadow-sm border border-violet-200 p-6 lg:col-span-2">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-base font-semibold text-slate-800">
+              <i class="fas fa-users text-violet-500 mr-2"></i>Client Profiles
+              <span class="ml-2 text-xs font-normal text-violet-500 bg-violet-50 px-2 py-0.5 rounded-full">Flexion &amp; Flow Integration</span>
+            </h2>
+            <div class="flex items-center gap-2">
+              <button onclick="openClientBrowser()" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+                <i class="fas fa-search"></i> Browse Clients
+              </button>
+              <button onclick="openWebhookConfig()" class="border border-slate-200 text-slate-500 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5" title="Configure intake form webhook URL">
+                <i class="fas fa-link"></i> Setup
+              </button>
+            </div>
+          </div>
+          <div id="clientProfilesPreview" class="flex flex-wrap gap-2">
+            <p class="text-xs text-slate-400 italic" id="noClientsMsg">No client profiles saved yet. Connect your Flexion &amp; Flow intake form to auto-populate clients, or upload a PDF below.</p>
+          </div>
+          <!-- Webhook config info banner -->
+          <div id="webhookBanner" class="hidden mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+            <i class="fas fa-info-circle mr-1"></i>
+            <strong>Integration active.</strong> Clients who submit the intake form will appear here automatically.
+            Your webhook URL: <code id="webhookUrlDisplay" class="bg-blue-100 px-1 rounded ml-1 select-all"></code>
+          </div>
+        </div>
         
         <!-- Upload PDF -->
         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
@@ -700,10 +761,385 @@ function renderApp(): string {
 
   </div>
 
+  <!-- ============================================================ -->
+  <!-- CLIENT BROWSER MODAL                                          -->
+  <!-- ============================================================ -->
+  <div id="clientBrowserModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] hidden items-center justify-center p-4" style="display:none">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between p-5 border-b border-slate-100">
+        <div>
+          <h2 class="font-bold text-slate-800 text-lg"><i class="fas fa-users text-violet-500 mr-2"></i>Client Profiles</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Select a client to auto-fill their intake information</p>
+        </div>
+        <button onclick="closeClientBrowser()" class="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-4 border-b border-slate-100">
+        <div class="relative">
+          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
+          <input id="clientSearch" type="text" placeholder="Search by name, email or phone..." oninput="filterClients()"
+            class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+        </div>
+      </div>
+      <div id="clientList" class="overflow-y-auto flex-1 p-4 space-y-2">
+        <!-- Populated by JS -->
+      </div>
+      <div class="p-4 border-t border-slate-100 flex items-center justify-between">
+        <span id="clientCount" class="text-xs text-slate-400"></span>
+        <button onclick="closeClientBrowser()" class="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- WEBHOOK SETUP MODAL                                           -->
+  <!-- ============================================================ -->
+  <div id="webhookModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] hidden items-center justify-center p-4" style="display:none">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <div class="flex items-center justify-between p-5 border-b border-slate-100">
+        <h2 class="font-bold text-slate-800"><i class="fas fa-link text-violet-500 mr-2"></i>Flexion &amp; Flow Integration Setup</h2>
+        <button onclick="closeWebhookConfig()" class="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-6 space-y-5">
+        <div class="bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm text-violet-800">
+          <p class="font-semibold mb-1"><i class="fas fa-plug mr-1"></i>How the integration works</p>
+          <ol class="list-decimal pl-4 space-y-1 text-xs">
+            <li>A client submits the Flexion &amp; Flow intake form</li>
+            <li>The intake form automatically sends their data here</li>
+            <li>The client profile appears in the "Browse Clients" panel</li>
+            <li>Click their name to auto-fill a new SOAP session instantly</li>
+          </ol>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+            This App's Webhook URL
+          </label>
+          <div class="flex gap-2">
+            <input id="myWebhookUrl" type="text" readonly
+              class="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-slate-50 font-mono text-slate-600 select-all"/>
+            <button onclick="copyWebhookUrl()" class="border border-slate-200 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 transition text-slate-600" title="Copy URL">
+              <i class="fas fa-copy"></i>
+            </button>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5">Copy this URL and paste it into the <code class="bg-slate-100 px-1 rounded">SOAP_NOTE_WEBHOOK_URL</code> environment variable of your intake form app.</p>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+            Intake Form App URL <span class="text-slate-400 font-normal normal-case">(optional — for quick links)</span>
+          </label>
+          <input id="intakeFormUrl" type="text" placeholder="https://your-intake-form.railway.app"
+            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+          <p class="text-xs text-slate-400 mt-1">Your Railway / Render / hosted intake form URL</p>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+          <p class="font-semibold mb-0.5"><i class="fas fa-triangle-exclamation mr-1"></i>One extra step in the intake form</p>
+          <p>Add this to your intake form's <code class="bg-amber-100 px-1 rounded">.env</code>:</p>
+          <pre class="mt-1 bg-amber-100 rounded p-2 text-xs font-mono overflow-x-auto" id="envSnippet"></pre>
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="saveWebhookConfig()" class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition">
+            <i class="fas fa-save mr-1"></i>Save Settings
+          </button>
+          <button onclick="closeWebhookConfig()" class="flex-1 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm hover:bg-slate-50 transition">Cancel</button>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <p class="text-xs font-semibold text-slate-600 mb-2">Manual Import</p>
+          <p class="text-xs text-slate-400 mb-2">Already have a client profile in JSON format? Paste it below:</p>
+          <textarea id="manualImportJson" rows="3" placeholder='{"firstName":"Jane","lastName":"Smith","email":"jane@example.com",...}'
+            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-300"></textarea>
+          <button onclick="importManualProfile()" class="mt-2 border border-violet-200 text-violet-600 hover:bg-violet-50 px-3 py-1.5 rounded-lg text-xs font-medium transition">
+            <i class="fas fa-file-import mr-1"></i>Import Profile
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Muscle Tooltip -->
   <div id="muscleTooltip" class="muscle-tooltip hidden"></div>
 
   <script>
+  // ============================================================
+  // CLIENT PROFILES (localStorage-based, synced via webhook)
+  // ============================================================
+  const CLIENT_PROFILES_KEY = 'flexion_soap_client_profiles';
+  const WEBHOOK_CONFIG_KEY  = 'flexion_soap_webhook_config';
+
+  function loadClientProfiles() {
+    try { return JSON.parse(localStorage.getItem(CLIENT_PROFILES_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveClientProfiles(profiles) {
+    localStorage.setItem(CLIENT_PROFILES_KEY, JSON.stringify(profiles));
+  }
+  function loadWebhookConfig() {
+    try { return JSON.parse(localStorage.getItem(WEBHOOK_CONFIG_KEY) || '{}'); }
+    catch { return {}; }
+  }
+  function saveWebhookConfigData(cfg) {
+    localStorage.setItem(WEBHOOK_CONFIG_KEY, JSON.stringify(cfg));
+  }
+
+  // Save a single profile (upsert by id or email)
+  function upsertClientProfile(profile) {
+    const profiles = loadClientProfiles();
+    const idx = profiles.findIndex(p => p.id === profile.id || (p.email && p.email === profile.email));
+    if (idx >= 0) profiles[idx] = { ...profiles[idx], ...profile, updatedAt: new Date().toISOString() };
+    else profiles.unshift({ ...profile, savedAt: new Date().toISOString() });
+    saveClientProfiles(profiles);
+    renderClientProfilesPreview();
+  }
+
+  // Delete a profile
+  function deleteClientProfile(id) {
+    if (!confirm('Remove this client profile?')) return;
+    const profiles = loadClientProfiles().filter(p => p.id !== id);
+    saveClientProfiles(profiles);
+    renderClientProfilesPreview();
+    filterClients();
+  }
+
+  // Render the quick-access chips in Step 1
+  function renderClientProfilesPreview() {
+    const profiles = loadClientProfiles();
+    const container = document.getElementById('clientProfilesPreview');
+    const noMsg = document.getElementById('noClientsMsg');
+    if (!container) return;
+    if (profiles.length === 0) {
+      container.innerHTML = '<p class="text-xs text-slate-400 italic" id="noClientsMsg">No client profiles saved yet. Connect your Flexion &amp; Flow intake form to auto-populate clients, or upload a PDF below.</p>';
+      return;
+    }
+    if (noMsg) noMsg.remove();
+    // Show last 6 profiles as clickable chips
+    const recent = profiles.slice(0, 6);
+    container.innerHTML = recent.map(p => {
+      const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+      const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
+      const ago = p.savedAt ? timeAgo(p.savedAt) : '';
+      return \`<button onclick="loadClientProfile('\${p.id}')"
+        class="flex items-center gap-2 px-3 py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-xl transition group text-left">
+        <div class="w-7 h-7 rounded-full bg-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">\${initials || '?'}</div>
+        <div>
+          <div class="text-xs font-semibold text-slate-700">\${name || 'Unknown'}</div>
+          \${ago ? \`<div class="text-[10px] text-slate-400">\${ago}</div>\` : ''}
+        </div>
+      </button>\`;
+    }).join('');
+    if (profiles.length > 6) {
+      container.innerHTML += \`<button onclick="openClientBrowser()" class="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition text-xs text-slate-500">
+        <i class="fas fa-ellipsis"></i> +\${profiles.length - 6} more
+      </button>\`;
+    }
+    // Update webhook banner
+    const cfg = loadWebhookConfig();
+    const banner = document.getElementById('webhookBanner');
+    const urlDisplay = document.getElementById('webhookUrlDisplay');
+    if (cfg.myUrl && banner && urlDisplay) {
+      banner.classList.remove('hidden');
+      urlDisplay.textContent = cfg.myUrl;
+    }
+  }
+
+  function timeAgo(iso) {
+    const diff = Date.now() - new Date(iso).getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 30) return days + ' days ago';
+    const months = Math.floor(days / 30);
+    return months + ' month' + (months > 1 ? 's' : '') + ' ago';
+  }
+
+  // Load a client profile into the Step 1 form
+  function loadClientProfile(id) {
+    const profiles = loadClientProfiles();
+    const p = profiles.find(x => x.id === id);
+    if (!p) return;
+
+    const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+
+    // Fill in all fields
+    const setVal = (elId, val) => { const el = document.getElementById(elId); if (el && val) el.value = val; };
+    setVal('clientFirstName',  p.firstName);
+    setVal('clientLastName',   p.lastName);
+    setVal('clientDOB',        p.dob ? p.dob.split('T')[0] : '');
+    setVal('chiefComplaint',   p.chiefComplaint || p.primaryConcern || '');
+    setVal('painLevel',        p.painIntensity != null ? p.painIntensity : '');
+    setVal('medications',      p.medications || '');
+
+    // Build a structured intake summary
+    const lines = [];
+    const add = (label, val) => { if (val && String(val).trim() && !/^no$/i.test(String(val).trim())) lines.push(label + ': ' + String(val).trim()); };
+    add('Client Name',       name);
+    add('Date of Birth',     p.dob ? p.dob.split('T')[0] : '');
+    add('Email',             p.email);
+    add('Phone',             p.phone);
+    add('Occupation',        p.occupation);
+    add('Reason for Visit',  p.chiefComplaint || p.primaryConcern);
+    add('Pain Intensity',    p.painIntensity != null ? p.painIntensity + '/10' : '');
+    add('Areas to Avoid',    p.areasToAvoid);
+    add('Medications',       p.medications);
+    add('Allergies',         p.allergies);
+    add('Medical Conditions',p.medicalConditions);
+    add('Last Treatment',    p.lastTreatment);
+    add('Submitted',         p.submittedAt ? new Date(p.submittedAt).toLocaleDateString('en-AU') : '');
+
+    const intakeEl = document.getElementById('intakeFormData');
+    if (intakeEl) intakeEl.value = lines.join('\\n');
+
+    closeClientBrowser();
+    updateSummaryPanel();
+    showCopyFeedback('\\u2705 Client loaded: ' + name);
+  }
+
+  // ============================================================
+  // CLIENT BROWSER MODAL
+  // ============================================================
+  function openClientBrowser() {
+    const modal = document.getElementById('clientBrowserModal');
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+    filterClients();
+    document.getElementById('clientSearch').focus();
+  }
+  function closeClientBrowser() {
+    const modal = document.getElementById('clientBrowserModal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+  }
+
+  function filterClients() {
+    const query = (document.getElementById('clientSearch')?.value || '').toLowerCase().trim();
+    const profiles = loadClientProfiles();
+    const filtered = query
+      ? profiles.filter(p =>
+          [p.firstName, p.lastName, p.email, p.phone].join(' ').toLowerCase().includes(query))
+      : profiles;
+
+    const list = document.getElementById('clientList');
+    const countEl = document.getElementById('clientCount');
+    if (!list) return;
+
+    if (filtered.length === 0) {
+      list.innerHTML = '<p class="text-sm text-slate-400 text-center py-8"><i class="fas fa-user-slash mb-2 block text-2xl"></i>' +
+        (query ? 'No clients match "' + query + '"' : 'No client profiles saved yet.') + '</p>';
+      if (countEl) countEl.textContent = '';
+      return;
+    }
+
+    if (countEl) countEl.textContent = filtered.length + ' client' + (filtered.length !== 1 ? 's' : '');
+
+    list.innerHTML = filtered.map(p => {
+      const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+      const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
+      const dateStr = p.submittedAt ? new Date(p.submittedAt).toLocaleDateString('en-AU') : '';
+      const tags = [];
+      if (p.source === 'flexion-intake-form') tags.push('<span class="px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px]">Intake Form</span>');
+      if (p.medicalConditions) tags.push('<span class="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[10px]">Medical Hx</span>');
+      if (p.medications)       tags.push('<span class="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">Medications</span>');
+      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.id}')">
+        <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${initials || '?'}</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-slate-800 text-sm">\${name || 'Unknown Client'}</div>
+          <div class="text-xs text-slate-400">\${[p.email, p.phone].filter(Boolean).join(' · ')}</div>
+          <div class="flex flex-wrap gap-1 mt-1">\${tags.join('')}</div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-xs text-slate-400">\${dateStr}</div>
+          <button onclick="event.stopPropagation(); deleteClientProfile('\${p.id}')" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
+            <i class="fas fa-trash"></i> Remove
+          </button>
+        </div>
+      </div>\`;
+    }).join('');
+  }
+
+  // ============================================================
+  // WEBHOOK CONFIG MODAL
+  // ============================================================
+  function openWebhookConfig() {
+    const modal = document.getElementById('webhookModal');
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+
+    const myUrl = window.location.origin + '/api/intake-webhook';
+    const urlInput = document.getElementById('myWebhookUrl');
+    if (urlInput) urlInput.value = myUrl;
+
+    const envSnippet = document.getElementById('envSnippet');
+    if (envSnippet) envSnippet.textContent = 'SOAP_NOTE_WEBHOOK_URL=' + myUrl;
+
+    const cfg = loadWebhookConfig();
+    const intakeInput = document.getElementById('intakeFormUrl');
+    if (intakeInput && cfg.intakeFormUrl) intakeInput.value = cfg.intakeFormUrl;
+  }
+  function closeWebhookConfig() {
+    const modal = document.getElementById('webhookModal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+  }
+  function copyWebhookUrl() {
+    const val = document.getElementById('myWebhookUrl')?.value;
+    if (val) { navigator.clipboard.writeText(val); showCopyFeedback('\\u2705 Webhook URL copied!'); }
+  }
+  function saveWebhookConfig() {
+    const intakeFormUrl = document.getElementById('intakeFormUrl')?.value.trim() || '';
+    const myUrl = document.getElementById('myWebhookUrl')?.value.trim() || '';
+    saveWebhookConfigData({ intakeFormUrl, myUrl });
+    closeWebhookConfig();
+    renderClientProfilesPreview();
+    showCopyFeedback('\\u2705 Settings saved');
+  }
+  function importManualProfile() {
+    const raw = document.getElementById('manualImportJson')?.value.trim();
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      if (!data.firstName && !data.lastName) { alert('Profile must have at least firstName or lastName.'); return; }
+      if (!data.id) data.id = 'manual-' + Date.now();
+      data.source = 'manual-import';
+      data.savedAt = new Date().toISOString();
+      upsertClientProfile(data);
+      document.getElementById('manualImportJson').value = '';
+      showCopyFeedback('\\u2705 Profile imported: ' + [data.firstName, data.lastName].filter(Boolean).join(' '));
+      filterClients();
+    } catch(e) {
+      alert('Invalid JSON. Please check the format and try again.');
+    }
+  }
+
+  // ============================================================
+  // HANDLE INCOMING WEBHOOK DATA (when page is the target)
+  // The intake form can also redirect to this page with ?clientData=...
+  // ============================================================
+  function checkUrlClientData() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const encoded = params.get('clientData');
+      if (!encoded) return;
+      const profile = JSON.parse(atob(encoded));
+      if (profile && (profile.firstName || profile.lastName)) {
+        if (!profile.id) profile.id = 'url-' + Date.now();
+        profile.source = profile.source || 'url-import';
+        profile.savedAt = new Date().toISOString();
+        upsertClientProfile(profile);
+        // Auto-load into form
+        loadClientProfile(profile.id);
+        // Clean URL
+        window.history.replaceState({}, '', window.location.pathname);
+        showCopyFeedback('\\u2705 Client data imported from intake form!');
+      }
+    } catch(e) {}
+  }
+
   // ============================================================
   // STATE
   // ============================================================
@@ -999,6 +1435,20 @@ function renderApp(): string {
     renderMuscleMap();
     
     updateSummaryPanel();
+
+    // Load client profiles from localStorage
+    renderClientProfilesPreview();
+
+    // Check if client data was passed via URL (from intake form redirect)
+    checkUrlClientData();
+
+    // Close modals on backdrop click
+    document.getElementById('clientBrowserModal').addEventListener('click', function(e) {
+      if (e.target === this) closeClientBrowser();
+    });
+    document.getElementById('webhookModal').addEventListener('click', function(e) {
+      if (e.target === this) closeWebhookConfig();
+    });
   });
 
   function renderTechniques() {
@@ -1320,6 +1770,27 @@ function renderApp(): string {
     if (p.dobForInput) setIfEmpty('clientDOB',       p.dobForInput);
     if (p.chiefComplaint) setIfEmpty('chiefComplaint', p.chiefComplaint);
     if (p.medications)    setIfEmpty('medications',     p.medications);
+
+    // Save to client profiles so it's available for future sessions
+    if (p.firstName || p.lastName) {
+      const profile = {
+        id: 'pdf-' + Date.now(),
+        firstName:         p.firstName      || '',
+        lastName:          p.lastName       || '',
+        email:             p.email          || '',
+        phone:             p.phone          || '',
+        dob:               p.dobForInput    || '',
+        occupation:        p.occupation     || '',
+        chiefComplaint:    p.chiefComplaint || '',
+        medications:       p.medications    || '',
+        allergies:         p.allergies      || '',
+        medicalConditions: p.conditions     || '',
+        lastTreatment:     p.lastTreatment  || '',
+        source:            'pdf-upload',
+        savedAt:           new Date().toISOString(),
+      };
+      upsertClientProfile(profile);
+    }
 
     // Show a brief toast
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
