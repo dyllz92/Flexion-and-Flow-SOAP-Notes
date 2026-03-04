@@ -783,9 +783,19 @@ function renderApp(): string {
                 <h2><i class="fas fa-person" style="margin-right:8px;opacity:0.8;"></i>Interactive Muscle Map</h2>
                 <p>Click muscles to mark as treated or needing follow-up</p>
               </div>
-              <div class="view-toggle">
-                <button id="btnAnterior" onclick="setView('anterior')" class="active">Anterior</button>
-                <button id="btnPosterior" onclick="setView('posterior')">Posterior</button>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <div class="view-toggle">
+                  <button id="btnMale" onclick="setGender('male')" class="active">
+                    <i class="fas fa-mars" style="margin-right:4px;"></i>Male
+                  </button>
+                  <button id="btnFemale" onclick="setGender('female')">
+                    <i class="fas fa-venus" style="margin-right:4px;"></i>Female
+                  </button>
+                </div>
+                <div class="view-toggle">
+                  <button id="btnAnterior" onclick="setView('anterior')" class="active">Anterior</button>
+                  <button id="btnPosterior" onclick="setView('posterior')">Posterior</button>
+                </div>
               </div>
             </div>
           </div>
@@ -793,13 +803,13 @@ function renderApp(): string {
             <!-- Legend -->
             <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px;align-items:center;">
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:#d0dff0;border:1px solid #a0bbd8;"></div> Unselected
+                <div class="legend-dot" style="background:rgba(91,163,217,0.25);border:1px solid rgba(91,163,217,0.7);"></div> Hover to identify
               </div>
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:#38a169;border:1px solid #276749;"></div> Treated
+                <div class="legend-dot" style="background:rgba(56,161,105,0.45);border:1px solid #276749;"></div> Treated
               </div>
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:#d69e2e;border:1px solid #b7791f;"></div> Needs Follow-up
+                <div class="legend-dot" style="background:rgba(214,158,46,0.45);border:1px solid #b7791f;"></div> Needs Follow-up
               </div>
               <div style="margin-left:auto;font-size:0.75rem;color:var(--text-light);">
                 <i class="fas fa-hand-pointer" style="color:var(--accent);margin-right:4px;"></i>
@@ -1504,6 +1514,7 @@ function renderApp(): string {
   const state = {
     currentStep: 1,
     currentView: 'anterior',
+    currentGender: 'male',
     muscleStates: {}, // muscleId -> 'treated' | 'follow-up'
     pdfText: '',
     soapData: null
@@ -1517,267 +1528,254 @@ function renderApp(): string {
   ];
 
   // ============================================================
-  // MUSCLE DATA
+  // MUSCLE MAP IMAGE DATA
+  // Images: 890x1024 (male), 862x1024 (female)
+  // Each image: LEFT HALF = anterior, RIGHT HALF = posterior
+  // SVG viewBox per half = 445x1024 (male) / 431x1024 (female)
+  // Muscles mapped as ellipses in the HALF-IMAGE coordinate space
+  // Anterior: coords as-is; Posterior: subtract half-width offset
   // ============================================================
-  const ANTERIOR_MUSCLES = [
-    // HEAD & NECK
-    { id: 'sternocleidomastoid_l', name: 'Sternocleidomastoid (L)', group: 'Neck',
-      path: 'M 185,68 C 183,72 181,80 180,88 C 182,85 185,78 186,72 Z' },
-    { id: 'sternocleidomastoid_r', name: 'Sternocleidomastoid (R)', group: 'Neck',
-      path: 'M 215,68 C 217,72 219,80 220,88 C 218,85 215,78 214,72 Z' },
-    { id: 'scalenes_l', name: 'Scalenes (L)', group: 'Neck',
-      path: 'M 182,75 C 179,80 178,88 179,95 C 181,90 183,83 184,78 Z' },
-    { id: 'scalenes_r', name: 'Scalenes (R)', group: 'Neck',
-      path: 'M 218,75 C 221,80 222,88 221,95 C 219,90 217,83 216,78 Z' },
 
-    // CHEST & SHOULDERS
-    { id: 'pec_major_l', name: 'Pectoralis Major (L)', group: 'Chest',
-      path: 'M 165,105 C 160,108 155,115 153,125 C 158,128 165,130 172,128 C 174,120 173,112 170,107 Z' },
-    { id: 'pec_major_r', name: 'Pectoralis Major (R)', group: 'Chest',
-      path: 'M 235,105 C 240,108 245,115 247,125 C 242,128 235,130 228,128 C 226,120 227,112 230,107 Z' },
-    { id: 'pec_minor_l', name: 'Pectoralis Minor (L)', group: 'Chest',
-      path: 'M 166,108 C 162,113 160,119 161,125 C 165,124 169,122 171,118 C 171,113 169,110 166,108 Z' },
-    { id: 'pec_minor_r', name: 'Pectoralis Minor (R)', group: 'Chest',
-      path: 'M 234,108 C 238,113 240,119 239,125 C 235,124 231,122 229,118 C 229,113 231,110 234,108 Z' },
-    { id: 'deltoid_anterior_l', name: 'Deltoid Anterior (L)', group: 'Shoulders',
-      path: 'M 157,98 C 152,103 149,112 150,120 C 155,117 159,110 160,103 Z' },
-    { id: 'deltoid_anterior_r', name: 'Deltoid Anterior (R)', group: 'Shoulders',
-      path: 'M 243,98 C 248,103 251,112 250,120 C 245,117 241,110 240,103 Z' },
+  // Male image: 890x1024 — each half is 445x1024
+  // Female image: 862x1024 — each half is 431x1024
+  // We use a normalised 400x920 viewBox for both, scaled to fit
 
-    // ARMS
-    { id: 'biceps_l', name: 'Biceps Brachii (L)', group: 'Upper Arm',
-      path: 'M 148,123 C 144,132 142,143 143,153 C 147,150 151,143 152,133 Z' },
-    { id: 'biceps_r', name: 'Biceps Brachii (R)', group: 'Upper Arm',
-      path: 'M 252,123 C 256,132 258,143 257,153 C 253,150 249,143 248,133 Z' },
-    { id: 'brachialis_l', name: 'Brachialis (L)', group: 'Upper Arm',
-      path: 'M 145,140 C 142,148 141,157 142,165 C 146,162 149,155 150,147 Z' },
-    { id: 'brachialis_r', name: 'Brachialis (R)', group: 'Upper Arm',
-      path: 'M 255,140 C 258,148 259,157 258,165 C 254,162 251,155 250,147 Z' },
-    { id: 'forearm_flexors_l', name: 'Forearm Flexors (L)', group: 'Forearm',
-      path: 'M 140,165 C 137,175 136,186 137,196 C 141,193 144,183 145,173 Z' },
-    { id: 'forearm_flexors_r', name: 'Forearm Flexors (R)', group: 'Forearm',
-      path: 'M 260,165 C 263,175 264,186 263,196 C 259,193 256,183 255,173 Z' },
-    { id: 'forearm_extensors_l', name: 'Forearm Extensors (L)', group: 'Forearm',
-      path: 'M 143,165 C 140,173 140,182 141,191 C 144,188 146,180 146,172 Z' },
-    { id: 'forearm_extensors_r', name: 'Forearm Extensors (R)', group: 'Forearm',
-      path: 'M 257,165 C 260,173 260,182 259,191 C 256,188 254,180 254,172 Z' },
+  // Muscle regions defined as { id, name, group, view, cx, cy, rx, ry }
+  // Coordinates are in the 400x920 normalised space PER HALF VIEW
+  // Anterior muscles: x=0..400, y=0..920 mapped to left half of image
+  // Posterior muscles: x=0..400, y=0..920 mapped to right half of image
 
-    // CORE / ABDOMEN
-    { id: 'rectus_abdominis', name: 'Rectus Abdominis', group: 'Core',
-      path: 'M 188,135 C 186,150 185,165 186,180 C 190,183 200,184 214,183 C 215,168 214,153 212,138 Z' },
-    { id: 'external_oblique_l', name: 'External Oblique (L)', group: 'Core',
-      path: 'M 175,140 C 172,153 172,167 174,178 C 179,180 185,181 187,178 C 185,166 184,152 183,140 Z' },
-    { id: 'external_oblique_r', name: 'External Oblique (R)', group: 'Core',
-      path: 'M 225,140 C 228,153 228,167 226,178 C 221,180 215,181 213,178 C 215,166 216,152 217,140 Z' },
-    { id: 'serratus_anterior_l', name: 'Serratus Anterior (L)', group: 'Core',
-      path: 'M 168,125 C 165,133 164,143 166,152 C 170,150 174,143 174,134 Z' },
-    { id: 'serratus_anterior_r', name: 'Serratus Anterior (R)', group: 'Core',
-      path: 'M 232,125 C 235,133 236,143 234,152 C 230,150 226,143 226,134 Z' },
-
-    // HIP / GROIN
-    { id: 'iliopsoas_l', name: 'Iliopsoas (L)', group: 'Hip',
-      path: 'M 183,188 C 181,196 181,204 183,210 C 187,212 192,212 194,209 C 193,202 191,194 188,188 Z' },
-    { id: 'iliopsoas_r', name: 'Iliopsoas (R)', group: 'Hip',
-      path: 'M 217,188 C 219,196 219,204 217,210 C 213,212 208,212 206,209 C 207,202 209,194 212,188 Z' },
-    { id: 'tensor_fascia_latae_l', name: 'Tensor Fascia Latae (L)', group: 'Hip',
-      path: 'M 172,188 C 169,196 170,204 172,210 C 176,211 180,209 181,205 C 180,198 177,191 173,188 Z' },
-    { id: 'tensor_fascia_latae_r', name: 'Tensor Fascia Latae (R)', group: 'Hip',
-      path: 'M 228,188 C 231,196 230,204 228,210 C 224,211 220,209 219,205 C 220,198 223,191 227,188 Z' },
-    { id: 'adductors_l', name: 'Adductors (L)', group: 'Hip/Inner Thigh',
-      path: 'M 188,210 C 185,220 184,232 186,243 C 190,244 194,243 196,239 C 195,228 192,218 189,210 Z' },
-    { id: 'adductors_r', name: 'Adductors (R)', group: 'Hip/Inner Thigh',
-      path: 'M 212,210 C 215,220 216,232 214,243 C 210,244 206,243 204,239 C 205,228 208,218 211,210 Z' },
-
-    // THIGHS
-    { id: 'quad_l', name: 'Quadriceps (L)', group: 'Thigh',
-      path: 'M 174,212 C 171,225 170,240 172,255 C 178,258 186,258 190,255 C 189,240 186,225 182,212 Z' },
-    { id: 'quad_r', name: 'Quadriceps (R)', group: 'Thigh',
-      path: 'M 226,212 C 229,225 230,240 228,255 C 222,258 214,258 210,255 C 211,240 214,225 218,212 Z' },
-    { id: 'it_band_l', name: 'IT Band / Iliotibial (L)', group: 'Thigh',
-      path: 'M 170,213 C 168,228 167,245 168,260 C 171,261 174,260 175,257 C 173,242 172,226 172,213 Z' },
-    { id: 'it_band_r', name: 'IT Band / Iliotibial (R)', group: 'Thigh',
-      path: 'M 230,213 C 232,228 233,245 232,260 C 229,261 226,260 225,257 C 227,242 228,226 228,213 Z' },
-
+  const MUSCLES = [
+    // ─── ANTERIOR ───────────────────────────────────────────────
+    // NECK
+    { id:'scm_l', name:'Sternocleidomastoid (L)', group:'Neck', view:'anterior',
+      points:'177,92 172,95 168,108 170,120 176,122 180,108 181,97' },
+    { id:'scm_r', name:'Sternocleidomastoid (R)', group:'Neck', view:'anterior',
+      points:'223,92 228,95 232,108 230,120 224,122 220,108 219,97' },
+    // SHOULDER
+    { id:'deltoid_ant_l', name:'Anterior Deltoid (L)', group:'Shoulder', view:'anterior',
+      points:'143,120 133,127 128,142 132,158 140,162 148,150 150,135' },
+    { id:'deltoid_ant_r', name:'Anterior Deltoid (R)', group:'Shoulder', view:'anterior',
+      points:'257,120 267,127 272,142 268,158 260,162 252,150 250,135' },
+    // CHEST
+    { id:'pec_major_l', name:'Pectoralis Major (L)', group:'Chest', view:'anterior',
+      points:'162,117 145,125 140,145 148,162 163,168 175,160 178,142 172,124' },
+    { id:'pec_major_r', name:'Pectoralis Major (R)', group:'Chest', view:'anterior',
+      points:'238,117 255,125 260,145 252,162 237,168 225,160 222,142 228,124' },
+    // BICEPS
+    { id:'biceps_l', name:'Biceps Brachii (L)', group:'Upper Arm', view:'anterior',
+      points:'133,162 126,175 124,195 128,212 136,215 143,200 144,180 140,163' },
+    { id:'biceps_r', name:'Biceps Brachii (R)', group:'Upper Arm', view:'anterior',
+      points:'267,162 274,175 276,195 272,212 264,215 257,200 256,180 260,163' },
+    // FOREARM
+    { id:'forearm_flex_l', name:'Forearm Flexors (L)', group:'Forearm', view:'anterior',
+      points:'127,215 120,228 118,252 122,272 130,275 138,260 139,238 134,218' },
+    { id:'forearm_flex_r', name:'Forearm Flexors (R)', group:'Forearm', view:'anterior',
+      points:'273,215 280,228 282,252 278,272 270,275 262,260 261,238 266,218' },
+    // ABS
+    { id:'rectus_abdominis', name:'Rectus Abdominis', group:'Core', view:'anterior',
+      points:'183,168 183,200 186,240 192,268 200,272 208,268 214,240 217,200 217,168 207,163 193,163' },
+    { id:'oblique_l', name:'External Oblique (L)', group:'Core', view:'anterior',
+      points:'163,168 163,200 168,228 174,250 183,258 186,240 183,200 178,168' },
+    { id:'oblique_r', name:'External Oblique (R)', group:'Core', view:'anterior',
+      points:'237,168 237,200 232,228 226,250 217,258 214,240 217,200 222,168' },
+    { id:'serratus_l', name:'Serratus Anterior (L)', group:'Core', view:'anterior',
+      points:'155,162 150,175 150,195 155,210 163,208 167,190 165,170' },
+    { id:'serratus_r', name:'Serratus Anterior (R)', group:'Core', view:'anterior',
+      points:'245,162 250,175 250,195 245,210 237,208 233,190 235,170' },
+    // HIP
+    { id:'iliopsoas_l', name:'Iliopsoas / Hip Flexor (L)', group:'Hip', view:'anterior',
+      points:'183,258 178,270 178,290 184,302 193,302 196,285 194,265' },
+    { id:'iliopsoas_r', name:'Iliopsoas / Hip Flexor (R)', group:'Hip', view:'anterior',
+      points:'217,258 222,270 222,290 216,302 207,302 204,285 206,265' },
+    { id:'tfl_l', name:'Tensor Fascia Latae (L)', group:'Hip', view:'anterior',
+      points:'168,258 162,272 162,295 168,308 176,306 178,288 175,265' },
+    { id:'tfl_r', name:'Tensor Fascia Latae (R)', group:'Hip', view:'anterior',
+      points:'232,258 238,272 238,295 232,308 224,306 222,288 225,265' },
+    // THIGH
+    { id:'quad_l', name:'Quadriceps (L)', group:'Thigh', view:'anterior',
+      points:'172,308 165,330 163,358 165,388 172,408 182,415 192,412 196,390 195,360 190,330 182,308' },
+    { id:'quad_r', name:'Quadriceps (R)', group:'Thigh', view:'anterior',
+      points:'228,308 235,330 237,358 235,388 228,408 218,415 208,412 204,390 205,360 210,330 218,308' },
+    { id:'adductors_l', name:'Adductors (L)', group:'Thigh', view:'anterior',
+      points:'190,308 184,325 182,352 184,380 190,395 198,395 200,370 200,340 198,312' },
+    { id:'adductors_r', name:'Adductors (R)', group:'Thigh', view:'anterior',
+      points:'210,308 216,325 218,352 216,380 210,395 202,395 200,370 200,340 202,312' },
+    { id:'sartorius_l', name:'Sartorius (L)', group:'Thigh', view:'anterior',
+      points:'175,302 168,318 168,345 172,375 178,390 182,385 180,355 178,325 180,305' },
+    { id:'sartorius_r', name:'Sartorius (R)', group:'Thigh', view:'anterior',
+      points:'225,302 232,318 232,345 228,375 222,390 218,385 220,355 222,325 220,305' },
     // LOWER LEG
-    { id: 'tibialis_anterior_l', name: 'Tibialis Anterior (L)', group: 'Lower Leg',
-      path: 'M 174,267 C 173,278 173,290 174,300 C 178,301 181,300 182,296 C 181,285 179,274 176,267 Z' },
-    { id: 'tibialis_anterior_r', name: 'Tibialis Anterior (R)', group: 'Lower Leg',
-      path: 'M 226,267 C 227,278 227,290 226,300 C 222,301 219,300 218,296 C 219,285 221,274 224,267 Z' },
-    { id: 'peroneals_l', name: 'Peroneals (L)', group: 'Lower Leg',
-      path: 'M 171,270 C 169,281 169,293 170,302 C 173,303 176,301 177,297 C 175,286 173,276 172,270 Z' },
-    { id: 'peroneals_r', name: 'Peroneals (R)', group: 'Lower Leg',
-      path: 'M 229,270 C 231,281 231,293 230,302 C 227,303 224,301 223,297 C 225,286 227,276 228,270 Z' },
-  ];
+    { id:'tibialis_ant_l', name:'Tibialis Anterior (L)', group:'Lower Leg', view:'anterior',
+      points:'172,420 168,438 167,462 168,485 173,498 180,500 184,488 184,462 182,438 178,420' },
+    { id:'tibialis_ant_r', name:'Tibialis Anterior (R)', group:'Lower Leg', view:'anterior',
+      points:'228,420 232,438 233,462 232,485 227,498 220,500 216,488 216,462 218,438 222,420' },
+    { id:'peroneals_l', name:'Peroneals (L)', group:'Lower Leg', view:'anterior',
+      points:'165,422 160,440 159,465 162,488 168,498 173,495 172,470 170,445 168,425' },
+    { id:'peroneals_r', name:'Peroneals (R)', group:'Lower Leg', view:'anterior',
+      points:'235,422 240,440 241,465 238,488 232,498 227,495 228,470 230,445 232,425' },
 
-  const POSTERIOR_MUSCLES = [
-    // HEAD & NECK
-    { id: 'upper_trapezius_l', name: 'Upper Trapezius (L)', group: 'Neck/Shoulder',
-      path: 'M 180,75 C 177,82 176,92 177,100 C 180,98 184,93 186,88 C 186,82 184,78 180,75 Z' },
-    { id: 'upper_trapezius_r', name: 'Upper Trapezius (R)', group: 'Neck/Shoulder',
-      path: 'M 220,75 C 223,82 224,92 223,100 C 220,98 216,93 214,88 C 214,82 216,78 220,75 Z' },
-    { id: 'suboccipitals', name: 'Suboccipitals', group: 'Neck',
-      path: 'M 190,63 C 187,67 186,72 187,76 C 191,77 209,77 213,76 C 214,72 213,67 210,63 Z' },
-    { id: 'levator_scapulae_l', name: 'Levator Scapulae (L)', group: 'Neck',
-      path: 'M 182,72 C 180,79 179,88 180,96 C 183,94 185,87 185,79 Z' },
-    { id: 'levator_scapulae_r', name: 'Levator Scapulae (R)', group: 'Neck',
-      path: 'M 218,72 C 220,79 221,88 220,96 C 217,94 215,87 215,79 Z' },
-
-    // BACK - UPPER
-    { id: 'mid_trapezius_l', name: 'Middle Trapezius (L)', group: 'Upper Back',
-      path: 'M 177,100 C 172,107 170,116 171,124 C 176,123 182,120 185,115 C 184,108 181,103 177,100 Z' },
-    { id: 'mid_trapezius_r', name: 'Middle Trapezius (R)', group: 'Upper Back',
-      path: 'M 223,100 C 228,107 230,116 229,124 C 224,123 218,120 215,115 C 216,108 219,103 223,100 Z' },
-    { id: 'lower_trapezius_l', name: 'Lower Trapezius (L)', group: 'Upper Back',
-      path: 'M 176,124 C 172,133 171,143 173,152 C 178,151 183,148 185,142 C 184,133 181,127 176,124 Z' },
-    { id: 'lower_trapezius_r', name: 'Lower Trapezius (R)', group: 'Upper Back',
-      path: 'M 224,124 C 228,133 229,143 227,152 C 222,151 217,148 215,142 C 216,133 219,127 224,124 Z' },
-    { id: 'rhomboids_l', name: 'Rhomboids (L)', group: 'Upper Back',
-      path: 'M 185,105 C 182,112 181,120 183,128 C 188,127 192,124 193,119 C 192,112 189,107 185,105 Z' },
-    { id: 'rhomboids_r', name: 'Rhomboids (R)', group: 'Upper Back',
-      path: 'M 215,105 C 218,112 219,120 217,128 C 212,127 208,124 207,119 C 208,112 211,107 215,105 Z' },
-    { id: 'deltoid_posterior_l', name: 'Deltoid Posterior (L)', group: 'Shoulders',
-      path: 'M 158,100 C 153,108 152,118 154,127 C 159,125 163,118 163,109 Z' },
-    { id: 'deltoid_posterior_r', name: 'Deltoid Posterior (R)', group: 'Shoulders',
-      path: 'M 242,100 C 247,108 248,118 246,127 C 241,125 237,118 237,109 Z' },
-    { id: 'infraspinatus_l', name: 'Infraspinatus (L)', group: 'Rotator Cuff',
-      path: 'M 165,112 C 162,120 161,130 163,138 C 167,137 172,133 173,127 C 172,120 169,115 165,112 Z' },
-    { id: 'infraspinatus_r', name: 'Infraspinatus (R)', group: 'Rotator Cuff',
-      path: 'M 235,112 C 238,120 239,130 237,138 C 233,137 228,133 227,127 C 228,120 231,115 235,112 Z' },
-    { id: 'teres_major_l', name: 'Teres Major (L)', group: 'Rotator Cuff',
-      path: 'M 163,135 C 160,142 160,151 162,158 C 166,157 170,153 170,146 Z' },
-    { id: 'teres_major_r', name: 'Teres Major (R)', group: 'Rotator Cuff',
-      path: 'M 237,135 C 240,142 240,151 238,158 C 234,157 230,153 230,146 Z' },
-    { id: 'teres_minor_l', name: 'Teres Minor (L)', group: 'Rotator Cuff',
-      path: 'M 163,125 C 161,131 161,138 163,143 C 167,142 170,138 170,132 Z' },
-    { id: 'teres_minor_r', name: 'Teres Minor (R)', group: 'Rotator Cuff',
-      path: 'M 237,125 C 239,131 239,138 237,143 C 233,142 230,138 230,132 Z' },
-
-    // ARMS POSTERIOR
-    { id: 'triceps_l', name: 'Triceps Brachii (L)', group: 'Upper Arm',
-      path: 'M 151,125 C 147,135 146,147 148,157 C 152,155 155,147 155,137 Z' },
-    { id: 'triceps_r', name: 'Triceps Brachii (R)', group: 'Upper Arm',
-      path: 'M 249,125 C 253,135 254,147 252,157 C 248,155 245,147 245,137 Z' },
-
+    // ─── POSTERIOR ──────────────────────────────────────────────
+    // NECK / UPPER BACK
+    { id:'upper_trap_l', name:'Upper Trapezius (L)', group:'Neck/Shoulder', view:'posterior',
+      points:'185,88 178,95 172,108 175,122 185,128 193,120 196,105 192,92' },
+    { id:'upper_trap_r', name:'Upper Trapezius (R)', group:'Neck/Shoulder', view:'posterior',
+      points:'215,88 222,95 228,108 225,122 215,128 207,120 204,105 208,92' },
+    { id:'levator_scap_l', name:'Levator Scapulae (L)', group:'Neck', view:'posterior',
+      points:'183,88 178,95 177,110 180,122 186,122 188,108 188,93' },
+    { id:'levator_scap_r', name:'Levator Scapulae (R)', group:'Neck', view:'posterior',
+      points:'217,88 222,95 223,110 220,122 214,122 212,108 212,93' },
+    // SHOULDERS POSTERIOR
+    { id:'deltoid_post_l', name:'Posterior Deltoid (L)', group:'Shoulder', view:'posterior',
+      points:'143,122 133,128 128,145 132,162 142,168 152,155 153,138' },
+    { id:'deltoid_post_r', name:'Posterior Deltoid (R)', group:'Shoulder', view:'posterior',
+      points:'257,122 267,128 272,145 268,162 258,168 248,155 247,138' },
+    // ROTATOR CUFF
+    { id:'infraspinatus_l', name:'Infraspinatus (L)', group:'Rotator Cuff', view:'posterior',
+      points:'155,128 148,138 147,155 152,168 162,170 170,162 168,145 160,130' },
+    { id:'infraspinatus_r', name:'Infraspinatus (R)', group:'Rotator Cuff', view:'posterior',
+      points:'245,128 252,138 253,155 248,168 238,170 230,162 232,145 240,130' },
+    { id:'teres_l', name:'Teres Major / Minor (L)', group:'Rotator Cuff', view:'posterior',
+      points:'148,165 142,178 142,195 148,205 157,205 162,192 160,175' },
+    { id:'teres_r', name:'Teres Major / Minor (R)', group:'Rotator Cuff', view:'posterior',
+      points:'252,165 258,178 258,195 252,205 243,205 238,192 240,175' },
+    // TRICEPS
+    { id:'triceps_l', name:'Triceps Brachii (L)', group:'Upper Arm', view:'posterior',
+      points:'140,162 133,175 130,198 133,218 140,222 148,210 150,188 147,165' },
+    { id:'triceps_r', name:'Triceps Brachii (R)', group:'Upper Arm', view:'posterior',
+      points:'260,162 267,175 270,198 267,218 260,222 252,210 250,188 253,165' },
+    // FOREARM POSTERIOR
+    { id:'forearm_ext_l', name:'Forearm Extensors (L)', group:'Forearm', view:'posterior',
+      points:'130,222 122,238 120,262 124,280 132,282 140,268 140,245 135,225' },
+    { id:'forearm_ext_r', name:'Forearm Extensors (R)', group:'Forearm', view:'posterior',
+      points:'270,222 278,238 280,262 276,280 268,282 260,268 260,245 265,225' },
     // MID BACK
-    { id: 'erector_spinae_l', name: 'Erector Spinae (L)', group: 'Mid/Lower Back',
-      path: 'M 186,138 C 184,150 183,165 184,180 C 189,181 193,180 194,176 C 194,161 192,148 188,138 Z' },
-    { id: 'erector_spinae_r', name: 'Erector Spinae (R)', group: 'Mid/Lower Back',
-      path: 'M 214,138 C 216,150 217,165 216,180 C 211,181 207,180 206,176 C 206,161 208,148 212,138 Z' },
-    { id: 'latissimus_dorsi_l', name: 'Latissimus Dorsi (L)', group: 'Mid/Lower Back',
-      path: 'M 172,133 C 168,145 167,158 169,170 C 174,172 180,171 183,167 C 182,154 178,142 173,133 Z' },
-    { id: 'latissimus_dorsi_r', name: 'Latissimus Dorsi (R)', group: 'Mid/Lower Back',
-      path: 'M 228,133 C 232,145 233,158 231,170 C 226,172 220,171 217,167 C 218,154 222,142 227,133 Z' },
-
-    // LOWER BACK
-    { id: 'ql_l', name: 'Quadratus Lumborum (L)', group: 'Lower Back',
-      path: 'M 183,170 C 181,179 181,188 183,196 C 187,197 192,196 193,192 C 192,183 189,175 184,170 Z' },
-    { id: 'ql_r', name: 'Quadratus Lumborum (R)', group: 'Lower Back',
-      path: 'M 217,170 C 219,179 219,188 217,196 C 213,197 208,196 207,192 C 208,183 211,175 216,170 Z' },
-    { id: 'multifidus_l', name: 'Multifidus (L)', group: 'Lower Back',
-      path: 'M 188,165 C 186,174 186,183 188,192 C 191,193 194,192 195,188 C 194,179 192,170 189,165 Z' },
-    { id: 'multifidus_r', name: 'Multifidus (R)', group: 'Lower Back',
-      path: 'M 212,165 C 214,174 214,183 212,192 C 209,193 206,192 205,188 C 206,179 208,170 211,165 Z' },
-
+    { id:'rhomboids_l', name:'Rhomboids (L)', group:'Upper Back', view:'posterior',
+      points:'182,122 178,135 178,155 183,165 192,162 195,148 192,130' },
+    { id:'rhomboids_r', name:'Rhomboids (R)', group:'Upper Back', view:'posterior',
+      points:'218,122 222,135 222,155 217,165 208,162 205,148 208,130' },
+    { id:'mid_trap_l', name:'Middle Trapezius (L)', group:'Upper Back', view:'posterior',
+      points:'170,122 163,132 162,150 167,162 178,162 182,148 180,130' },
+    { id:'mid_trap_r', name:'Middle Trapezius (R)', group:'Upper Back', view:'posterior',
+      points:'230,122 237,132 238,150 233,162 222,162 218,148 220,130' },
+    { id:'lower_trap_l', name:'Lower Trapezius (L)', group:'Upper Back', view:'posterior',
+      points:'175,162 170,178 170,198 175,210 185,212 190,198 188,175' },
+    { id:'lower_trap_r', name:'Lower Trapezius (R)', group:'Upper Back', view:'posterior',
+      points:'225,162 230,178 230,198 225,210 215,212 210,198 212,175' },
+    { id:'lats_l', name:'Latissimus Dorsi (L)', group:'Mid/Lower Back', view:'posterior',
+      points:'160,162 153,178 150,202 153,228 163,240 175,238 178,218 175,192 168,168' },
+    { id:'lats_r', name:'Latissimus Dorsi (R)', group:'Mid/Lower Back', view:'posterior',
+      points:'240,162 247,178 250,202 247,228 237,240 225,238 222,218 225,192 232,168' },
+    { id:'erector_l', name:'Erector Spinae (L)', group:'Lower Back', view:'posterior',
+      points:'188,175 184,192 183,218 184,245 188,262 195,262 198,242 197,215 194,188' },
+    { id:'erector_r', name:'Erector Spinae (R)', group:'Lower Back', view:'posterior',
+      points:'212,175 216,192 217,218 216,245 212,262 205,262 202,242 203,215 206,188' },
+    { id:'ql_l', name:'Quadratus Lumborum (L)', group:'Lower Back', view:'posterior',
+      points:'183,245 180,258 180,278 184,290 192,292 195,278 194,258 188,245' },
+    { id:'ql_r', name:'Quadratus Lumborum (R)', group:'Lower Back', view:'posterior',
+      points:'217,245 220,258 220,278 216,290 208,292 205,278 206,258 212,245' },
     // GLUTES
-    { id: 'gluteus_maximus_l', name: 'Gluteus Maximus (L)', group: 'Glutes',
-      path: 'M 172,195 C 169,206 169,218 172,228 C 178,231 186,231 190,227 C 189,215 185,203 179,195 Z' },
-    { id: 'gluteus_maximus_r', name: 'Gluteus Maximus (R)', group: 'Glutes',
-      path: 'M 228,195 C 231,206 231,218 228,228 C 222,231 214,231 210,227 C 211,215 215,203 221,195 Z' },
-    { id: 'gluteus_medius_l', name: 'Gluteus Medius (L)', group: 'Glutes',
-      path: 'M 171,187 C 168,196 168,205 171,213 C 176,215 181,214 183,209 C 181,200 177,193 172,187 Z' },
-    { id: 'gluteus_medius_r', name: 'Gluteus Medius (R)', group: 'Glutes',
-      path: 'M 229,187 C 232,196 232,205 229,213 C 224,215 219,214 217,209 C 219,200 223,193 228,187 Z' },
-    { id: 'piriformis_l', name: 'Piriformis (L)', group: 'Glutes/Hip',
-      path: 'M 181,210 C 178,217 178,224 181,229 C 185,230 190,228 191,223 C 190,217 186,211 181,210 Z' },
-    { id: 'piriformis_r', name: 'Piriformis (R)', group: 'Glutes/Hip',
-      path: 'M 219,210 C 222,217 222,224 219,229 C 215,230 210,228 209,223 C 210,217 214,211 219,210 Z' },
-
+    { id:'glut_max_l', name:'Gluteus Maximus (L)', group:'Glutes', view:'posterior',
+      points:'170,292 163,310 162,335 165,358 175,370 188,370 196,355 195,328 188,305 178,292' },
+    { id:'glut_max_r', name:'Gluteus Maximus (R)', group:'Glutes', view:'posterior',
+      points:'230,292 237,310 238,335 235,358 225,370 212,370 204,355 205,328 212,305 222,292' },
+    { id:'glut_med_l', name:'Gluteus Medius (L)', group:'Glutes', view:'posterior',
+      points:'168,272 162,285 162,305 168,318 178,318 183,305 180,285 172,272' },
+    { id:'glut_med_r', name:'Gluteus Medius (R)', group:'Glutes', view:'posterior',
+      points:'232,272 238,285 238,305 232,318 222,318 217,305 220,285 228,272' },
+    { id:'piriformis_l', name:'Piriformis (L)', group:'Glutes/Hip', view:'posterior',
+      points:'182,308 178,318 178,332 183,338 192,338 195,328 193,315' },
+    { id:'piriformis_r', name:'Piriformis (R)', group:'Glutes/Hip', view:'posterior',
+      points:'218,308 222,318 222,332 217,338 208,338 205,328 207,315' },
     // HAMSTRINGS
-    { id: 'biceps_femoris_l', name: 'Biceps Femoris (L)', group: 'Hamstrings',
-      path: 'M 175,230 C 173,244 173,259 175,272 C 180,273 184,272 185,267 C 184,253 181,239 177,230 Z' },
-    { id: 'biceps_femoris_r', name: 'Biceps Femoris (R)', group: 'Hamstrings',
-      path: 'M 225,230 C 227,244 227,259 225,272 C 220,273 216,272 215,267 C 216,253 219,239 223,230 Z' },
-    { id: 'semimembranosus_l', name: 'Semimembranosus / Semitendinosus (L)', group: 'Hamstrings',
-      path: 'M 183,230 C 181,244 181,259 183,272 C 188,273 192,271 193,266 C 192,252 189,238 185,230 Z' },
-    { id: 'semimembranosus_r', name: 'Semimembranosus / Semitendinosus (R)', group: 'Hamstrings',
-      path: 'M 217,230 C 219,244 219,259 217,272 C 212,273 208,271 207,266 C 208,252 211,238 215,230 Z' },
-
-    // LOWER LEG POSTERIOR
-    { id: 'gastrocnemius_l', name: 'Gastrocnemius (L)', group: 'Calf',
-      path: 'M 174,278 C 172,291 172,304 174,316 C 179,317 184,316 185,311 C 184,298 180,285 175,278 Z' },
-    { id: 'gastrocnemius_r', name: 'Gastrocnemius (R)', group: 'Calf',
-      path: 'M 226,278 C 228,291 228,304 226,316 C 221,317 216,316 215,311 C 216,298 220,285 225,278 Z' },
-    { id: 'soleus_l', name: 'Soleus (L)', group: 'Calf',
-      path: 'M 175,302 C 174,312 174,321 176,330 C 180,331 184,329 184,324 C 183,314 180,306 176,302 Z' },
-    { id: 'soleus_r', name: 'Soleus (R)', group: 'Calf',
-      path: 'M 225,302 C 226,312 226,321 224,330 C 220,331 216,329 216,324 C 217,314 220,306 224,302 Z' },
+    { id:'biceps_fem_l', name:'Biceps Femoris (L)', group:'Hamstrings', view:'posterior',
+      points:'175,372 170,392 168,420 170,450 175,475 183,478 188,465 186,435 182,405 178,375' },
+    { id:'biceps_fem_r', name:'Biceps Femoris (R)', group:'Hamstrings', view:'posterior',
+      points:'225,372 230,392 232,420 230,450 225,475 217,478 212,465 214,435 218,405 222,375' },
+    { id:'semimem_l', name:'Semimembranosus / Semitendinosus (L)', group:'Hamstrings', view:'posterior',
+      points:'188,372 184,392 182,420 184,450 190,472 198,475 200,455 198,425 195,395 192,375' },
+    { id:'semimem_r', name:'Semimembranosus / Semitendinosus (R)', group:'Hamstrings', view:'posterior',
+      points:'212,372 216,392 218,420 216,450 210,472 202,475 200,455 202,425 205,395 208,375' },
+    // CALF
+    { id:'gastroc_l', name:'Gastrocnemius (L)', group:'Calf', view:'posterior',
+      points:'172,485 167,502 165,528 168,555 175,570 183,572 188,558 188,530 184,505 178,487' },
+    { id:'gastroc_r', name:'Gastrocnemius (R)', group:'Calf', view:'posterior',
+      points:'228,485 233,502 235,528 232,555 225,570 217,572 212,558 212,530 216,505 222,487' },
+    { id:'soleus_l', name:'Soleus (L)', group:'Calf', view:'posterior',
+      points:'175,558 170,572 169,595 172,615 178,622 185,620 188,605 187,580 182,562' },
+    { id:'soleus_r', name:'Soleus (R)', group:'Calf', view:'posterior',
+      points:'225,558 230,572 231,595 228,615 222,622 215,620 212,605 213,580 218,562' },
   ];
 
-  // ============================================================
-  // BODY OUTLINE SVGs
-  // ============================================================
-  const BODY_OUTLINE_ANTERIOR = \`
-    <!-- Head -->
-    <ellipse cx="200" cy="45" rx="18" ry="22" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <ellipse cx="200" cy="40" rx="16" ry="18" fill="#f8e5d0" stroke="#d4a574" stroke-width="1"/>
-    <!-- Neck -->
-    <rect x="192" y="63" width="16" height="14" rx="4" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Torso -->
-    <path d="M 168,77 C 162,82 157,90 155,100 C 152,112 150,128 150,145 C 150,162 153,178 157,192 C 168,195 180,197 200,197 C 220,197 232,195 243,192 C 247,178 250,162 250,145 C 250,128 248,112 245,100 C 243,90 238,82 232,77 C 222,73 212,71 200,71 C 188,71 178,73 168,77 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Arm -->
-    <path d="M 155,98 C 148,103 143,115 140,130 C 137,145 136,162 137,178 C 139,190 143,200 145,208 C 148,208 151,207 152,205 C 151,193 150,181 151,168 C 152,153 155,138 157,125 C 159,112 160,103 159,98 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Right Arm -->
-    <path d="M 245,98 C 252,103 257,115 260,130 C 263,145 264,162 263,178 C 261,190 257,200 255,208 C 252,208 249,207 248,205 C 249,193 250,181 249,168 C 248,153 245,138 243,125 C 241,112 240,103 241,98 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Hand -->
-    <ellipse cx="144" cy="212" rx="9" ry="13" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Right Hand -->
-    <ellipse cx="256" cy="212" rx="9" ry="13" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Pelvis/Hips -->
-    <path d="M 157,190 C 157,198 162,210 170,218 C 178,224 190,228 200,228 C 210,228 222,224 230,218 C 238,210 243,198 243,190 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Leg -->
-    <path d="M 170,220 C 166,235 164,254 165,272 C 166,290 168,308 170,322 C 173,335 175,345 176,350 C 179,350 182,350 184,349 C 183,338 181,325 180,310 C 179,293 179,274 180,257 C 181,240 182,226 181,220 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Right Leg -->
-    <path d="M 230,220 C 234,235 236,254 235,272 C 234,290 232,308 230,322 C 227,335 225,345 224,350 C 221,350 218,350 216,349 C 217,338 219,325 220,310 C 221,293 221,274 220,257 C 219,240 218,226 219,220 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Foot -->
-    <ellipse cx="178" cy="354" rx="12" ry="7" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Right Foot -->
-    <ellipse cx="222" cy="354" rx="12" ry="7" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Facial features -->
-    <circle cx="194" cy="43" r="2" fill="#d4a574" opacity="0.5"/>
-    <circle cx="206" cy="43" r="2" fill="#d4a574" opacity="0.5"/>
-    <path d="M 196,50 Q 200,53 204,50" stroke="#d4a574" stroke-width="1" fill="none" opacity="0.5"/>
-  \`;
+  // Convenience lookups
+  const ANTERIOR_MUSCLES = MUSCLES.filter(m => m.view === 'anterior');
+  const POSTERIOR_MUSCLES = MUSCLES.filter(m => m.view === 'posterior');
 
-  const BODY_OUTLINE_POSTERIOR = \`
-    <!-- Head -->
-    <ellipse cx="200" cy="45" rx="18" ry="22" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Neck -->
-    <rect x="192" y="63" width="16" height="14" rx="4" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Hair suggestion -->
-    <ellipse cx="200" cy="34" rx="17" ry="15" fill="#d4a574" opacity="0.3"/>
-    <!-- Torso -->
-    <path d="M 168,77 C 162,82 157,90 155,100 C 152,112 150,128 150,145 C 150,162 153,178 157,192 C 168,195 180,197 200,197 C 220,197 232,195 243,192 C 247,178 250,162 250,145 C 250,128 248,112 245,100 C 243,90 238,82 232,77 C 222,73 212,71 200,71 C 188,71 178,73 168,77 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Spine hint -->
-    <line x1="200" y1="77" x2="200" y2="192" stroke="#d4a574" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.4"/>
-    <!-- Left Arm -->
-    <path d="M 155,98 C 148,103 143,115 140,130 C 137,145 136,162 137,178 C 139,190 143,200 145,208 C 148,208 151,207 152,205 C 151,193 150,181 151,168 C 152,153 155,138 157,125 C 159,112 160,103 159,98 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Right Arm -->
-    <path d="M 245,98 C 252,103 257,115 260,130 C 263,145 264,162 263,178 C 261,190 257,200 255,208 C 252,208 249,207 248,205 C 249,193 250,181 249,168 C 248,153 245,138 243,125 C 241,112 240,103 241,98 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Hand -->
-    <ellipse cx="144" cy="212" rx="9" ry="13" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Right Hand -->
-    <ellipse cx="256" cy="212" rx="9" ry="13" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Pelvis/Hips -->
-    <path d="M 157,190 C 157,198 162,210 170,218 C 178,224 190,228 200,228 C 210,228 222,224 230,218 C 238,210 243,198 243,190 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Leg -->
-    <path d="M 170,220 C 166,235 164,254 165,272 C 166,290 168,308 170,322 C 173,335 175,345 176,350 C 179,350 182,350 184,349 C 183,338 181,325 180,310 C 179,293 179,274 180,257 C 181,240 182,226 181,220 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Right Leg -->
-    <path d="M 230,220 C 234,235 236,254 235,272 C 234,290 232,308 230,322 C 227,335 225,345 224,350 C 221,350 218,350 216,349 C 217,338 219,325 220,310 C 221,293 221,274 220,257 C 219,240 218,226 219,220 Z" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.5"/>
-    <!-- Left Foot -->
-    <ellipse cx="178" cy="354" rx="12" ry="7" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-    <!-- Right Foot -->
-    <ellipse cx="222" cy="354" rx="12" ry="7" fill="#f8e5d0" stroke="#d4a574" stroke-width="1.2"/>
-  \`;
+  // ============================================================
+  // IMAGE-BASED MUSCLE MAP
+  // ============================================================
+  // The image viewBox is 400×870 (normalised from actual half-image).
+  // For the MALE image (890×1024): each half = 445×1024, normalised to 400×870
+  // For the FEMALE image (862×1024): each half = 431×1024, normalised to 400×870
+  // Image is positioned so only the correct half is visible:
+  //   anterior → show left half  (image translateX 0)
+  //   posterior → show right half (image translateX -100%)
+
+  function renderMuscleMap() {
+    const container = document.getElementById('muscleMapContainer');
+    const gender    = state.currentGender;   // 'male' | 'female'
+    const view      = state.currentView;     // 'anterior' | 'posterior'
+    const muscles   = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
+    const imgSrc    = \`/muscle-map-\${gender}.png\`;
+
+    // Image natural dimensions
+    const imgW = gender === 'male' ? 890 : 862;
+    const halfW = imgW / 2;
+    const imgH = 1024;
+
+    // We display a 400px wide viewport and scale proportionally
+    // SVG viewBox per half: halfW × imgH, displayed at width=400, height=auto
+    const vbH = Math.round(imgH / (halfW / 400));
+
+    // Translate the image: anterior = left half (translateX 0), posterior = right half (translateX -50%)
+    const imgTranslate = view === 'anterior' ? '0' : '-50%';
+
+    const musclePaths = muscles.map(m => {
+      const st  = state.muscleStates[m.id];
+      let fill  = 'rgba(91,163,217,0.25)';
+      let stroke = 'rgba(91,163,217,0.7)';
+      let sw    = '1.5';
+      if (st === 'treated')   { fill = 'rgba(56,161,105,0.45)';  stroke = '#276749'; sw = '2'; }
+      if (st === 'follow-up') { fill = 'rgba(214,158,46,0.45)';  stroke = '#b7791f'; sw = '2'; }
+      return \`<polygon
+        class="muscle-hit"
+        points="\${m.points}"
+        fill="\${fill}" stroke="\${stroke}" stroke-width="\${sw}"
+        data-id="\${m.id}" data-name="\${m.name}"
+        style="cursor:pointer;transition:all 0.15s;"
+        onmouseenter="showTooltip(event,this.dataset.name)"
+        onmouseleave="hideTooltip()"
+        onclick="toggleMuscle(this.dataset.id,this.dataset.name)"/>\`;
+    }).join('\\n');
+
+    container.innerHTML = \`
+      <div style="position:relative;width:100%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#fff;">
+        <!-- Base image — full width, clipped to show correct half -->
+        <img src="\${imgSrc}" alt="Muscle map"
+          style="display:block;width:200%;transform:translateX(\${imgTranslate});height:auto;pointer-events:none;"
+          onerror="this.style.opacity='0.2'"/>
+        <!-- SVG overlay — sits on top of the image half, covers exactly 50% width -->
+        <svg viewBox="0 0 400 \${vbH}"
+          xmlns="http://www.w3.org/2000/svg"
+          style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;">
+          <g style="pointer-events:all;">
+            \${musclePaths}
+          </g>
+        </svg>
+      </div>
+    \`;
+  }
+
 
   // ============================================================
   // INITIALIZE
@@ -1812,43 +1810,13 @@ function renderApp(): string {
   function renderTechniques() {
     const container = document.getElementById('techniqueCheckboxes');
     container.innerHTML = TECHNIQUES.map(t => \`
-      <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer hover:text-slate-800">
-        <input type="checkbox" name="technique" value="\${t}" class="rounded text-violet-600 focus:ring-violet-300"/>
-        \${t}
+      <label class="technique-item">
+        <input type="checkbox" name="technique" value="\${t}"/>
+        <span>\${t}</span>
       </label>
     \`).join('');
   }
 
-  function renderMuscleMap() {
-    const container = document.getElementById('muscleMapContainer');
-    const muscles = state.currentView === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    const outline = state.currentView === 'anterior' ? BODY_OUTLINE_ANTERIOR : BODY_OUTLINE_POSTERIOR;
-
-    const musclePaths = muscles.map(m => {
-      const st = state.muscleStates[m.id];
-      let cls = 'muscle-path';
-      if (st === 'treated') cls += ' treated';
-      else if (st === 'follow-up') cls += ' follow-up';
-      return \`<path class="\${cls}" d="\${m.path}" fill="#c9d4e0" stroke="#8895a7"
-        data-muscle-id="\${m.id}" data-muscle-name="\${m.name}"
-        onclick="toggleMuscle('\${m.id}', '\${m.name}')"
-        onmouseenter="showTooltip(event, '\${m.name}')"
-        onmouseleave="hideTooltip()"/>\`;
-    }).join('\\n');
-
-    const label = state.currentView === 'anterior' ? 'Anterior View' : 'Posterior View';
-
-    container.innerHTML = \`
-      <svg viewBox="0 0 400 370" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; display:block;">
-        <!-- Body outline -->
-        \${outline}
-        <!-- Muscle paths -->
-        \${musclePaths}
-        <!-- View label -->
-        <text x="200" y="365" text-anchor="middle" font-size="9" fill="#94a3b8" font-family="sans-serif">\${label}</text>
-      </svg>
-    \`;
-  }
 
   function toggleMuscle(id, name) {
     const current = state.muscleStates[id];
@@ -1892,17 +1860,12 @@ function renderApp(): string {
     const followupEl = document.getElementById('followupList');
 
     treatedEl.innerHTML = treated.length
-      ? treated.map(n => \`<div class="flex items-center gap-1.5 text-xs text-slate-700 bg-emerald-50 rounded-md px-2 py-1">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0"></span>\${n}
-        </div>\`).join('')
-      : '<p class="text-xs text-slate-400 italic">None selected</p>';
+      ? treated.map(n => \`<span class="muscle-chip muscle-chip-treated"><i class="fas fa-circle-dot"></i> \${n}</span>\`).join('')
+      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>';
 
     followupEl.innerHTML = followup.length
-      ? followup.map(n => \`<div class="flex items-center gap-1.5 text-xs text-slate-700 bg-amber-50 rounded-md px-2 py-1">
-          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0"></span>\${n}
-        </div>\`).join('')
-      : '<p class="text-xs text-slate-400 italic">None selected</p>';
-
+      ? followup.map(n => \`<span class="muscle-chip muscle-chip-followup"><i class="fas fa-clock"></i> \${n}</span>\`).join('')
+      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>';
     updateSummaryPanel();
   }
 
@@ -1916,6 +1879,13 @@ function renderApp(): string {
     state.currentView = view;
     document.getElementById('btnAnterior').classList.toggle('active', view === 'anterior');
     document.getElementById('btnPosterior').classList.toggle('active', view === 'posterior');
+    renderMuscleMap();
+  }
+
+  function setGender(gender) {
+    state.currentGender = gender;
+    document.getElementById('btnMale').classList.toggle('active', gender === 'male');
+    document.getElementById('btnFemale').classList.toggle('active', gender === 'female');
     renderMuscleMap();
   }
 
@@ -2633,6 +2603,7 @@ THERAPIST NOTES:
     state.muscleStates = {};
     state.soapData = null;
     state.currentView = 'anterior';
+    state.currentGender = 'male';
 
     // Reset fields
     ['clientFirstName', 'clientLastName', 'clientDOB', 'chiefComplaint', 
@@ -2652,6 +2623,7 @@ THERAPIST NOTES:
     document.getElementById('soapLoading').style.display = 'none';
 
     setView('anterior');
+    setGender('male');
     renderMuscleMap();
     updateMuscleLists();
     goToStep(1);
