@@ -126,261 +126,608 @@ function renderApp(): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SOAP Note Generator</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>SOAP Notes — Flexion &amp; Flow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    * { font-family: 'Inter', sans-serif; }
-    
-    .muscle-path {
+    /* ═══════════════════════════════════════════════════════════
+       Flexion & Flow — SOAP Note Generator
+       Brand: Navy #1B3A6B | Sky #5BA3D9 | Light #EEF4FB
+       ═══════════════════════════════════════════════════════════ */
+    :root {
+      --primary:       #1b3a6b;
+      --primary-light: #2c5fa3;
+      --accent:        #5ba3d9;
+      --bg:            #eef4fb;
+      --bg-card:       #ffffff;
+      --text:          #2d3748;
+      --text-light:    #718096;
+      --border:        #d0dff0;
+      --success:       #38a169;
+      --danger:        #e53e3e;
+      --warning-bg:    #fff3cd;
+      --warning-txt:   #856404;
+      --radius:        12px;
+      --radius-sm:     8px;
+      --shadow:        0 4px 24px rgba(27,58,107,0.10);
+      --shadow-sm:     0 2px 8px rgba(27,58,107,0.08);
+      --font:          "Montserrat", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* ── Background wave ── */
+    .bg-wave {
+      position: fixed; inset: 0;
+      background: url("/bg-wave.png") center center / cover no-repeat;
+      opacity: 0.45; z-index: 0; pointer-events: none;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      position: static;
+      z-index: 200;
+      background: white;
+      box-shadow: 0 2px 12px rgba(255,255,255,0);
+    }
+    .header-inner {
+      max-width: 960px; margin: 0 auto;
+      padding: 20px 24px 12px;
+      display: flex; align-items: center; justify-content: center;
+      background: white;
+      position: relative;
+    }
+    .header-logo { height: 72px; object-fit: contain; }
+    .header-actions {
+      position: absolute; right: 24px; top: 50%;
+      transform: translateY(-50%);
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── Step bar ── */
+    .step-bar {
+      background: white;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .step-bar-inner {
+      max-width: 960px; margin: 0 auto;
+      padding: 0 24px;
+      display: flex; align-items: center; gap: 0;
+      overflow-x: auto;
+    }
+    .step-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 20px 14px 16px;
       cursor: pointer;
-      transition: all 0.2s ease;
-      stroke-width: 0.5;
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+      position: relative;
     }
-    .muscle-path:hover {
-      opacity: 0.75;
-      filter: brightness(0.85);
+    .step-item:hover { background: var(--bg); }
+    .step-item.active { border-bottom-color: var(--primary); }
+    .step-item.done { border-bottom-color: var(--success); }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #e2ebf7; color: var(--text-light);
+      font-size: 0.8rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.2s;
     }
-    .muscle-path.selected {
-      stroke: #f59e0b !important;
-      stroke-width: 2 !important;
-      filter: brightness(0.7) saturate(1.5);
+    .step-item.active .step-num { background: var(--primary); color: white; }
+    .step-item.done .step-num { background: var(--success); color: white; }
+    .step-label { font-size: 0.82rem; font-weight: 600; color: var(--text-light); transition: color 0.2s; }
+    .step-item.active .step-label { color: var(--primary); }
+    .step-item.done .step-label { color: var(--success); }
+    .step-sep { width: 24px; height: 1px; background: var(--border); flex-shrink: 0; }
+
+    /* ── Page layout ── */
+    .page-content {
+      position: relative; z-index: 1;
+      max-width: 960px; margin: 0 auto;
+      padding: 32px 16px 60px;
     }
-    .muscle-path.treated {
-      fill: #10b981 !important;
-      stroke: #059669 !important;
-      stroke-width: 1.5 !important;
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
-    .muscle-path.follow-up {
-      fill: #f59e0b !important;
-      stroke: #d97706 !important;
-      stroke-width: 1.5 !important;
+    .card-header-bar {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      padding: 20px 28px;
+      color: white;
+    }
+    .card-header-bar h2 { font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
+    .card-header-bar p { font-size: 0.78rem; opacity: 0.8; }
+    .card-body { padding: 24px 28px; }
+    .card-footer { padding: 16px 28px; border-top: 1px solid var(--border); background: #f7faff; }
+
+    .card-plain { background: var(--bg-card); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
+    .card-plain .cp-head {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.88rem; font-weight: 700; color: var(--primary);
+    }
+    .card-plain .cp-head i { color: var(--accent); font-size: 0.9rem; }
+    .card-plain .cp-body { padding: 18px 20px; }
+
+    /* ── Grid ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    .col-span-2 { grid-column: span 2; }
+    @media (max-width: 768px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .col-span-2 { grid-column: span 1; }
     }
 
-    .tab-btn.active {
-      border-bottom: 2px solid #7c3aed;
-      color: #7c3aed;
-      font-weight: 600;
+    /* ── Form fields ── */
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: 0.78rem; font-weight: 700;
+      color: var(--primary); margin-bottom: 6px; letter-spacing: 0.3px;
     }
-    
-    .soap-section {
-      border-left: 4px solid;
-      padding-left: 1rem;
+    .field label .req { color: var(--accent); }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 10px 14px;
+      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      font-family: var(--font); font-size: 0.85rem; color: var(--text);
+      background: #fff; transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
     }
-    .soap-s { border-color: #3b82f6; }
-    .soap-o { border-color: #10b981; }
-    .soap-a { border-color: #f59e0b; }
-    .soap-p { border-color: #8b5cf6; }
-    .soap-n { border-color: #6b7280; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(91,163,217,0.15);
+    }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .field-row { display: flex; gap: 14px; }
+    .field-row > * { flex: 1; min-width: 0; }
+    @media (max-width: 540px) { .field-row { flex-direction: column; } }
 
-    textarea { resize: vertical; }
-    
-    .step-indicator {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 2rem;
-      height: 2rem;
-      border-radius: 50%;
-      font-weight: 700;
-      font-size: 0.875rem;
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 22px; border-radius: 50px;
+      font-family: var(--font); font-size: 0.85rem; font-weight: 700;
+      cursor: pointer; transition: all 0.2s; border: none; outline: none;
+      text-decoration: none;
     }
-    .step-active { background: #7c3aed; color: white; }
-    .step-done { background: #10b981; color: white; }
-    .step-pending { background: #e5e7eb; color: #6b7280; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-light); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(27,58,107,0.25); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .btn-accent { background: var(--accent); color: white; }
+    .btn-accent:hover { background: #4a8fc0; transform: translateY(-1px); }
+    .btn-outline { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
+    .btn-outline:hover { background: var(--primary); color: white; }
+    .btn-ghost { background: transparent; color: var(--text-light); border: 1.5px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg); color: var(--text); border-color: var(--primary); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #c53030; }
+    .btn-sm { padding: 7px 16px; font-size: 0.78rem; }
+    .btn-lg { padding: 13px 36px; font-size: 0.95rem; }
+    .btn-full { width: 100%; justify-content: center; border-radius: var(--radius-sm); }
 
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border-radius: 50px;
+      font-size: 0.72rem; font-weight: 700;
+    }
+    .badge-success { background: #e6f7ed; color: var(--success); }
+    .badge-accent { background: #e8f4fc; color: var(--accent); }
+    .badge-warning { background: var(--warning-bg); color: var(--warning-txt); }
+    .badge-primary { background: #e2ebf7; color: var(--primary); }
+
+    /* ── Integration client chips ── */
+    .client-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 14px; border-radius: 50px;
+      border: 1.5px solid var(--border);
+      background: #f7faff; cursor: pointer;
+      transition: all 0.15s; font-size: 0.82rem;
+    }
+    .client-chip:hover { border-color: var(--accent); background: #e8f4fc; }
+    .client-chip .chip-avatar {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--primary); color: white;
+      font-size: 0.68rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .client-chip .chip-name { font-weight: 600; color: var(--primary); }
+    .client-chip .chip-ago { font-size: 0.7rem; color: var(--text-light); }
+
+    /* ── Drop zone ── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 32px 20px; text-align: center;
+      cursor: pointer; transition: all 0.2s;
+      background: #f7faff;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent); background: #e8f4fc;
+    }
+    .drop-zone .dz-icon {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: #e2ebf7; margin: 0 auto 12px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .drop-zone .dz-icon i { color: var(--primary); font-size: 1.3rem; }
+    .drop-zone p { font-size: 0.85rem; color: var(--text); font-weight: 600; }
+    .drop-zone .dz-sub { font-size: 0.75rem; color: var(--text-light); margin-top: 4px; }
+
+    /* ── Muscle map ── */
+    .muscle-path { cursor: pointer; transition: all 0.2s ease; stroke-width: 0.5; }
+    .muscle-path:hover { opacity: 0.75; filter: brightness(0.85); }
+    .muscle-path.treated { fill: #38a169 !important; stroke: #276749 !important; stroke-width: 1.5 !important; }
+    .muscle-path.follow-up { fill: #d69e2e !important; stroke: #b7791f !important; stroke-width: 1.5 !important; }
     .muscle-tooltip {
       position: fixed;
-      background: rgba(15,23,42,0.95);
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      pointer-events: none;
-      z-index: 9999;
-      white-space: nowrap;
-      transform: translate(-50%, -120%);
+      background: rgba(27,58,107,0.95); color: white;
+      padding: 6px 12px; border-radius: 6px; font-size: 11px;
+      pointer-events: none; z-index: 9999; white-space: nowrap;
+      font-family: var(--font); font-weight: 600;
+      transform: translate(-50%, -130%);
+    }
+    .view-toggle {
+      display: flex; background: var(--bg); border-radius: var(--radius-sm);
+      padding: 3px; gap: 3px; border: 1px solid var(--border);
+    }
+    .view-toggle button {
+      padding: 6px 16px; border-radius: 6px; border: none;
+      font-family: var(--font); font-size: 0.78rem; font-weight: 600;
+      color: var(--text-light); cursor: pointer; transition: all 0.15s;
+      background: transparent;
+    }
+    .view-toggle button.active { background: var(--primary); color: white; }
+
+    /* ── Muscle legend dots ── */
+    .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+    /* ── Technique checkboxes ── */
+    .technique-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm); cursor: pointer;
+      font-size: 0.8rem; font-weight: 500; color: var(--text);
+      transition: all 0.15s; background: #fff;
+    }
+    .technique-item:hover { border-color: var(--accent); background: #f0f8ff; }
+    .technique-item input { accent-color: var(--primary); width: 15px; height: 15px; flex-shrink: 0; }
+    .technique-item input:checked + span { color: var(--primary); font-weight: 600; }
+
+    /* ── SOAP sections ── */
+    .soap-block { border-left: 4px solid; padding-left: 14px; margin-bottom: 4px; }
+    .soap-s { border-color: #5ba3d9; }
+    .soap-o { border-color: #38a169; }
+    .soap-a { border-color: #d69e2e; }
+    .soap-p { border-color: #805ad5; }
+    .soap-n { border-color: #718096; }
+    .soap-letter {
+      width: 30px; height: 30px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.88rem; font-weight: 800; flex-shrink: 0;
+    }
+    .soap-letter-s { background: #e8f4fc; color: #5ba3d9; }
+    .soap-letter-o { background: #e6f7ed; color: #38a169; }
+    .soap-letter-a { background: #fef9e8; color: #d69e2e; }
+    .soap-letter-p { background: #f3eeff; color: #805ad5; }
+    .soap-letter-n { background: #f1f5f9; color: #718096; }
+    .soap-textarea {
+      width: 100%; background: transparent; border: none; outline: none;
+      font-family: var(--font); font-size: 0.85rem; color: var(--text);
+      line-height: 1.7; resize: none; padding: 0;
     }
 
+    /* ── Summary panel ── */
+    .summary-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 0; border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    .summary-row:last-child { border-bottom: none; }
+    .summary-row .sr-label { color: var(--text-light); font-weight: 500; }
+    .summary-row .sr-val { font-weight: 700; color: var(--primary); }
+
+    /* ── Muscle list chips (selected) ── */
+    .muscle-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 50px; font-size: 0.72rem; font-weight: 600;
+      margin: 2px 3px 2px 0;
+    }
+    .muscle-chip-treated { background: #e6f7ed; color: #276749; border: 1px solid #c6f6d5; }
+    .muscle-chip-followup { background: #fef9e8; color: #b7791f; border: 1px solid #fef08a; }
+
+    /* ── Shimmer ── */
     .shimmer {
-      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background: linear-gradient(90deg, #e2ebf7 25%, #d0dff0 50%, #e2ebf7 75%);
       background-size: 200% 100%;
       animation: shimmer 1.5s infinite;
+      border-radius: 6px;
     }
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--primary); color: white;
+      padding: 10px 24px; border-radius: 50px;
+      font-family: var(--font); font-size: 0.82rem; font-weight: 600;
+      box-shadow: 0 4px 20px rgba(27,58,107,0.3);
+      z-index: 10000; opacity: 0; transition: all 0.3s; pointer-events: none;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Info box ── */
+    .info-box {
+      padding: 14px 16px; border-radius: var(--radius-sm);
+      font-size: 0.8rem; line-height: 1.6;
+    }
+    .info-box-blue { background: #e8f4fc; border: 1px solid #bee3f8; color: #1a5276; }
+    .info-box-yellow { background: var(--warning-bg); border: 1px solid #fde68a; color: var(--warning-txt); }
+    .info-box-green { background: #e6f7ed; border: 1px solid #c6f6d5; color: #276749; }
+    .info-box p { margin: 0; }
+    .info-box strong { font-weight: 700; }
+
+    /* ── PDF upload status ── */
+    .pdf-status {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; background: #e6f7ed;
+      border: 1px solid #c6f6d5; border-radius: var(--radius-sm);
+      font-size: 0.82rem; color: #276749; font-weight: 600;
     }
 
-    .view-toggle button.active {
-      background: #7c3aed;
-      color: white;
+    /* ── Modal ── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(27,58,107,0.45);
+      backdrop-filter: blur(3px); z-index: 500;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
     }
+    .modal-backdrop.hidden, .modal-backdrop[style*="display:none"] { display: none !important; }
+    .modal-box {
+      background: white; border-radius: var(--radius);
+      box-shadow: 0 20px 60px rgba(27,58,107,0.25);
+      width: 100%; overflow: hidden;
+    }
+    .modal-header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      padding: 18px 24px; color: white;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header h3 { font-size: 0.95rem; font-weight: 700; }
+    .modal-header p { font-size: 0.75rem; opacity: 0.8; margin-top: 2px; }
+    .modal-close {
+      background: rgba(255,255,255,0.15); border: none; color: white;
+      width: 30px; height: 30px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 0.85rem; transition: background 0.15s;
+    }
+    .modal-close:hover { background: rgba(255,255,255,0.3); }
+    .modal-body { padding: 20px 24px; overflow-y: auto; max-height: 65vh; }
+    .modal-footer { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 
-    scrollbar-width: thin;
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #f1f5f9; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Footer ── */
+    .site-footer {
+      position: relative; z-index: 1;
+      background: var(--primary);
+      color: rgba(255,255,255,0.75);
+      text-align: center;
+      padding: 16px 24px;
+      font-size: 0.78rem;
+    }
+    .site-footer a { color: rgba(255,255,255,0.75); text-decoration: none; }
+    .site-footer a:hover { color: white; }
+
+    /* ── Responsive ── */
+    @media (max-width: 760px) {
+      [style*="1fr 300px"],
+      [style*="1fr 280px"] {
+        grid-template-columns: 1fr !important;
+      }
+    }
+    @media (max-width: 620px) {
+      .page-content { padding: 16px 14px 48px; }
+      .card-body { padding: 16px 18px; }
+      .card-header-bar { padding: 16px 18px; }
+      .header-inner { padding: 16px 16px 10px; }
+      .header-logo { height: 52px; }
+      .header-actions { right: 16px; }
+    }
   </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
+<body>
+  <div class="bg-wave"></div>
 
   <!-- Header -->
-  <header class="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center">
-          <i class="fas fa-notes-medical text-white text-sm"></i>
-        </div>
-        <div>
-          <h1 class="text-lg font-bold text-slate-800">SOAP Note Generator</h1>
-          <p class="text-xs text-slate-500">Massage Therapy Documentation</p>
+  <header class="site-header">
+    <div class="header-inner">
+      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"
+           onerror="this.src=''; this.onerror=null; this.style.display='none'; document.getElementById('fallbackLogo').style.display='flex'"/>
+      <div id="fallbackLogo" style="display:none; flex-direction:column; align-items:center; gap:4px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:40px;height:40px;border-radius:10px;background:var(--primary);display:flex;align-items:center;justify-content:center;">
+            <i class="fas fa-notes-medical" style="color:white;font-size:1.1rem;"></i>
+          </div>
+          <div>
+            <div style="font-size:1.1rem;font-weight:800;color:var(--primary);">Flexion &amp; Flow</div>
+            <div style="font-size:0.72rem;color:var(--text-light);font-weight:500;">Remedial Massage</div>
+          </div>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <span id="statusBadge" class="hidden text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-medium">
-          <i class="fas fa-check-circle mr-1"></i>Note Ready
+      <div class="header-actions">
+        <span id="statusBadge" class="badge badge-success" style="display:none">
+          <i class="fas fa-check-circle"></i> Note Ready
         </span>
-        <button onclick="resetAll()" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
-          <i class="fas fa-rotate-right mr-1"></i>New Session
+        <button onclick="resetAll()" class="btn btn-ghost btn-sm">
+          <i class="fas fa-rotate-right"></i> New Session
         </button>
       </div>
     </div>
   </header>
 
-  <!-- Progress Steps -->
-  <div class="bg-white border-b border-slate-200">
-    <div class="max-w-7xl mx-auto px-4 py-3">
-      <div class="flex items-center gap-2 overflow-x-auto">
-        <div class="flex items-center gap-2 whitespace-nowrap cursor-pointer" onclick="goToStep(1)">
-          <div class="step-indicator step-active" id="step1">1</div>
-          <span class="text-sm font-medium text-slate-700">Client Intake</span>
-        </div>
-        <div class="h-px w-8 bg-slate-300 flex-shrink-0"></div>
-        <div class="flex items-center gap-2 whitespace-nowrap cursor-pointer" onclick="goToStep(2)">
-          <div class="step-indicator step-pending" id="step2">2</div>
-          <span class="text-sm text-slate-500" id="stepLabel2">Muscle Map</span>
-        </div>
-        <div class="h-px w-8 bg-slate-300 flex-shrink-0"></div>
-        <div class="flex items-center gap-2 whitespace-nowrap cursor-pointer" onclick="goToStep(3)">
-          <div class="step-indicator step-pending" id="step3">3</div>
-          <span class="text-sm text-slate-500" id="stepLabel3">Session Notes</span>
-        </div>
-        <div class="h-px w-8 bg-slate-300 flex-shrink-0"></div>
-        <div class="flex items-center gap-2 whitespace-nowrap cursor-pointer" onclick="goToStep(4)">
-          <div class="step-indicator step-pending" id="step4">4</div>
-          <span class="text-sm text-slate-500" id="stepLabel4">SOAP Notes</span>
-        </div>
+  <!-- Step Bar -->
+  <nav class="step-bar">
+    <div class="step-bar-inner">
+      <div class="step-item active" id="stepItem1" onclick="goToStep(1)">
+        <div class="step-num" id="stepNum1">1</div>
+        <span class="step-label">Client Intake</span>
+      </div>
+      <div class="step-sep"></div>
+      <div class="step-item" id="stepItem2" onclick="goToStep(2)">
+        <div class="step-num" id="stepNum2">2</div>
+        <span class="step-label" id="stepLabel2">Muscle Map</span>
+      </div>
+      <div class="step-sep"></div>
+      <div class="step-item" id="stepItem3" onclick="goToStep(3)">
+        <div class="step-num" id="stepNum3">3</div>
+        <span class="step-label" id="stepLabel3">Session Notes</span>
+      </div>
+      <div class="step-sep"></div>
+      <div class="step-item" id="stepItem4" onclick="goToStep(4)">
+        <div class="step-num" id="stepNum4">4</div>
+        <span class="step-label" id="stepLabel4">SOAP Notes</span>
       </div>
     </div>
-  </div>
+  </nav>
 
-  <div class="max-w-7xl mx-auto px-4 py-6">
+  <main class="page-content">
 
-    <!-- STEP 1: Client Intake -->
-    <div id="panel1" class="step-panel">
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- ═══════════════════════════════════════
+         STEP 1: CLIENT INTAKE
+         ═══════════════════════════════════════ -->
+    <div id="panel1" class="step-panel active">
 
-        <!-- Client Profiles (Flexion & Flow Integration) -->
-        <div class="bg-white rounded-2xl shadow-sm border border-violet-200 p-6 lg:col-span-2">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-semibold text-slate-800">
-              <i class="fas fa-users text-violet-500 mr-2"></i>Client Profiles
-              <span class="ml-2 text-xs font-normal text-violet-500 bg-violet-50 px-2 py-0.5 rounded-full">Flexion &amp; Flow Integration</span>
-            </h2>
-            <div class="flex items-center gap-2">
-              <button onclick="openClientBrowser()" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+      <!-- Client Profiles Integration Banner -->
+      <div class="card" style="margin-bottom:20px; border: 1.5px solid var(--accent);">
+        <div class="card-header-bar" style="padding:16px 24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <i class="fas fa-users" style="font-size:1.1rem;opacity:0.9;"></i>
+              <div>
+                <h2 style="margin:0;font-size:0.95rem;">Client Profiles</h2>
+                <p style="margin:0;font-size:0.72rem;opacity:0.8;">Synced from Flexion &amp; Flow Intake Form</p>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="openClientBrowser()" class="btn btn-sm" style="background:white;color:var(--primary);border-radius:50px;">
                 <i class="fas fa-search"></i> Browse Clients
               </button>
-              <button onclick="openWebhookConfig()" class="border border-slate-200 text-slate-500 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5" title="Configure intake form webhook URL">
+              <button onclick="openWebhookConfig()" class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border-radius:50px;border:1px solid rgba(255,255,255,0.3);" title="Configure integration">
                 <i class="fas fa-link"></i> Setup
               </button>
             </div>
           </div>
-          <div id="clientProfilesPreview" class="flex flex-wrap gap-2">
-            <p class="text-xs text-slate-400 italic" id="noClientsMsg">No client profiles saved yet. Connect your Flexion &amp; Flow intake form to auto-populate clients, or upload a PDF below.</p>
+        </div>
+        <div style="padding:14px 24px 16px;">
+          <div id="clientProfilesPreview" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <p style="font-size:0.8rem;color:var(--text-light);font-style:italic;" id="noClientsMsg">
+              No client profiles yet — connect your intake form or upload a PDF below.
+            </p>
           </div>
-          <!-- Webhook config info banner -->
-          <div id="webhookBanner" class="hidden mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
-            <i class="fas fa-info-circle mr-1"></i>
-            <strong>Integration active.</strong> Clients who submit the intake form will appear here automatically.
-            Your webhook URL: <code id="webhookUrlDisplay" class="bg-blue-100 px-1 rounded ml-1 select-all"></code>
+          <div id="webhookBanner" style="display:none;margin-top:10px;" class="info-box info-box-blue">
+            <i class="fas fa-circle-check" style="margin-right:6px;"></i>
+            <strong>Integration active.</strong> New intake form submissions appear here automatically.
+            Webhook: <code id="webhookUrlDisplay" style="background:rgba(91,163,217,0.15);padding:1px 6px;border-radius:4px;font-size:0.75rem;"></code>
           </div>
         </div>
-        
+      </div>
+
+      <div class="grid-2" style="gap:20px;">
+
         <!-- Upload PDF -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h2 class="text-base font-semibold text-slate-800 mb-4">
-            <i class="fas fa-file-upload text-violet-500 mr-2"></i>Upload Client Intake Form
-          </h2>
-          <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-violet-400 hover:bg-violet-50 transition cursor-pointer"
-               onclick="document.getElementById('pdfInput').click()"
-               ondragover="handleDragOver(event)"
-               ondrop="handleDrop(event)">
-            <div class="w-14 h-14 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <i class="fas fa-file-pdf text-violet-500 text-2xl"></i>
+        <div class="card">
+          <div class="card-header-bar">
+            <h2><i class="fas fa-file-upload" style="margin-right:8px;opacity:0.8;"></i>Upload Intake Form PDF</h2>
+            <p>Auto-extracts client information from the Flexion &amp; Flow intake PDF</p>
+          </div>
+          <div class="card-body">
+            <div id="dropZone" class="drop-zone"
+                 onclick="document.getElementById('pdfInput').click()"
+                 ondragover="handleDragOver(event)"
+                 ondrop="handleDrop(event)">
+              <div class="dz-icon"><i class="fas fa-file-pdf"></i></div>
+              <p>Drop PDF here or click to browse</p>
+              <p class="dz-sub">Flexion &amp; Flow intake forms supported</p>
+              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none" onchange="handlePDFUpload(event)"/>
             </div>
-            <p class="text-slate-600 font-medium">Drop PDF here or click to browse</p>
-            <p class="text-slate-400 text-sm mt-1">Supports PDF intake forms</p>
-            <input type="file" id="pdfInput" accept=".pdf" class="hidden" onchange="handlePDFUpload(event)"/>
-          </div>
-          <div id="pdfStatus" class="hidden mt-3 flex items-center gap-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-            <i class="fas fa-check-circle text-emerald-500"></i>
-            <span id="pdfFileName" class="text-sm text-emerald-700 font-medium"></span>
-            <button onclick="clearPDF()" class="ml-auto text-slate-400 hover:text-red-500">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-          <div id="pdfParseProgress" class="hidden mt-3">
-            <div class="flex items-center gap-2 text-sm text-slate-500">
-              <i class="fas fa-spinner fa-spin text-violet-500"></i>
-              <span>Extracting text from PDF...</span>
+            <div id="pdfStatus" style="display:none;margin-top:12px;" class="pdf-status">
+              <i class="fas fa-check-circle" style="color:var(--success);font-size:1rem;"></i>
+              <span id="pdfFileName"></span>
+              <button onclick="clearPDF()" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <div id="pdfParseProgress" style="display:none;margin-top:10px;font-size:0.8rem;color:var(--text-light);display:none;align-items:center;gap:8px;">
+              <i class="fas fa-spinner fa-spin" style="color:var(--accent);"></i>
+              <span>Extracting text from PDF…</span>
             </div>
           </div>
         </div>
 
-        <!-- Manual Client Info -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h2 class="text-base font-semibold text-slate-800 mb-4">
-            <i class="fas fa-user text-violet-500 mr-2"></i>Client Information
-          </h2>
-          <div class="space-y-3">
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-medium text-slate-600 block mb-1">First Name</label>
-                <input id="clientFirstName" type="text" placeholder="Jane" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+        <!-- Client Info -->
+        <div class="card">
+          <div class="card-header-bar">
+            <h2><i class="fas fa-user" style="margin-right:8px;opacity:0.8;"></i>Client Information</h2>
+            <p>Auto-filled from PDF upload or client profile</p>
+          </div>
+          <div class="card-body">
+            <div class="field-row">
+              <div class="field">
+                <label>First Name <span class="req">*</span></label>
+                <input id="clientFirstName" type="text" placeholder="Jane" />
               </div>
-              <div>
-                <label class="text-xs font-medium text-slate-600 block mb-1">Last Name</label>
-                <input id="clientLastName" type="text" placeholder="Smith" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-medium text-slate-600 block mb-1">Date of Birth</label>
-                <input id="clientDOB" type="date" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
-              </div>
-              <div>
-                <label class="text-xs font-medium text-slate-600 block mb-1">Session Date</label>
-                <input id="sessionDate" type="date" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+              <div class="field">
+                <label>Last Name <span class="req">*</span></label>
+                <input id="clientLastName" type="text" placeholder="Smith" />
               </div>
             </div>
-            <div>
-              <label class="text-xs font-medium text-slate-600 block mb-1">Chief Complaint / Reason for Visit</label>
-              <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches..." class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-medium text-slate-600 block mb-1">Pain Level (0-10)</label>
-                <input id="painLevel" type="number" min="0" max="10" placeholder="7" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+            <div class="field-row">
+              <div class="field">
+                <label>Date of Birth</label>
+                <input id="clientDOB" type="date" />
               </div>
-              <div>
-                <label class="text-xs font-medium text-slate-600 block mb-1">Session Duration</label>
-                <select id="sessionDuration" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+              <div class="field">
+                <label>Session Date</label>
+                <input id="sessionDate" type="date" />
+              </div>
+            </div>
+            <div class="field">
+              <label>Chief Complaint / Reason for Visit</label>
+              <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches…" />
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>Pain Level (0–10)</label>
+                <input id="painLevel" type="number" min="0" max="10" placeholder="7" />
+              </div>
+              <div class="field">
+                <label>Session Duration</label>
+                <select id="sessionDuration">
                   <option value="30 min">30 min</option>
                   <option value="45 min">45 min</option>
                   <option value="60 min" selected>60 min</option>
@@ -390,481 +737,492 @@ function renderApp(): string {
                 </select>
               </div>
             </div>
-            <div>
-              <label class="text-xs font-medium text-slate-600 block mb-1">Medications / Contraindications</label>
-              <input id="medications" type="text" placeholder="e.g. Blood thinners, NSAIDs..." class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+            <div class="field">
+              <label>Medications / Contraindications</label>
+              <input id="medications" type="text" placeholder="e.g. Blood thinners, NSAIDs…" />
             </div>
           </div>
         </div>
 
-        <!-- Extracted PDF Data -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2">
-          <div class="flex items-center justify-between mb-3">
-            <h2 class="text-base font-semibold text-slate-800">
-              <i class="fas fa-clipboard-list text-violet-500 mr-2"></i>Intake Form Data
-            </h2>
-            <span class="text-xs text-slate-400">Auto-filled from PDF or enter manually</span>
+        <!-- Intake Form Data -->
+        <div class="card col-span-2">
+          <div class="card-header-bar" style="padding:14px 24px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <h2 style="font-size:0.9rem;"><i class="fas fa-clipboard-list" style="margin-right:8px;opacity:0.8;"></i>Intake Form Data</h2>
+              <span style="font-size:0.72rem;opacity:0.75;">Auto-filled from PDF or enter manually</span>
+            </div>
           </div>
-          <textarea id="intakeFormData" rows="5" placeholder="Intake form data will appear here after PDF upload, or type manually...&#10;&#10;Include: medical history, current conditions, allergies, medications, past injuries, client goals, etc."
-            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"></textarea>
-          <div class="flex justify-end mt-4">
-            <button onclick="goToStep(2)" class="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2">
+          <div class="card-body">
+            <textarea id="intakeFormData" rows="5"
+              placeholder="Intake form data will appear here after PDF upload, or type manually…&#10;&#10;Include: medical history, current conditions, allergies, medications, past injuries, client goals, etc."
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
+              onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
+              onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"></textarea>
+          </div>
+          <div class="card-footer" style="display:flex;justify-content:flex-end;">
+            <button onclick="goToStep(2)" class="btn btn-primary">
               Next: Select Muscles <i class="fas fa-arrow-right"></i>
             </button>
           </div>
         </div>
+
       </div>
     </div>
 
-    <!-- STEP 2: Muscle Map -->
-    <div id="panel2" class="step-panel hidden">
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        <!-- Muscle Map -->
-        <div class="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-semibold text-slate-800">
-              <i class="fas fa-person text-violet-500 mr-2"></i>Interactive Muscle Map
-            </h2>
-            <div class="view-toggle flex bg-slate-100 rounded-lg p-1 gap-1">
-              <button id="btnAnterior" onclick="setView('anterior')" class="active px-3 py-1 text-xs rounded-md font-medium transition">Anterior</button>
-              <button id="btnPosterior" onclick="setView('posterior')" class="px-3 py-1 text-xs rounded-md font-medium transition">Posterior</button>
-            </div>
-          </div>
-          
-          <!-- Legend -->
-          <div class="flex flex-wrap gap-3 mb-4">
-            <div class="flex items-center gap-1.5 text-xs text-slate-600">
-              <div class="w-3 h-3 rounded-sm bg-slate-300 border border-slate-400"></div>
-              <span>Unselected</span>
-            </div>
-            <div class="flex items-center gap-1.5 text-xs text-slate-600">
-              <div class="w-3 h-3 rounded-sm bg-emerald-400 border border-emerald-600"></div>
-              <span>Treated</span>
-            </div>
-            <div class="flex items-center gap-1.5 text-xs text-slate-600">
-              <div class="w-3 h-3 rounded-sm bg-amber-400 border border-amber-600"></div>
-              <span>Needs Follow-up</span>
-            </div>
-            <div class="ml-auto flex items-center gap-2 text-xs text-slate-500">
-              <i class="fas fa-hand-pointer text-violet-400"></i>
-              Click once = treated · Click twice = follow-up · Click 3x = clear
-            </div>
-          </div>
+    <!-- ═══════════════════════════════════════
+         STEP 2: MUSCLE MAP
+         ═══════════════════════════════════════ -->
+    <div id="panel2" class="step-panel">
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:20px;">
 
-          <!-- SVG Muscle Body -->
-          <div class="flex justify-center overflow-auto">
-            <div id="muscleMapContainer" style="min-width:300px; max-width:500px; width:100%;">
-              <!-- SVG injected by JS -->
+        <!-- Map card -->
+        <div class="card">
+          <div class="card-header-bar">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+              <div>
+                <h2><i class="fas fa-person" style="margin-right:8px;opacity:0.8;"></i>Interactive Muscle Map</h2>
+                <p>Click muscles to mark as treated or needing follow-up</p>
+              </div>
+              <div class="view-toggle">
+                <button id="btnAnterior" onclick="setView('anterior')" class="active">Anterior</button>
+                <button id="btnPosterior" onclick="setView('posterior')">Posterior</button>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- Legend -->
+            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px;align-items:center;">
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
+                <div class="legend-dot" style="background:#d0dff0;border:1px solid #a0bbd8;"></div> Unselected
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
+                <div class="legend-dot" style="background:#38a169;border:1px solid #276749;"></div> Treated
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
+                <div class="legend-dot" style="background:#d69e2e;border:1px solid #b7791f;"></div> Needs Follow-up
+              </div>
+              <div style="margin-left:auto;font-size:0.75rem;color:var(--text-light);">
+                <i class="fas fa-hand-pointer" style="color:var(--accent);margin-right:4px;"></i>
+                Click once = treated · Twice = follow-up · 3× = clear
+              </div>
+            </div>
+            <div style="display:flex;justify-content:center;overflow:auto;">
+              <div id="muscleMapContainer" style="min-width:280px;max-width:480px;width:100%;"></div>
             </div>
           </div>
         </div>
 
-        <!-- Selected Muscles Panel -->
-        <div class="space-y-4">
-          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-            <h3 class="font-semibold text-slate-800 text-sm mb-3">
-              <i class="fas fa-list-check text-violet-500 mr-2"></i>Selected Muscles
-            </h3>
-            
-            <div class="mb-3">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></div>
-                <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Treated</span>
-              </div>
-              <div id="treatedList" class="space-y-1 min-h-8">
-                <p class="text-xs text-slate-400 italic">None selected</p>
-              </div>
+        <!-- Selected muscles + nav -->
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="card-plain">
+            <div class="cp-head">
+              <i class="fas fa-list-check"></i> Selected Muscles
             </div>
-
-            <div>
-              <div class="flex items-center gap-2 mb-2">
-                <div class="w-2.5 h-2.5 rounded-sm bg-amber-400"></div>
-                <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Follow-up Needed</span>
+            <div class="cp-body">
+              <div style="margin-bottom:14px;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                  <div class="legend-dot" style="background:#38a169;border:1px solid #276749;"></div>
+                  <span style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;">Treated</span>
+                </div>
+                <div id="treatedList" style="min-height:24px;">
+                  <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>
+                </div>
               </div>
-              <div id="followupList" class="space-y-1 min-h-8">
-                <p class="text-xs text-slate-400 italic">None selected</p>
+              <div>
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                  <div class="legend-dot" style="background:#d69e2e;border:1px solid #b7791f;"></div>
+                  <span style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;">Follow-up Needed</span>
+                </div>
+                <div id="followupList" style="min-height:24px;">
+                  <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>
+                </div>
               </div>
+              <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;">
+                <i class="fas fa-times"></i> Clear All
+              </button>
             </div>
-
-            <button onclick="clearAllMuscles()" class="mt-4 w-full text-xs text-slate-500 hover:text-red-500 py-2 border border-slate-200 rounded-lg hover:border-red-300 transition">
-              <i class="fas fa-times mr-1"></i>Clear All
-            </button>
           </div>
 
-          <div class="bg-violet-50 border border-violet-200 rounded-2xl p-4">
-            <p class="text-xs text-violet-700 font-medium mb-1">
-              <i class="fas fa-lightbulb mr-1"></i>Quick Tip
-            </p>
-            <p class="text-xs text-violet-600">Use the anterior/posterior toggle to select muscles on both sides of the body. All selections carry over between views.</p>
+          <div class="info-box info-box-blue" style="font-size:0.78rem;">
+            <strong><i class="fas fa-lightbulb" style="margin-right:5px;"></i>Tip:</strong>
+            Toggle Anterior / Posterior to select muscles on both sides. All selections are retained.
           </div>
 
-          <div class="flex gap-2">
-            <button onclick="goToStep(1)" class="flex-1 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-              <i class="fas fa-arrow-left mr-1"></i>Back
+          <div style="display:flex;gap:10px;">
+            <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+              <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="goToStep(3)" class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition">
-              Next <i class="fas fa-arrow-right ml-1"></i>
+            <button onclick="goToStep(3)" class="btn btn-primary" style="flex:1;justify-content:center;">
+              Next <i class="fas fa-arrow-right"></i>
             </button>
           </div>
         </div>
+
       </div>
     </div>
 
-    <!-- STEP 3: Session Notes -->
-    <div id="panel3" class="step-panel hidden">
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h2 class="text-base font-semibold text-slate-800 mb-4">
-            <i class="fas fa-pen-to-square text-violet-500 mr-2"></i>Session Summary
-          </h2>
-          <div class="space-y-4">
-            <div>
-              <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">Techniques Used</label>
-              <div id="techniqueCheckboxes" class="grid grid-cols-2 gap-2">
-                <!-- Generated by JS -->
+    <!-- ═══════════════════════════════════════
+         STEP 3: SESSION NOTES
+         ═══════════════════════════════════════ -->
+    <div id="panel3" class="step-panel">
+      <div class="grid-2" style="gap:20px;">
+
+        <div class="card">
+          <div class="card-header-bar">
+            <h2><i class="fas fa-pen-to-square" style="margin-right:8px;opacity:0.8;"></i>Session Summary</h2>
+            <p>Describe what you found and what you did</p>
+          </div>
+          <div class="card-body">
+            <div class="field">
+              <label>Techniques Used</label>
+              <div id="techniqueCheckboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;"></div>
+            </div>
+            <div class="field" style="margin-top:4px;">
+              <label>Session Notes <span style="font-weight:400;color:var(--text-light);text-transform:none;">(describe what you found &amp; did)</span></label>
+              <textarea id="sessionSummary" rows="6"
+                placeholder="Describe your findings and treatment approach…&#10;&#10;e.g. Client presented with elevated tone in upper traps bilaterally. Significant trigger points at TP1 and TP2. Applied sustained pressure for 90s each. ROM improved post-treatment…"
+                style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;line-height:1.7;transition:border-color 0.2s,box-shadow 0.2s;"
+                onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
+                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"></textarea>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>Post-Session Pain (0–10)</label>
+                <input id="postPainLevel" type="number" min="0" max="10" placeholder="3" />
               </div>
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
-                Session Notes <span class="text-slate-400 normal-case font-normal">(describe what you found & did)</span>
-              </label>
-              <textarea id="sessionSummary" rows="6" placeholder="Describe your findings and treatment approach...&#10;&#10;e.g. Client presented with elevated tone in upper traps and levator scapulae bilaterally. Significant trigger points found at TP1 and TP2 of upper trapezius. Applied sustained pressure for 90 seconds each. ROM improved post-treatment. Client reported reduction in headache intensity..."
-                class="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 leading-relaxed"></textarea>
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">Post-Session Pain Level (0-10)</label>
-              <input id="postPainLevel" type="number" min="0" max="10" placeholder="3" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">Client Feedback / Response</label>
-              <textarea id="clientFeedback" rows="2" placeholder="e.g. Client reported significant relief in the neck area, felt relaxed, no adverse reactions..."
-                class="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"></textarea>
+              <div class="field">
+                <label>Client Feedback</label>
+                <input id="clientFeedback" type="text" placeholder="e.g. Significant relief in neck area…" />
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="space-y-4">
-          <!-- Summary Preview -->
-          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-            <h3 class="font-semibold text-slate-800 text-sm mb-3">
-              <i class="fas fa-eye text-violet-500 mr-2"></i>Session Summary
-            </h3>
-            <div class="space-y-2 text-xs text-slate-600">
-              <div class="flex justify-between">
-                <span class="text-slate-400">Client:</span>
-                <span id="summaryClient" class="font-medium">—</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Date:</span>
-                <span id="summaryDate" class="font-medium">—</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Duration:</span>
-                <span id="summaryDuration" class="font-medium">—</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Muscles treated:</span>
-                <span id="summaryMuscleCount" class="font-medium">0</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Follow-up needed:</span>
-                <span id="summaryFollowupCount" class="font-medium">0</span>
-              </div>
+        <div style="display:flex;flex-direction:column;gap:16px;">
+
+          <!-- Session preview -->
+          <div class="card-plain">
+            <div class="cp-head"><i class="fas fa-eye"></i> Session Preview</div>
+            <div class="cp-body">
+              <div class="summary-row"><span class="sr-label">Client</span><span class="sr-val" id="summaryClient">—</span></div>
+              <div class="summary-row"><span class="sr-label">Date</span><span class="sr-val" id="summaryDate">—</span></div>
+              <div class="summary-row"><span class="sr-label">Duration</span><span class="sr-val" id="summaryDuration">—</span></div>
+              <div class="summary-row"><span class="sr-label">Muscles treated</span><span class="sr-val" id="summaryMuscleCount">0</span></div>
+              <div class="summary-row"><span class="sr-label">Follow-up needed</span><span class="sr-val" id="summaryFollowupCount">0</span></div>
             </div>
           </div>
 
           <!-- API Key -->
-          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-            <h3 class="font-semibold text-slate-800 text-sm mb-2">
-              <i class="fas fa-key text-violet-500 mr-2"></i>OpenAI API Key
-            </h3>
-            <p class="text-xs text-slate-500 mb-2">Required to generate AI-powered SOAP notes</p>
-            <input id="openaiKey" type="password" placeholder="sk-..." class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 font-mono"/>
-            <p class="text-xs text-slate-400 mt-1.5"><i class="fas fa-lock mr-1"></i>Key is stored locally in your browser only</p>
+          <div class="card-plain">
+            <div class="cp-head"><i class="fas fa-key"></i> OpenAI API Key</div>
+            <div class="cp-body">
+              <p style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">Required to generate AI-powered SOAP notes</p>
+              <input id="openaiKey" type="password" placeholder="sk-…"
+                style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.82rem;color:var(--text);outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
+                onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
+                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"/>
+              <p style="font-size:0.72rem;color:var(--text-light);margin-top:6px;"><i class="fas fa-lock" style="margin-right:4px;"></i>Stored in your browser only — never sent to our servers</p>
+            </div>
           </div>
 
-          <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-            <p class="text-xs text-amber-800 font-medium mb-1"><i class="fas fa-triangle-exclamation mr-1"></i>Before Generating</p>
-            <p class="text-xs text-amber-700">Review your muscle selections and session notes. The AI will use all this information to generate comprehensive SOAP notes.</p>
+          <div class="info-box info-box-yellow">
+            <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Before Generating:</strong> Review your muscle selections and session notes. The AI will use all this information to create comprehensive SOAP documentation.</p>
           </div>
 
-          <div class="flex gap-2">
-            <button onclick="goToStep(2)" class="flex-1 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-              <i class="fas fa-arrow-left mr-1"></i>Back
+          <div style="display:flex;gap:10px;">
+            <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+              <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="generateSOAP()" id="generateBtn" class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+            <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
               <i class="fas fa-wand-magic-sparkles"></i> Generate SOAP
             </button>
           </div>
+
         </div>
       </div>
     </div>
 
-    <!-- STEP 4: SOAP Notes -->
-    <div id="panel4" class="step-panel hidden">
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
+    <!-- ═══════════════════════════════════════
+         STEP 4: SOAP NOTES
+         ═══════════════════════════════════════ -->
+    <div id="panel4" class="step-panel">
+      <div style="display:grid;grid-template-columns:1fr 280px;gap:20px;">
+
         <!-- SOAP Content -->
-        <div class="xl:col-span-2 space-y-4">
-          
+        <div style="display:flex;flex-direction:column;gap:16px;">
+
           <!-- Loading state -->
-          <div id="soapLoading" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
-            <div class="w-16 h-16 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i class="fas fa-wand-magic-sparkles text-violet-500 text-2xl fa-spin"></i>
-            </div>
-            <h3 class="font-semibold text-slate-700 mb-2">Generating SOAP Notes...</h3>
-            <p class="text-sm text-slate-500">AI is analyzing your session data and creating professional documentation</p>
-            <div class="mt-4 space-y-2">
-              <div class="h-3 shimmer rounded-full w-3/4 mx-auto"></div>
-              <div class="h-3 shimmer rounded-full w-1/2 mx-auto"></div>
-              <div class="h-3 shimmer rounded-full w-2/3 mx-auto"></div>
+          <div id="soapLoading" style="display:none;" class="card">
+            <div class="card-body" style="text-align:center;padding:48px 28px;">
+              <div style="width:64px;height:64px;border-radius:50%;background:#e2ebf7;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                <i class="fas fa-wand-magic-sparkles fa-spin" style="color:var(--primary);font-size:1.5rem;"></i>
+              </div>
+              <h3 style="font-size:1rem;font-weight:700;color:var(--primary);margin-bottom:8px;">Generating SOAP Notes…</h3>
+              <p style="font-size:0.82rem;color:var(--text-light);">AI is analysing your session data and creating professional documentation</p>
+              <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px;align-items:center;">
+                <div class="shimmer" style="height:12px;width:75%;"></div>
+                <div class="shimmer" style="height:12px;width:55%;"></div>
+                <div class="shimmer" style="height:12px;width:65%;"></div>
+              </div>
             </div>
           </div>
 
-          <!-- SOAP Sections -->
-          <div id="soapContent" class="hidden space-y-4">
-            
-            <!-- Header Card -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <h2 id="soapClientName" class="text-lg font-bold text-slate-800"></h2>
-                  <p id="soapMeta" class="text-sm text-slate-500 mt-0.5"></p>
+          <!-- SOAP sections -->
+          <div id="soapContent" style="display:none;flex-direction:column;gap:16px;">
+
+            <!-- Header -->
+            <div class="card">
+              <div class="card-header-bar">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                  <div>
+                    <h2 id="soapClientName" style="font-size:1.1rem;margin-bottom:2px;"></h2>
+                    <p id="soapMeta" style="opacity:0.8;font-size:0.78rem;"></p>
+                  </div>
+                  <div style="text-align:right;font-size:0.75rem;opacity:0.75;">
+                    <div id="soapDate"></div>
+                    <div id="soapDuration"></div>
+                  </div>
                 </div>
-                <div class="text-right text-xs text-slate-400">
-                  <p id="soapDate"></p>
-                  <p id="soapDuration"></p>
+                <div id="soapMusclesSummary" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:4px;"></div>
+              </div>
+            </div>
+
+            <!-- S -->
+            <div class="card">
+              <div class="card-body">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                  <div class="soap-letter soap-letter-s">S</div>
+                  <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Subjective</h3>
+                  <button onclick="copySection('S')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="soap-block soap-s">
+                  <textarea id="soapS" rows="4" class="soap-textarea"></textarea>
                 </div>
               </div>
-              <div id="soapMusclesSummary" class="mt-3 flex flex-wrap gap-1.5"></div>
             </div>
 
-            <!-- S - Subjective -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div class="flex items-center gap-2 mb-3">
-                <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">S</span>
-                <h3 class="font-semibold text-slate-800">Subjective</h3>
-                <button onclick="copySection('S')" class="ml-auto text-slate-400 hover:text-slate-600 text-xs"><i class="fas fa-copy"></i></button>
-              </div>
-              <div class="soap-section soap-s">
-                <textarea id="soapS" rows="4" class="w-full text-sm text-slate-700 leading-relaxed bg-transparent border-none outline-none resize-none p-0"></textarea>
-              </div>
-            </div>
-
-            <!-- O - Objective -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div class="flex items-center gap-2 mb-3">
-                <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-sm">O</span>
-                <h3 class="font-semibold text-slate-800">Objective</h3>
-                <button onclick="copySection('O')" class="ml-auto text-slate-400 hover:text-slate-600 text-xs"><i class="fas fa-copy"></i></button>
-              </div>
-              <div class="soap-section soap-o">
-                <textarea id="soapO" rows="5" class="w-full text-sm text-slate-700 leading-relaxed bg-transparent border-none outline-none resize-none p-0"></textarea>
+            <!-- O -->
+            <div class="card">
+              <div class="card-body">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                  <div class="soap-letter soap-letter-o">O</div>
+                  <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Objective</h3>
+                  <button onclick="copySection('O')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="soap-block soap-o">
+                  <textarea id="soapO" rows="5" class="soap-textarea"></textarea>
+                </div>
               </div>
             </div>
 
-            <!-- A - Assessment -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div class="flex items-center gap-2 mb-3">
-                <span class="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center font-bold text-sm">A</span>
-                <h3 class="font-semibold text-slate-800">Assessment</h3>
-                <button onclick="copySection('A')" class="ml-auto text-slate-400 hover:text-slate-600 text-xs"><i class="fas fa-copy"></i></button>
-              </div>
-              <div class="soap-section soap-a">
-                <textarea id="soapA" rows="4" class="w-full text-sm text-slate-700 leading-relaxed bg-transparent border-none outline-none resize-none p-0"></textarea>
-              </div>
-            </div>
-
-            <!-- P - Plan -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div class="flex items-center gap-2 mb-3">
-                <span class="w-7 h-7 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-sm">P</span>
-                <h3 class="font-semibold text-slate-800">Plan</h3>
-                <button onclick="copySection('P')" class="ml-auto text-slate-400 hover:text-slate-600 text-xs"><i class="fas fa-copy"></i></button>
-              </div>
-              <div class="soap-section soap-p">
-                <textarea id="soapP" rows="4" class="w-full text-sm text-slate-700 leading-relaxed bg-transparent border-none outline-none resize-none p-0"></textarea>
+            <!-- A -->
+            <div class="card">
+              <div class="card-body">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                  <div class="soap-letter soap-letter-a">A</div>
+                  <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Assessment</h3>
+                  <button onclick="copySection('A')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="soap-block soap-a">
+                  <textarea id="soapA" rows="4" class="soap-textarea"></textarea>
+                </div>
               </div>
             </div>
 
-            <!-- Therapist Notes -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div class="flex items-center gap-2 mb-3">
-                <span class="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">N</span>
-                <h3 class="font-semibold text-slate-800">Therapist Notes</h3>
-                <button onclick="copySection('N')" class="ml-auto text-slate-400 hover:text-slate-600 text-xs"><i class="fas fa-copy"></i></button>
+            <!-- P -->
+            <div class="card">
+              <div class="card-body">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                  <div class="soap-letter soap-letter-p">P</div>
+                  <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Plan</h3>
+                  <button onclick="copySection('P')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="soap-block soap-p">
+                  <textarea id="soapP" rows="4" class="soap-textarea"></textarea>
+                </div>
               </div>
-              <div class="soap-section soap-n">
-                <textarea id="soapN" rows="3" class="w-full text-sm text-slate-700 leading-relaxed bg-transparent border-none outline-none resize-none p-0"></textarea>
+            </div>
+
+            <!-- N -->
+            <div class="card">
+              <div class="card-body">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                  <div class="soap-letter soap-letter-n">N</div>
+                  <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Therapist Notes</h3>
+                  <button onclick="copySection('N')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="soap-block soap-n">
+                  <textarea id="soapN" rows="3" class="soap-textarea"></textarea>
+                </div>
               </div>
             </div>
 
             <!-- Signature -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <h3 class="font-semibold text-slate-800 text-sm mb-3">
-                <i class="fas fa-signature text-violet-500 mr-2"></i>Therapist Signature
-              </h3>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="text-xs text-slate-500 block mb-1">Therapist Name</label>
-                  <input id="therapistName" type="text" placeholder="Your full name" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
-                </div>
-                <div>
-                  <label class="text-xs text-slate-500 block mb-1">License / Credentials</label>
-                  <input id="therapistCredentials" type="text" placeholder="e.g. LMT, RMT, CMT" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+            <div class="card">
+              <div class="card-header-bar" style="padding:14px 24px;">
+                <h2 style="font-size:0.88rem;"><i class="fas fa-signature" style="margin-right:8px;opacity:0.8;"></i>Therapist Signature</h2>
+              </div>
+              <div class="card-body">
+                <div class="field-row">
+                  <div class="field"><label>Therapist Name</label><input id="therapistName" type="text" placeholder="Your full name" /></div>
+                  <div class="field"><label>Credentials</label><input id="therapistCredentials" type="text" placeholder="e.g. LMT, RMT, CMT" /></div>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
 
-        <!-- Action Panel -->
-        <div class="space-y-4">
-          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-            <h3 class="font-semibold text-slate-800 text-sm mb-3">
-              <i class="fas fa-file-export text-violet-500 mr-2"></i>Export & Actions
-            </h3>
-            <div class="space-y-2">
-              <button onclick="exportPDF()" class="w-full bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
-                <i class="fas fa-file-pdf"></i> Export as PDF
-              </button>
-              <button onclick="copyAllSOAP()" class="w-full border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2.5 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2">
-                <i class="fas fa-copy"></i> Copy All Text
-              </button>
-              <button onclick="regenerateSOAP()" class="w-full border border-violet-200 text-violet-600 hover:bg-violet-50 px-4 py-2.5 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2">
-                <i class="fas fa-rotate"></i> Regenerate
-              </button>
+        <!-- Right panel: Actions + Muscles -->
+        <div style="display:flex;flex-direction:column;gap:16px;">
+
+          <div class="card">
+            <div class="card-header-bar" style="padding:14px 20px;">
+              <h2 style="font-size:0.88rem;"><i class="fas fa-file-export" style="margin-right:8px;opacity:0.8;"></i>Export &amp; Actions</h2>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <button onclick="exportPDF()" class="btn btn-primary btn-full">
+                  <i class="fas fa-file-pdf"></i> Export as PDF
+                </button>
+                <button onclick="copyAllSOAP()" class="btn btn-outline btn-full">
+                  <i class="fas fa-copy"></i> Copy All Text
+                </button>
+                <button onclick="regenerateSOAP()" class="btn btn-ghost btn-full">
+                  <i class="fas fa-rotate"></i> Regenerate
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Muscles Summary -->
-          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-            <h3 class="font-semibold text-slate-800 text-sm mb-3">
-              <i class="fas fa-person text-violet-500 mr-2"></i>Muscles Reference
-            </h3>
-            <div id="soapMusclesList" class="space-y-1.5 text-xs text-slate-600"></div>
+          <div class="card-plain">
+            <div class="cp-head"><i class="fas fa-person"></i> Muscles Reference</div>
+            <div class="cp-body">
+              <div id="soapMusclesList" style="font-size:0.78rem;color:var(--text);"></div>
+            </div>
           </div>
 
-          <div class="flex gap-2">
-            <button onclick="goToStep(3)" class="flex-1 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-              <i class="fas fa-arrow-left mr-1"></i>Back
-            </button>
-            <button onclick="resetAll()" class="flex-1 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-              <i class="fas fa-plus mr-1"></i>New Session
-            </button>
+          <div style="display:flex;gap:10px;">
+            <button onclick="goToStep(3)" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
+            <button onclick="resetAll()" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
           </div>
+
         </div>
       </div>
     </div>
 
-  </div>
+  </main>
 
-  <!-- ============================================================ -->
-  <!-- CLIENT BROWSER MODAL                                          -->
-  <!-- ============================================================ -->
-  <div id="clientBrowserModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] hidden items-center justify-center p-4" style="display:none">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-      <div class="flex items-center justify-between p-5 border-b border-slate-100">
+  <!-- Footer -->
+  <footer class="site-footer">
+    <strong>Flexion &amp; Flow</strong> · Remedial Massage · SOAP Note Generator<br>
+    <span style="font-size:0.72rem;opacity:0.75;">4/207 Barkly St, Footscray VIC 3011 · 0420 435 950 · dylan@flexionandflow.com.au</span>
+  </footer>
+
+  <!-- ═══════════════════════════════════════
+       CLIENT BROWSER MODAL
+       ═══════════════════════════════════════ -->
+  <div id="clientBrowserModal" class="modal-backdrop hidden" style="display:none;">
+    <div class="modal-box" style="max-width:640px;max-height:90vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
         <div>
-          <h2 class="font-bold text-slate-800 text-lg"><i class="fas fa-users text-violet-500 mr-2"></i>Client Profiles</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Select a client to auto-fill their intake information</p>
+          <h3><i class="fas fa-users" style="margin-right:8px;opacity:0.8;"></i>Client Profiles</h3>
+          <p>Select a client to auto-fill their intake information</p>
         </div>
-        <button onclick="closeClientBrowser()" class="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100">
-          <i class="fas fa-times"></i>
-        </button>
+        <button class="modal-close" onclick="closeClientBrowser()"><i class="fas fa-times"></i></button>
       </div>
-      <div class="p-4 border-b border-slate-100">
-        <div class="relative">
-          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
-          <input id="clientSearch" type="text" placeholder="Search by name, email or phone..." oninput="filterClients()"
-            class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
+        <div style="position:relative;">
+          <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:0.8rem;"></i>
+          <input id="clientSearch" type="text" placeholder="Search by name, email or phone…"
+            oninput="filterClients()"
+            style="width:100%;padding:9px 12px 9px 34px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.82rem;outline:none;"
+            onfocus="this.style.borderColor='var(--accent)'"
+            onblur="this.style.borderColor='var(--border)'"/>
         </div>
       </div>
-      <div id="clientList" class="overflow-y-auto flex-1 p-4 space-y-2">
-        <!-- Populated by JS -->
-      </div>
-      <div class="p-4 border-t border-slate-100 flex items-center justify-between">
-        <span id="clientCount" class="text-xs text-slate-400"></span>
-        <button onclick="closeClientBrowser()" class="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition">Close</button>
+      <div id="clientList" class="modal-body" style="flex:1;"></div>
+      <div class="modal-footer">
+        <span id="clientCount" style="font-size:0.75rem;color:var(--text-light);"></span>
+        <button onclick="closeClientBrowser()" class="btn btn-ghost btn-sm">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- ============================================================ -->
-  <!-- WEBHOOK SETUP MODAL                                           -->
-  <!-- ============================================================ -->
-  <div id="webhookModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] hidden items-center justify-center p-4" style="display:none">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-      <div class="flex items-center justify-between p-5 border-b border-slate-100">
-        <h2 class="font-bold text-slate-800"><i class="fas fa-link text-violet-500 mr-2"></i>Flexion &amp; Flow Integration Setup</h2>
-        <button onclick="closeWebhookConfig()" class="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100">
-          <i class="fas fa-times"></i>
-        </button>
+  <!-- ═══════════════════════════════════════
+       WEBHOOK SETUP MODAL
+       ═══════════════════════════════════════ -->
+  <div id="webhookModal" class="modal-backdrop hidden" style="display:none;">
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fas fa-link" style="margin-right:8px;opacity:0.8;"></i>Flexion &amp; Flow Integration Setup</h3>
+          <p>Connect the intake form to this SOAP generator</p>
+        </div>
+        <button class="modal-close" onclick="closeWebhookConfig()"><i class="fas fa-times"></i></button>
       </div>
-      <div class="p-6 space-y-5">
-        <div class="bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm text-violet-800">
-          <p class="font-semibold mb-1"><i class="fas fa-plug mr-1"></i>How the integration works</p>
-          <ol class="list-decimal pl-4 space-y-1 text-xs">
-            <li>A client submits the Flexion &amp; Flow intake form</li>
-            <li>The intake form automatically sends their data here</li>
-            <li>The client profile appears in the "Browse Clients" panel</li>
+      <div class="modal-body">
+        <div class="info-box info-box-blue" style="margin-bottom:18px;">
+          <strong><i class="fas fa-plug" style="margin-right:5px;"></i>How it works:</strong>
+          <ol style="margin:8px 0 0 16px;font-size:0.78rem;line-height:1.8;">
+            <li>Client submits the Flexion &amp; Flow intake form</li>
+            <li>Form automatically sends their data to this app</li>
+            <li>Client profile appears in the Browse Clients panel</li>
             <li>Click their name to auto-fill a new SOAP session instantly</li>
           </ol>
         </div>
 
-        <div>
-          <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
-            This App's Webhook URL
-          </label>
-          <div class="flex gap-2">
+        <div class="field">
+          <label>This App's Webhook URL</label>
+          <div style="display:flex;gap:8px;">
             <input id="myWebhookUrl" type="text" readonly
-              class="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-slate-50 font-mono text-slate-600 select-all"/>
-            <button onclick="copyWebhookUrl()" class="border border-slate-200 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 transition text-slate-600" title="Copy URL">
+              style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.78rem;background:#f7faff;color:var(--text);outline:none;"/>
+            <button onclick="copyWebhookUrl()" class="btn btn-ghost btn-sm" title="Copy URL">
               <i class="fas fa-copy"></i>
             </button>
           </div>
-          <p class="text-xs text-slate-400 mt-1.5">Copy this URL and paste it into the <code class="bg-slate-100 px-1 rounded">SOAP_NOTE_WEBHOOK_URL</code> environment variable of your intake form app.</p>
+          <p style="font-size:0.72rem;color:var(--text-light);margin-top:5px;">
+            Copy this URL and add it as <code style="background:#e2ebf7;padding:1px 5px;border-radius:3px;">SOAP_NOTE_WEBHOOK_URL</code> in your intake form's environment variables.
+          </p>
         </div>
 
-        <div>
-          <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
-            Intake Form App URL <span class="text-slate-400 font-normal normal-case">(optional — for quick links)</span>
-          </label>
-          <input id="intakeFormUrl" type="text" placeholder="https://your-intake-form.railway.app"
-            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"/>
-          <p class="text-xs text-slate-400 mt-1">Your Railway / Render / hosted intake form URL</p>
+        <div class="field">
+          <label>Intake Form App URL <span style="font-weight:400;color:var(--text-light);text-transform:none;">(optional)</span></label>
+          <input id="intakeFormUrl" type="text" placeholder="https://your-intake-form.railway.app" />
         </div>
 
-        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-          <p class="font-semibold mb-0.5"><i class="fas fa-triangle-exclamation mr-1"></i>One extra step in the intake form</p>
-          <p>Add this to your intake form's <code class="bg-amber-100 px-1 rounded">.env</code>:</p>
-          <pre class="mt-1 bg-amber-100 rounded p-2 text-xs font-mono overflow-x-auto" id="envSnippet"></pre>
+        <div class="info-box info-box-yellow" style="margin-bottom:18px;">
+          <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Add to your intake form .env:</strong></p>
+          <pre id="envSnippet" style="margin-top:8px;background:rgba(0,0,0,0.06);border-radius:4px;padding:8px;font-size:0.75rem;font-family:monospace;overflow-x:auto;white-space:pre-wrap;"></pre>
         </div>
 
-        <div class="flex gap-2">
-          <button onclick="saveWebhookConfig()" class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition">
-            <i class="fas fa-save mr-1"></i>Save Settings
+        <div style="display:flex;gap:10px;">
+          <button onclick="saveWebhookConfig()" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <i class="fas fa-save"></i> Save Settings
           </button>
-          <button onclick="closeWebhookConfig()" class="flex-1 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm hover:bg-slate-50 transition">Cancel</button>
+          <button onclick="closeWebhookConfig()" class="btn btn-ghost" style="flex:1;justify-content:center;">Cancel</button>
         </div>
 
-        <div class="pt-2 border-t border-slate-100">
-          <p class="text-xs font-semibold text-slate-600 mb-2">Manual Import</p>
-          <p class="text-xs text-slate-400 mb-2">Already have a client profile in JSON format? Paste it below:</p>
-          <textarea id="manualImportJson" rows="3" placeholder='{"firstName":"Jane","lastName":"Smith","email":"jane@example.com",...}'
-            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-300"></textarea>
-          <button onclick="importManualProfile()" class="mt-2 border border-violet-200 text-violet-600 hover:bg-violet-50 px-3 py-1.5 rounded-lg text-xs font-medium transition">
-            <i class="fas fa-file-import mr-1"></i>Import Profile
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+          <p style="font-size:0.8rem;font-weight:700;color:var(--primary);margin-bottom:6px;">Manual Import</p>
+          <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:8px;">Paste a client profile in JSON format:</p>
+          <textarea id="manualImportJson" rows="3"
+            placeholder='{"firstName":"Jane","lastName":"Smith","email":"jane@example.com",...}'
+            style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.75rem;outline:none;resize:vertical;"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+          <button onclick="importManualProfile()" class="btn btn-outline btn-sm" style="margin-top:8px;">
+            <i class="fas fa-file-import"></i> Import Profile
           </button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Muscle Tooltip -->
-  <div id="muscleTooltip" class="muscle-tooltip hidden"></div>
+  <!-- Toast notification -->
+  <div id="toast"></div>
+
+  <!-- Muscle tooltip -->
+  <div id="muscleTooltip" class="muscle-tooltip" style="display:none;"></div>
 
   <script>
   // ============================================================
@@ -943,7 +1301,7 @@ function renderApp(): string {
     const banner = document.getElementById('webhookBanner');
     const urlDisplay = document.getElementById('webhookUrlDisplay');
     if (cfg.myUrl && banner && urlDisplay) {
-      banner.classList.remove('hidden');
+      banner.style.display = 'block';
       urlDisplay.textContent = cfg.myUrl;
     }
   }
@@ -1006,14 +1364,14 @@ function renderApp(): string {
   function openClientBrowser() {
     const modal = document.getElementById('clientBrowserModal');
     modal.style.display = 'flex';
-    modal.classList.remove('hidden');
+    
     filterClients();
     document.getElementById('clientSearch').focus();
   }
   function closeClientBrowser() {
     const modal = document.getElementById('clientBrowserModal');
     modal.style.display = 'none';
-    modal.classList.add('hidden');
+    
   }
 
   function filterClients() {
@@ -1029,7 +1387,7 @@ function renderApp(): string {
     if (!list) return;
 
     if (filtered.length === 0) {
-      list.innerHTML = '<p class="text-sm text-slate-400 text-center py-8"><i class="fas fa-user-slash mb-2 block text-2xl"></i>' +
+      list.innerHTML = '<p style="font-size:0.82rem;color:var(--text-light);text-align:center;padding:32px 0;"><i class="fas fa-user-slash" style="display:block;font-size:1.8rem;margin-bottom:8px;"></i>' +
         (query ? 'No clients match "' + query + '"' : 'No client profiles saved yet.') + '</p>';
       if (countEl) countEl.textContent = '';
       return;
@@ -1068,7 +1426,7 @@ function renderApp(): string {
   function openWebhookConfig() {
     const modal = document.getElementById('webhookModal');
     modal.style.display = 'flex';
-    modal.classList.remove('hidden');
+    
 
     const myUrl = window.location.origin + '/api/intake-webhook';
     const urlInput = document.getElementById('myWebhookUrl');
@@ -1084,7 +1442,7 @@ function renderApp(): string {
   function closeWebhookConfig() {
     const modal = document.getElementById('webhookModal');
     modal.style.display = 'none';
-    modal.classList.add('hidden');
+    
   }
   function copyWebhookUrl() {
     const val = document.getElementById('myWebhookUrl')?.value;
@@ -1582,19 +1940,23 @@ function renderApp(): string {
   // STEPS NAVIGATION
   // ============================================================
   function goToStep(step) {
-    // Update panels
+    // Update panels — use .active class instead of .hidden
     document.querySelectorAll('.step-panel').forEach((p, i) => {
-      p.classList.toggle('hidden', i + 1 !== step);
+      p.classList.toggle('active', i + 1 === step);
     });
 
-    // Update step indicators
+    // Update step bar items
     for (let i = 1; i <= 4; i++) {
-      const el = document.getElementById('step' + i);
+      const item  = document.getElementById('stepItem' + i);
+      const num   = document.getElementById('stepNum' + i);
       const label = document.getElementById('stepLabel' + i);
-      el.className = 'step-indicator ' + (i < step ? 'step-done' : i === step ? 'step-active' : 'step-pending');
-      if (i < step) el.innerHTML = '<i class="fas fa-check text-xs"></i>';
-      else el.textContent = i;
-      if (label) label.className = 'text-sm ' + (i <= step ? 'text-slate-700 font-medium' : 'text-slate-500');
+      if (item) {
+        item.classList.toggle('active', i === step);
+        item.classList.toggle('done',   i < step);
+      }
+      if (num) {
+        num.innerHTML = i < step ? '<i class="fas fa-check" style="font-size:0.7rem;"></i>' : String(i);
+      }
     }
 
     state.currentStep = step;
@@ -1607,12 +1969,12 @@ function renderApp(): string {
   // ============================================================
   function handleDragOver(event) {
     event.preventDefault();
-    document.getElementById('dropZone').classList.add('border-violet-400', 'bg-violet-50');
+    document.getElementById('dropZone').classList.add('drag-over');
   }
 
   function handleDrop(event) {
     event.preventDefault();
-    document.getElementById('dropZone').classList.remove('border-violet-400', 'bg-violet-50');
+    document.getElementById('dropZone').classList.remove('drag-over');
     const file = event.dataTransfer.files[0];
     if (file && file.type === 'application/pdf') processFile(file);
   }
@@ -1623,23 +1985,20 @@ function renderApp(): string {
   }
 
   async function processFile(file) {
-    document.getElementById('pdfParseProgress').classList.remove('hidden');
-    document.getElementById('dropZone').classList.add('hidden');
+    const progress = document.getElementById('pdfParseProgress');
+    const dropZone = document.getElementById('dropZone');
+    if (progress) progress.style.display = 'flex';
+    if (dropZone) dropZone.style.display = 'none';
     
     try {
       const arrayBuffer = await file.arrayBuffer();
       const text = await extractTextWithPDFJS(arrayBuffer);
 
       if (text && text.length > 30) {
-        // Auto-parse and fill fields from the intake form
         const parsed = parseIntakeFields(text);
         autoFillClientFields(parsed);
-
-        // Build a clean formatted summary for the textarea
         const formattedSummary = formatIntakeSummary(text, parsed);
         document.getElementById('intakeFormData').value = formattedSummary;
-
-        // Show a green success pill with auto-filled field count
         const filledCount = Object.values(parsed).filter(v => v && v !== 'Not provided').length;
         document.getElementById('pdfFileName').textContent =
           file.name + (filledCount > 0 ? ' — ' + filledCount + ' fields auto-filled ✓' : '');
@@ -1649,16 +2008,18 @@ function renderApp(): string {
         document.getElementById('pdfFileName').textContent = file.name + ' (manual entry needed)';
       }
 
-      document.getElementById('pdfStatus').classList.remove('hidden');
-      document.getElementById('pdfParseProgress').classList.add('hidden');
+      const pdfStatus = document.getElementById('pdfStatus');
+      if (pdfStatus) pdfStatus.style.display = 'flex';
+      if (progress) progress.style.display = 'none';
     } catch (err) {
       console.error('PDF error:', err);
       document.getElementById('intakeFormData').value =
         'PDF: ' + file.name + '\\n\\n[Please add client intake information manually]';
       document.getElementById('pdfFileName').textContent = file.name + ' (manual entry needed)';
-      document.getElementById('pdfStatus').classList.remove('hidden');
-      document.getElementById('pdfParseProgress').classList.add('hidden');
-      document.getElementById('dropZone').classList.remove('hidden');
+      const pdfStatus = document.getElementById('pdfStatus');
+      if (pdfStatus) pdfStatus.style.display = 'flex';
+      if (progress) progress.style.display = 'none';
+      if (dropZone) dropZone.style.display = '';
     }
   }
 
@@ -1829,8 +2190,8 @@ function renderApp(): string {
 
   function clearPDF() {
     document.getElementById('pdfInput').value = '';
-    document.getElementById('pdfStatus').classList.add('hidden');
-    document.getElementById('dropZone').classList.remove('hidden');
+    document.getElementById('pdfStatus').style.display = 'none';
+    document.getElementById('dropZone').style.display = '';
     document.getElementById('intakeFormData').value = '';
     state.pdfText = '';
   }
@@ -1846,8 +2207,8 @@ function renderApp(): string {
     }
 
     goToStep(4);
-    document.getElementById('soapLoading').classList.remove('hidden');
-    document.getElementById('soapContent').classList.add('hidden');
+    document.getElementById('soapLoading').style.display = 'block';
+    document.getElementById('soapContent').style.display = 'none';
 
     // Gather all muscles
     const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
@@ -1937,7 +2298,7 @@ function renderApp(): string {
       displaySOAP(soapData, contextData, treatedMuscles, followupMuscles);
 
     } catch (err) {
-      document.getElementById('soapLoading').classList.add('hidden');
+      document.getElementById('soapLoading').style.display = 'none';
       goToStep(3);
       alert('Error generating SOAP notes: ' + err.message);
     }
@@ -1983,9 +2344,9 @@ Return JSON:
   }
 
   function displaySOAP(data, ctx, treatedMuscles, followupMuscles) {
-    document.getElementById('soapLoading').classList.add('hidden');
-    document.getElementById('soapContent').classList.remove('hidden');
-    document.getElementById('statusBadge').classList.remove('hidden');
+    document.getElementById('soapLoading').style.display = 'none';
+    document.getElementById('soapContent').style.display = 'flex';
+    document.getElementById('statusBadge').style.display = 'inline-flex';
 
     // Header
     document.getElementById('soapClientName').textContent = ctx.client || 'Client';
@@ -2083,11 +2444,11 @@ THERAPIST NOTES:
   }
 
   function showCopyFeedback(msg) {
-    const el = document.createElement('div');
-    el.className = 'fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50';
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2000);
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2200);
   }
 
   // ============================================================
@@ -2286,9 +2647,9 @@ THERAPIST NOTES:
     document.querySelectorAll('input[name="technique"]').forEach(cb => cb.checked = false);
     
     clearPDF();
-    document.getElementById('statusBadge').classList.add('hidden');
-    document.getElementById('soapContent').classList.add('hidden');
-    document.getElementById('soapLoading').classList.add('hidden');
+    document.getElementById('statusBadge').style.display = 'none';
+    document.getElementById('soapContent').style.display = 'none';
+    document.getElementById('soapLoading').style.display = 'none';
 
     setView('anterior');
     renderMuscleMap();
