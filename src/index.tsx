@@ -10,6 +10,11 @@ const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './' }))
+// Serve images and other static assets from public root
+app.use('/*.png', serveStatic({ root: './' }))
+app.use('/*.jpg', serveStatic({ root: './' }))
+app.use('/*.ico', serveStatic({ root: './' }))
+app.use('/*.svg', serveStatic({ root: './' }))
 
 // Intake webhook – receives structured client data from Flexion & Flow intake form
 // The intake form POSTs here after a successful submission so the therapist can
@@ -1758,15 +1763,20 @@ function renderApp(): string {
         onclick="toggleMuscle(this.dataset.id,this.dataset.name)"/>\`;
     }).join('\\n');
 
+    // Render the map at full container width, allow vertical scroll for tall aspect ratio
+    // Each half dimensions: male=445×1024, female=431×1024 (nearly 1:2.3 aspect)
+    // At 480px wide the map would be ~1100px tall — use a scrollable container with max-height
+
     container.innerHTML = \`
-      <div style="position:relative;width:100%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#fff;">
-        <!-- Base image — full width, clipped to show correct half -->
+      <div style="position:relative;width:100%;padding-bottom:\${Math.round(imgH/halfW*100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
+        <!-- Base image — 200% width, translate to show correct half -->
         <img src="\${imgSrc}" alt="Muscle map"
-          style="display:block;width:200%;transform:translateX(\${imgTranslate});height:auto;pointer-events:none;"
+          style="position:absolute;top:0;left:0;width:200%;height:100%;transform:translateX(\${imgTranslate});pointer-events:none;object-fit:fill;"
           onerror="this.style.opacity='0.2'"/>
-        <!-- SVG overlay — sits on top of the image half, covers exactly 50% width -->
+        <!-- SVG overlay — covers the same half exactly -->
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;">
           <g style="pointer-events:all;">
             \${musclePaths}
