@@ -4,6 +4,151 @@ import { serveStatic } from 'hono/cloudflare-workers'
 
 type Bindings = {
   OPENAI_API_KEY: string
+  CLIENTS_KV: KVNamespace
+  SESSIONS_KV: KVNamespace
+  META_KV: KVNamespace
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  GOOGLE_REDIRECT_URI: string
+  GOOGLE_DRIVE_FOLDER_ID: string
+  ADMIN_PASSWORD: string
+}
+
+// ─── Data Types ───────────────────────────────────────────────────────────────
+interface ClientRecord {
+  accountNumber: string
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  dob: string
+  occupation: string
+  chiefComplaint: string
+  medications: string
+  allergies: string
+  medicalConditions: string
+  areasToAvoid: string
+  createdAt: string
+  updatedAt: string
+  intakeForms: IntakeSnapshot[]
+  sessionCount: number
+  lastSessionDate: string
+  driveToken?: string // encrypted Google Drive refresh token
+}
+
+interface IntakeSnapshot {
+  savedAt: string
+  source: string
+  data: Record<string, string>
+}
+
+interface SessionRecord {
+  sessionId: string
+  accountNumber: string
+  clientName: string
+  sessionDate: string
+  duration: string
+  musclesTreated: string[]
+  musclesToFollowUp: string[]
+  techniques: string[]
+  soapNote: {
+    subjective: string
+    objective: string
+    assessment: string
+    plan: string
+    therapistNotes: string
+  }
+  intakeSnapshot: string
+  therapistName: string
+  therapistCredentials: string
+  painBefore: string
+  painAfter: string
+  chiefComplaint: string
+  savedAt: string
+  pdfDriveFileId?: string
+  pdfDriveUrl?: string
+}
+
+// ─── Helper: generate account number ─────────────────────────────────────────
+async function generateAccountNumber(metaKv: KVNamespace): Promise<string> {
+  const now = new Date()
+  const ym = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, '0')
+  const counterKey = `counter:${ym}`
+  const raw = await metaKv.get(counterKey)
+  const next = raw ? parseInt(raw) + 1 : 1
+  await metaKv.put(counterKey, String(next))
+  return `FF-${ym}-${String(next).padStart(4, '0')}`
+}
+
+// ─── Helper: find client by email or name ─────────────────────────────────────
+async function findClientByEmail(kv: KVNamespace, email: string): Promise<ClientRecord | null> {
+  if (!email) return null
+  const idxRaw = await kv.get(`idx:email:${email.toLowerCase()}`)
+  if (!idxRaw) return null
+  const raw = await kv.get(`client:${idxRaw}`)
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+// ─── Helper: Google Drive upload ──────────────────────────────────────────────
+async function uploadToDrive(
+  accessToken: string,
+  folderId: string,
+  filename: string,
+  content: string,
+  mimeType: string
+): Promise<{ id: string; webViewLink: string } | null> {
+  try {
+    const metadata = {
+      name: filename,
+      parents: folderId ? [folderId] : []
+    }
+    const boundary = '-------boundary'
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify(metadata) +
+      `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n` +
+      content +
+      `\r\n--${boundary}--`
+
+    const res = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`
+        },
+        body
+      }
+    )
+    if (!res.ok) return null
+    return await res.json() as { id: string; webViewLink: string }
+  } catch { return null }
+}
+
+// ─── Helper: refresh Google access token ─────────────────────────────────────
+async function refreshGoogleToken(
+  refreshToken: string,
+  clientId: string,
+  clientSecret: string
+): Promise<string | null> {
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret
+      })
+    })
+    if (!res.ok) return null
+    const data: any = await res.json()
+    return data.access_token || null
+  } catch { return null }
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -115,6 +260,467 @@ Return JSON with these exact keys:
 - "plan": Treatment plan including frequency, home care recommendations, areas to focus on next session, and self-care advice. 3-5 sentences.
 - "therapistNotes": Any additional clinical notes, contraindications observed, or special considerations. 1-3 sentences.`
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CLIENT MANAGEMENT API
+// ═══════════════════════════════════════════════════════════════════════════
+
+// POST /api/clients — create or upsert client, returns accountNumber
+app.post('/api/clients', async (c) => {
+  const kv = c.env?.CLIENTS_KV
+  const metaKv = c.env?.META_KV
+  if (!kv || !metaKv) return c.json({ error: 'Storage not configured' }, 500)
+
+  const body = await c.req.json() as Partial<ClientRecord> & { source?: string; intakeData?: Record<string, string> }
+  if (!body.firstName && !body.lastName) return c.json({ error: 'Name required' }, 400)
+
+  const email = (body.email || '').toLowerCase().trim()
+
+  // Check for existing client by email
+  let existing: ClientRecord | null = null
+  if (email) existing = await findClientByEmail(kv, email)
+
+  // Also try by id if provided
+  if (!existing && body.id) {
+    const raw = await kv.get(`client:${body.id}`)
+    if (raw) try { existing = JSON.parse(raw) } catch {}
+  }
+
+  const now = new Date().toISOString()
+
+  if (existing) {
+    // Update existing client
+    const intakeEntry: IntakeSnapshot = {
+      savedAt: now,
+      source: body.source || 'soap-generator',
+      data: body.intakeData || {}
+    }
+    existing.updatedAt = now
+    existing.firstName = body.firstName || existing.firstName
+    existing.lastName = body.lastName || existing.lastName
+    existing.phone = body.phone || existing.phone
+    existing.dob = body.dob || existing.dob
+    existing.occupation = body.occupation || existing.occupation
+    existing.chiefComplaint = body.chiefComplaint || existing.chiefComplaint
+    existing.medications = body.medications || existing.medications
+    existing.allergies = body.allergies || existing.allergies
+    existing.medicalConditions = body.medicalConditions || existing.medicalConditions
+    existing.areasToAvoid = body.areasToAvoid || existing.areasToAvoid
+    existing.intakeForms = [...(existing.intakeForms || []), intakeEntry]
+
+    await kv.put(`client:${existing.accountNumber}`, JSON.stringify(existing))
+    return c.json({ success: true, accountNumber: existing.accountNumber, client: existing, isNew: false })
+  }
+
+  // Create new client
+  const accountNumber = await generateAccountNumber(metaKv)
+  const id = body.id || crypto.randomUUID()
+  const client: ClientRecord = {
+    accountNumber,
+    id,
+    firstName: body.firstName || '',
+    lastName: body.lastName || '',
+    email,
+    phone: body.phone || '',
+    dob: body.dob || '',
+    occupation: body.occupation || '',
+    chiefComplaint: body.chiefComplaint || '',
+    medications: body.medications || '',
+    allergies: body.allergies || '',
+    medicalConditions: body.medicalConditions || '',
+    areasToAvoid: body.areasToAvoid || '',
+    createdAt: now,
+    updatedAt: now,
+    intakeForms: [{
+      savedAt: now,
+      source: body.source || 'soap-generator',
+      data: body.intakeData || {}
+    }],
+    sessionCount: 0,
+    lastSessionDate: ''
+  }
+
+  await kv.put(`client:${accountNumber}`, JSON.stringify(client))
+  // Index by email for fast lookup
+  if (email) await metaKv.put(`idx:email:${email}`, accountNumber)
+  // Add to client list index
+  const listRaw = await metaKv.get('client_list')
+  const list: string[] = listRaw ? JSON.parse(listRaw) : []
+  list.unshift(accountNumber)
+  await metaKv.put('client_list', JSON.stringify(list))
+
+  return c.json({ success: true, accountNumber, client, isNew: true }, 201)
+})
+
+// GET /api/clients — list all clients (summary)
+app.get('/api/clients', async (c) => {
+  const kv = c.env?.CLIENTS_KV
+  const metaKv = c.env?.META_KV
+  if (!kv || !metaKv) return c.json({ error: 'Storage not configured' }, 500)
+
+  const listRaw = await metaKv.get('client_list')
+  if (!listRaw) return c.json({ clients: [] })
+
+  const accountNumbers: string[] = JSON.parse(listRaw)
+  const clients: Partial<ClientRecord>[] = []
+
+  // Fetch all (Cloudflare KV bulk fetch — up to 500)
+  for (const acct of accountNumbers.slice(0, 500)) {
+    const raw = await kv.get(`client:${acct}`)
+    if (raw) {
+      try {
+        const c2: ClientRecord = JSON.parse(raw)
+        // Return summary only (omit large intake forms array)
+        clients.push({
+          accountNumber: c2.accountNumber,
+          id: c2.id,
+          firstName: c2.firstName,
+          lastName: c2.lastName,
+          email: c2.email,
+          phone: c2.phone,
+          dob: c2.dob,
+          chiefComplaint: c2.chiefComplaint,
+          sessionCount: c2.sessionCount,
+          lastSessionDate: c2.lastSessionDate,
+          createdAt: c2.createdAt,
+          updatedAt: c2.updatedAt
+        })
+      } catch {}
+    }
+  }
+
+  return c.json({ clients })
+})
+
+// GET /api/clients/:accountNumber — full client record
+app.get('/api/clients/:accountNumber', async (c) => {
+  const kv = c.env?.CLIENTS_KV
+  if (!kv) return c.json({ error: 'Storage not configured' }, 500)
+  const acct = c.req.param('accountNumber')
+  const raw = await kv.get(`client:${acct}`)
+  if (!raw) return c.json({ error: 'Client not found' }, 404)
+  return c.json(JSON.parse(raw))
+})
+
+// PUT /api/clients/:accountNumber — update client details
+app.put('/api/clients/:accountNumber', async (c) => {
+  const kv = c.env?.CLIENTS_KV
+  if (!kv) return c.json({ error: 'Storage not configured' }, 500)
+  const acct = c.req.param('accountNumber')
+  const raw = await kv.get(`client:${acct}`)
+  if (!raw) return c.json({ error: 'Client not found' }, 404)
+
+  const existing: ClientRecord = JSON.parse(raw)
+  const body = await c.req.json()
+  const updated = { ...existing, ...body, accountNumber: acct, updatedAt: new Date().toISOString() }
+  await kv.put(`client:${acct}`, JSON.stringify(updated))
+  return c.json({ success: true, client: updated })
+})
+
+// POST /api/clients/:accountNumber/sessions — save SOAP note
+app.post('/api/clients/:accountNumber/sessions', async (c) => {
+  const clientsKv = c.env?.CLIENTS_KV
+  const sessionsKv = c.env?.SESSIONS_KV
+  const metaKv = c.env?.META_KV
+  if (!clientsKv || !sessionsKv) return c.json({ error: 'Storage not configured' }, 500)
+
+  const acct = c.req.param('accountNumber')
+  const clientRaw = await clientsKv.get(`client:${acct}`)
+  if (!clientRaw) return c.json({ error: 'Client not found' }, 404)
+
+  const client: ClientRecord = JSON.parse(clientRaw)
+  const body = await c.req.json() as Omit<SessionRecord, 'sessionId' | 'accountNumber' | 'savedAt'>
+
+  const sessionId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const session: SessionRecord = {
+    sessionId,
+    accountNumber: acct,
+    clientName: `${client.firstName} ${client.lastName}`.trim(),
+    sessionDate: body.sessionDate || now.split('T')[0],
+    duration: body.duration || '',
+    musclesTreated: body.musclesTreated || [],
+    musclesToFollowUp: body.musclesToFollowUp || [],
+    techniques: body.techniques || [],
+    soapNote: body.soapNote || { subjective: '', objective: '', assessment: '', plan: '', therapistNotes: '' },
+    intakeSnapshot: body.intakeSnapshot || '',
+    therapistName: body.therapistName || '',
+    therapistCredentials: body.therapistCredentials || '',
+    painBefore: body.painBefore || '',
+    painAfter: body.painAfter || '',
+    chiefComplaint: body.chiefComplaint || '',
+    savedAt: now
+  }
+
+  // Store session
+  await sessionsKv.put(`session:${sessionId}`, JSON.stringify(session))
+
+  // Add to client's session list index
+  const sessListRaw = metaKv ? await metaKv.get(`sessions:${acct}`) : null
+  const sessList: string[] = sessListRaw ? JSON.parse(sessListRaw) : []
+  sessList.unshift(sessionId)
+  if (metaKv) await metaKv.put(`sessions:${acct}`, JSON.stringify(sessList))
+
+  // Update client record
+  client.sessionCount = (client.sessionCount || 0) + 1
+  client.lastSessionDate = session.sessionDate
+  client.updatedAt = now
+  await clientsKv.put(`client:${acct}`, JSON.stringify(client))
+
+  // Attempt Google Drive PDF upload if token exists
+  let pdfDriveUrl: string | undefined
+  if (client.driveToken && c.env?.GOOGLE_CLIENT_ID) {
+    const accessToken = await refreshGoogleToken(
+      client.driveToken,
+      c.env.GOOGLE_CLIENT_ID,
+      c.env.GOOGLE_CLIENT_SECRET
+    )
+    if (accessToken) {
+      // Upload JSON backup
+      const jsonFilename = `SOAP_${acct}_${session.sessionDate}_${sessionId.slice(0, 8)}.json`
+      await uploadToDrive(
+        accessToken,
+        c.env.GOOGLE_DRIVE_FOLDER_ID || '',
+        jsonFilename,
+        JSON.stringify(session, null, 2),
+        'application/json'
+      )
+    }
+  }
+
+  return c.json({ success: true, sessionId, session })
+})
+
+// GET /api/clients/:accountNumber/sessions — list sessions
+app.get('/api/clients/:accountNumber/sessions', async (c) => {
+  const sessionsKv = c.env?.SESSIONS_KV
+  const metaKv = c.env?.META_KV
+  if (!sessionsKv || !metaKv) return c.json({ error: 'Storage not configured' }, 500)
+
+  const acct = c.req.param('accountNumber')
+  const sessListRaw = await metaKv.get(`sessions:${acct}`)
+  if (!sessListRaw) return c.json({ sessions: [] })
+
+  const sessionIds: string[] = JSON.parse(sessListRaw)
+  const sessions: SessionRecord[] = []
+  for (const sid of sessionIds.slice(0, 100)) {
+    const raw = await sessionsKv.get(`session:${sid}`)
+    if (raw) try { sessions.push(JSON.parse(raw)) } catch {}
+  }
+  return c.json({ sessions })
+})
+
+// GET /api/sessions/:sessionId — single session
+app.get('/api/sessions/:sessionId', async (c) => {
+  const sessionsKv = c.env?.SESSIONS_KV
+  if (!sessionsKv) return c.json({ error: 'Storage not configured' }, 500)
+  const raw = await sessionsKv.get(`session:${c.req.param('sessionId')}`)
+  if (!raw) return c.json({ error: 'Session not found' }, 404)
+  return c.json(JSON.parse(raw))
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE OAUTH
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/drive/auth — redirect to Google OAuth, scoped to Drive file access only
+app.get('/api/drive/auth', async (c) => {
+  const clientId = c.env?.GOOGLE_CLIENT_ID
+  if (!clientId) return c.json({ error: 'Google OAuth not configured' }, 500)
+
+  const acct = c.req.query('account') || ''
+  const redirectUri = c.env.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/api/drive/callback`
+  const state = btoa(JSON.stringify({ account: acct, origin: new URL(c.req.url).origin }))
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    access_type: 'offline',
+    prompt: 'consent',
+    state
+  })
+  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
+})
+
+// GET /api/drive/callback — exchange code for tokens, save refresh token to client record
+app.get('/api/drive/callback', async (c) => {
+  const code = c.req.query('code')
+  const stateRaw = c.req.query('state')
+  if (!code) return c.html('<p>Error: no code returned from Google.</p>', 400)
+
+  let accountNumber = ''
+  let origin = ''
+  try {
+    const parsed = JSON.parse(atob(stateRaw || ''))
+    accountNumber = parsed.account || ''
+    origin = parsed.origin || ''
+  } catch {}
+
+  const clientId = c.env?.GOOGLE_CLIENT_ID
+  const clientSecret = c.env?.GOOGLE_CLIENT_SECRET
+  const redirectUri = c.env?.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/api/drive/callback`
+
+  // Exchange code for tokens
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId || '',
+      client_secret: clientSecret || '',
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code'
+    })
+  })
+
+  if (!tokenRes.ok) {
+    return c.html('<p>Error exchanging code. Please try again.</p>', 400)
+  }
+
+  const tokens: any = await tokenRes.json()
+  const refreshToken = tokens.refresh_token
+
+  // Store refresh token against the client record
+  if (accountNumber && refreshToken && c.env?.CLIENTS_KV) {
+    const raw = await c.env.CLIENTS_KV.get(`client:${accountNumber}`)
+    if (raw) {
+      const client: ClientRecord = JSON.parse(raw)
+      client.driveToken = refreshToken
+      client.updatedAt = new Date().toISOString()
+      await c.env.CLIENTS_KV.put(`client:${accountNumber}`, JSON.stringify(client))
+    }
+  }
+
+  // Also store as global drive token for PDF uploads from this therapist
+  if (refreshToken && c.env?.META_KV) {
+    await c.env.META_KV.put('global_drive_refresh_token', refreshToken)
+  }
+
+  // Close the popup and notify the parent window
+  return c.html(`<!DOCTYPE html><html><body>
+    <p style="font-family:sans-serif;padding:20px;">✅ Google Drive connected! You can close this tab.</p>
+    <script>
+      if (window.opener) {
+        window.opener.postMessage({ type: 'DRIVE_AUTH_SUCCESS', account: '${accountNumber}' }, '${origin}');
+        setTimeout(() => window.close(), 1500);
+      }
+    </script>
+  </body></html>`)
+})
+
+// POST /api/drive/upload-pdf — upload a base64-encoded PDF to Drive
+app.post('/api/drive/upload-pdf', async (c) => {
+  const metaKv = c.env?.META_KV
+  const clientsKv = c.env?.CLIENTS_KV
+  const sessionsKv = c.env?.SESSIONS_KV
+  if (!metaKv) return c.json({ error: 'Storage not configured' }, 500)
+
+  const body = await c.req.json() as {
+    sessionId: string
+    accountNumber: string
+    filename: string
+    pdfBase64: string
+  }
+
+  // Get the global refresh token
+  const refreshToken = await metaKv.get('global_drive_refresh_token')
+  if (!refreshToken) return c.json({ error: 'Google Drive not connected. Please connect Drive first.' }, 400)
+
+  const accessToken = await refreshGoogleToken(
+    refreshToken,
+    c.env?.GOOGLE_CLIENT_ID || '',
+    c.env?.GOOGLE_CLIENT_SECRET || ''
+  )
+  if (!accessToken) return c.json({ error: 'Could not refresh Google token' }, 400)
+
+  // Convert base64 to binary string for Drive upload
+  const folderId = c.env?.GOOGLE_DRIVE_FOLDER_ID || ''
+  const result = await uploadBase64PDFToDrive(accessToken, folderId, body.filename, body.pdfBase64)
+  if (!result) return c.json({ error: 'Drive upload failed' }, 500)
+
+  // Update session record with drive link
+  if (body.sessionId && sessionsKv) {
+    const raw = await sessionsKv.get(`session:${body.sessionId}`)
+    if (raw) {
+      const session: SessionRecord = JSON.parse(raw)
+      session.pdfDriveFileId = result.id
+      session.pdfDriveUrl = result.webViewLink
+      await sessionsKv.put(`session:${body.sessionId}`, JSON.stringify(session))
+    }
+  }
+
+  return c.json({ success: true, fileId: result.id, url: result.webViewLink })
+})
+
+// Helper: upload base64-encoded PDF to Drive
+async function uploadBase64PDFToDrive(
+  accessToken: string,
+  folderId: string,
+  filename: string,
+  base64: string
+): Promise<{ id: string; webViewLink: string } | null> {
+  try {
+    // Decode base64 to binary
+    const binaryStr = atob(base64)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+
+    const metadata = JSON.stringify({
+      name: filename,
+      mimeType: 'application/pdf',
+      parents: folderId ? [folderId] : []
+    })
+
+    const boundary = 'ff_boundary_xyz'
+    const metaPart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`
+    const filePart = `--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`
+    const endPart = `\r\n--${boundary}--`
+
+    const enc = new TextEncoder()
+    const metaBytes = enc.encode(metaPart)
+    const filePartBytes = enc.encode(filePart)
+    const endBytes = enc.encode(endPart)
+
+    const combined = new Uint8Array(
+      metaBytes.length + filePartBytes.length + bytes.length + endBytes.length
+    )
+    combined.set(metaBytes, 0)
+    combined.set(filePartBytes, metaBytes.length)
+    combined.set(bytes, metaBytes.length + filePartBytes.length)
+    combined.set(endBytes, metaBytes.length + filePartBytes.length + bytes.length)
+
+    const res = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`
+        },
+        body: combined
+      }
+    )
+    if (!res.ok) {
+      console.error('Drive upload failed:', await res.text())
+      return null
+    }
+    return await res.json() as { id: string; webViewLink: string }
+  } catch (e) {
+    console.error('Drive upload error:', e)
+    return null
+  }
+}
+
+// GET /api/drive/status — check if Drive is connected
+app.get('/api/drive/status', async (c) => {
+  const metaKv = c.env?.META_KV
+  if (!metaKv) return c.json({ connected: false })
+  const token = await metaKv.get('global_drive_refresh_token')
+  return c.json({ connected: !!token })
+})
 
 // Main app - serve the SPA
 app.get('/', (c) => {
@@ -306,6 +912,7 @@ function renderApp(): string {
     .field-row { display: flex; gap: 14px; }
     .field-row > * { flex: 1; min-width: 0; }
     @media (max-width: 540px) { .field-row { flex-direction: column; } }
+    @media (max-width: 500px) { .hide-mobile { display: none; } }
 
     /* ── Buttons ── */
     .btn {
@@ -588,8 +1195,11 @@ function renderApp(): string {
         <span id="statusBadge" class="badge badge-success" style="display:none">
           <i class="fas fa-check-circle"></i> Note Ready
         </span>
+        <button onclick="openClientAccounts()" class="btn btn-ghost btn-sm" title="Client Accounts">
+          <i class="fas fa-users"></i> <span class="hide-mobile">Clients</span>
+        </button>
         <button onclick="resetAll()" class="btn btn-ghost btn-sm">
-          <i class="fas fa-rotate-right"></i> New Session
+          <i class="fas fa-rotate-right"></i> <span class="hide-mobile">New Session</span>
         </button>
       </div>
     </div>
@@ -713,17 +1323,23 @@ function renderApp(): string {
             </div>
             <div class="field-row">
               <div class="field">
+                <label>Email <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;">(used to link client file)</span></label>
+                <input id="clientEmail" type="email" placeholder="jane@example.com" oninput="updateSummaryPanel()" />
+              </div>
+              <div class="field">
                 <label>Date of Birth</label>
                 <input id="clientDOB" type="date" />
               </div>
+            </div>
+            <div class="field-row">
               <div class="field">
                 <label>Session Date</label>
                 <input id="sessionDate" type="date" />
               </div>
-            </div>
             <div class="field">
               <label>Chief Complaint / Reason for Visit</label>
               <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches…" />
+              </div>
             </div>
             <div class="field-row">
               <div class="field">
@@ -999,6 +1615,15 @@ function renderApp(): string {
                   </div>
                 </div>
                 <div id="soapMusclesSummary" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:4px;"></div>
+                <!-- Save badges -->
+                <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                  <span id="savedFileBadge" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;">
+                    <i class="fas fa-folder-open" style="margin-right:4px;"></i><span></span>
+                  </span>
+                  <a id="driveBadge" href="#" target="_blank" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;color:white;text-decoration:none;">
+                    <i class="fab fa-google-drive" style="margin-right:4px;"></i>View in Drive
+                  </a>
+                </div>
               </div>
             </div>
 
@@ -1343,6 +1968,7 @@ function renderApp(): string {
     const setVal = (elId, val) => { const el = document.getElementById(elId); if (el && val) el.value = val; };
     setVal('clientFirstName',  p.firstName);
     setVal('clientLastName',   p.lastName);
+    setVal('clientEmail',      p.email || '');
     setVal('clientDOB',        p.dob ? p.dob.split('T')[0] : '');
     setVal('chiefComplaint',   p.chiefComplaint || p.primaryConcern || '');
     setVal('painLevel',        p.painIntensity != null ? p.painIntensity : '');
@@ -1522,7 +2148,9 @@ function renderApp(): string {
     currentGender: 'male',
     muscleStates: {}, // muscleId -> 'treated' | 'follow-up'
     pdfText: '',
-    soapData: null
+    soapData: null,
+    lastAccountNumber: null, // set after SOAP auto-save
+    lastSessionId: null      // set after SOAP auto-save
   };
 
   const TECHNIQUES = [
@@ -1846,6 +2474,15 @@ function renderApp(): string {
     });
     document.getElementById('webhookModal').addEventListener('click', function(e) {
       if (e.target === this) closeWebhookConfig();
+    });
+    document.getElementById('clientAccountsModal').addEventListener('click', function(e) {
+      if (e.target === this) closeClientAccounts();
+    });
+    document.getElementById('clientFileModal').addEventListener('click', function(e) {
+      if (e.target === this) closeClientFile();
+    });
+    document.getElementById('sessionViewModal').addEventListener('click', function(e) {
+      if (e.target === this) closeSessionView();
     });
   });
 
@@ -2259,6 +2896,9 @@ function renderApp(): string {
 
     const contextData = {
       client: [firstName, lastName].filter(Boolean).join(' '),
+      firstName,
+      lastName,
+      email: document.getElementById('clientEmail')?.value || '',
       dob,
       chiefComplaint,
       painBefore,
@@ -2308,6 +2948,22 @@ function renderApp(): string {
       state.soapData = soapData;
 
       displaySOAP(soapData, contextData, treatedMuscles, followupMuscles);
+
+      // ── Auto-save to client file ──────────────────────────────────────────
+      const saved = await saveSOAPToClientFile(
+        contextData, soapData, treatedMuscles, followupMuscles, techniques
+      );
+      if (saved) {
+        // Try to upload PDF to Drive in background
+        setTimeout(() => {
+          uploadPDFToDrive(
+            saved.sessionId,
+            saved.accountNumber,
+            contextData.client || 'Client',
+            document.getElementById('sessionDate')?.value || new Date().toISOString().split('T')[0]
+          );
+        }, 1200);
+      }
 
     } catch (err) {
       document.getElementById('soapLoading').style.display = 'none';
@@ -2648,7 +3304,7 @@ THERAPIST NOTES:
     state.currentGender = 'male';
 
     // Reset fields
-    ['clientFirstName', 'clientLastName', 'clientDOB', 'chiefComplaint', 
+    ['clientFirstName', 'clientLastName', 'clientEmail', 'clientDOB', 'chiefComplaint', 
      'painLevel', 'medications', 'sessionSummary', 'clientFeedback',
      'postPainLevel', 'intakeFormData', 'therapistName', 'therapistCredentials']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -2663,12 +3319,615 @@ THERAPIST NOTES:
     document.getElementById('statusBadge').style.display = 'none';
     document.getElementById('soapContent').style.display = 'none';
     document.getElementById('soapLoading').style.display = 'none';
+    const savedBadge = document.getElementById('savedFileBadge');
+    if (savedBadge) savedBadge.style.display = 'none';
+    const driveBadge = document.getElementById('driveBadge');
+    if (driveBadge) driveBadge.style.display = 'none';
+    state.lastAccountNumber = null;
+    state.lastSessionId = null;
 
     setView('anterior');
     setGender('male');
     renderMuscleMap();
     updateMuscleLists();
     goToStep(1);
+  }
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       CLIENT ACCOUNTS MODAL
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="clientAccountsModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-box" style="max-width:900px;width:95vw;height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fas fa-folder-open" style="margin-right:8px;opacity:0.8;"></i>Client Accounts</h3>
+          <p>All client files — account numbers, intake history &amp; SOAP sessions</p>
+        </div>
+        <button class="modal-close" onclick="closeClientAccounts()"><i class="fas fa-times"></i></button>
+      </div>
+
+      <!-- Toolbar -->
+      <div style="padding:14px 24px;border-bottom:1px solid var(--border);background:#f7faff;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <input id="accountSearch" type="text" placeholder="Search by name, account number or email…"
+          oninput="filterAccountList()"
+          style="flex:1;min-width:200px;padding:9px 14px;border:1.5px solid var(--border);border-radius:50px;font-family:var(--font);font-size:0.82rem;outline:none;"/>
+        <span id="accountCount" style="font-size:0.75rem;color:var(--text-light);white-space:nowrap;"></span>
+        <button onclick="checkDriveStatus()" id="driveStatusBtn" class="btn btn-ghost btn-sm" title="Google Drive status">
+          <i class="fab fa-google-drive"></i> <span id="driveStatusLabel">Drive</span>
+        </button>
+      </div>
+
+      <!-- Client list -->
+      <div id="accountList" style="flex:1;overflow-y:auto;padding:16px 24px;"></div>
+
+      <!-- Footer -->
+      <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+        <button onclick="closeClientAccounts()" class="btn btn-ghost btn-sm">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       CLIENT FILE MODAL (detail view)
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="clientFileModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-box" style="max-width:780px;width:95vw;max-height:90vh;overflow-y:auto;">
+      <div class="modal-header">
+        <div>
+          <h3 id="clientFileTitle"><i class="fas fa-user-circle" style="margin-right:8px;opacity:0.8;"></i>Client File</h3>
+          <p id="clientFileSubtitle"></p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadClientFromFile()" class="btn btn-primary btn-sm">
+            <i class="fas fa-play"></i> New Session
+          </button>
+          <button class="modal-close" onclick="closeClientFile()"><i class="fas fa-times"></i></button>
+        </div>
+      </div>
+      <div id="clientFileBody" style="padding:20px 24px;"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SESSION VIEWER MODAL
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="sessionViewModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-box" style="max-width:700px;width:95vw;max-height:90vh;overflow-y:auto;">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fas fa-file-medical" style="margin-right:8px;opacity:0.8;"></i>Session Record</h3>
+          <p id="sessionViewSubtitle"></p>
+        </div>
+        <button class="modal-close" onclick="closeSessionView()"><i class="fas fa-times"></i></button>
+      </div>
+      <div id="sessionViewBody" style="padding:20px 24px;"></div>
+    </div>
+  </div>
+
+  <script>
+  // ============================================================
+  // CLIENT ACCOUNTS — server-side KV storage
+  // ============================================================
+  let _currentClientFile = null; // currently open client record
+
+  async function openClientAccounts() {
+    document.getElementById('clientAccountsModal').style.display = 'flex';
+    document.getElementById('accountSearch').value = '';
+    await loadAccountList();
+    checkDriveStatus();
+    document.getElementById('accountSearch').focus();
+  }
+  function closeClientAccounts() {
+    document.getElementById('clientAccountsModal').style.display = 'none';
+  }
+
+  async function loadAccountList() {
+    const list = document.getElementById('accountList');
+    list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-light);"><i class="fas fa-spinner fa-spin"></i> Loading clients…</p>';
+    try {
+      const res = await fetch('/api/clients');
+      const data = await res.json();
+      renderAccountList(data.clients || []);
+    } catch(e) {
+      list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--danger);">Could not load clients — KV storage may not be configured yet.</p>';
+    }
+  }
+
+  function renderAccountList(clients) {
+    const list = document.getElementById('accountList');
+    const countEl = document.getElementById('accountCount');
+    if (countEl) countEl.textContent = clients.length + ' client' + (clients.length !== 1 ? 's' : '');
+
+    if (clients.length === 0) {
+      list.innerHTML = \`<div style="text-align:center;padding:48px 24px;color:var(--text-light);">
+        <i class="fas fa-users" style="font-size:2.5rem;opacity:0.25;display:block;margin-bottom:12px;"></i>
+        <p style="font-size:0.88rem;">No client files yet.<br>Client accounts are created automatically when you save a SOAP note.</p>
+      </div>\`;
+      return;
+    }
+
+    list.innerHTML = clients.map(c => {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Unknown';
+      const initials = [(c.firstName||'')[0],(c.lastName||'')[0]].filter(Boolean).join('').toUpperCase() || '?';
+      const lastSess = c.lastSessionDate ? new Date(c.lastSessionDate).toLocaleDateString('en-AU') : '—';
+      const sessions = c.sessionCount || 0;
+      return \`<div onclick="openClientFile('\${c.accountNumber}')"
+        style="display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;transition:all 0.15s;background:white;"
+        onmouseenter="this.style.borderColor='var(--accent)';this.style.background='#f0f8ff';"
+        onmouseleave="this.style.borderColor='var(--border)';this.style.background='white';">
+        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;flex-shrink:0;">\${initials}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;color:var(--primary);font-size:0.9rem;">\${name}</div>
+          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">\${[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</div>
+        </div>
+        <div style="text-align:center;flex-shrink:0;">
+          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">\${c.accountNumber}</div>
+          <div style="font-size:0.7rem;color:var(--text-light);margin-top:4px;">\${sessions} session\${sessions !== 1 ? 's' : ''} · Last: \${lastSess}</div>
+        </div>
+        <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;"></i>
+      </div>\`;
+    }).join('');
+  }
+
+  function filterAccountList() {
+    const q = (document.getElementById('accountSearch')?.value || '').toLowerCase();
+    const items = document.getElementById('accountList')?.querySelectorAll('[onclick^="openClientFile"]');
+    if (!items) { loadAccountList(); return; }
+    // Re-fetch and filter
+    fetch('/api/clients').then(r => r.json()).then(data => {
+      const filtered = q
+        ? (data.clients || []).filter(c =>
+            [c.firstName, c.lastName, c.email, c.accountNumber].join(' ').toLowerCase().includes(q))
+        : (data.clients || []);
+      renderAccountList(filtered);
+    });
+  }
+
+  // ─── Client File view ─────────────────────────────────────────────────────
+  async function openClientFile(accountNumber) {
+    const modal = document.getElementById('clientFileModal');
+    const body = document.getElementById('clientFileBody');
+    body.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-light);"><i class="fas fa-spinner fa-spin"></i> Loading…</p>';
+    modal.style.display = 'flex';
+
+    try {
+      const [clientRes, sessionsRes] = await Promise.all([
+        fetch('/api/clients/' + accountNumber),
+        fetch('/api/clients/' + accountNumber + '/sessions')
+      ]);
+      const client = await clientRes.json();
+      const { sessions } = await sessionsRes.json();
+      _currentClientFile = client;
+      renderClientFile(client, sessions || []);
+    } catch(e) {
+      body.innerHTML = '<p style="color:var(--danger);padding:24px;">Error loading client file.</p>';
+    }
+  }
+
+  function closeClientFile() {
+    document.getElementById('clientFileModal').style.display = 'none';
+    _currentClientFile = null;
+  }
+
+  function renderClientFile(client, sessions) {
+    document.getElementById('clientFileTitle').innerHTML =
+      '<i class="fas fa-user-circle" style="margin-right:8px;opacity:0.8;"></i>' +
+      [client.firstName, client.lastName].filter(Boolean).join(' ');
+    document.getElementById('clientFileSubtitle').textContent =
+      client.accountNumber + ' · ' + (client.email || 'No email') + ' · ' + (sessions.length) + ' sessions';
+
+    const lastIntake = client.intakeForms?.[0];
+    const intakeDate = lastIntake?.savedAt ? new Date(lastIntake.savedAt).toLocaleDateString('en-AU') : '—';
+
+    document.getElementById('clientFileBody').innerHTML = \`
+      <!-- Account Details -->
+      <div class="card-plain" style="margin-bottom:16px;">
+        <div class="cp-head"><i class="fas fa-id-card"></i> Account Details
+          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">\${client.accountNumber}</span>
+        </div>
+        <div class="cp-body">
+          <div class="grid-2" style="gap:12px;">
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">\${[client.firstName,client.lastName].filter(Boolean).join(' ')||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">\${client.dob||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">\${client.email||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">\${client.phone||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">\${client.occupation||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">\${client.chiefComplaint||'—'}</div></div>
+            \${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + client.medications + '</div></div>' : ''}
+            \${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + client.allergies + '</div></div>' : ''}
+            \${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + client.medicalConditions + '</div></div>' : ''}
+          </div>
+          <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light);">
+            Created: \${new Date(client.createdAt).toLocaleDateString('en-AU')} · 
+            Last updated: \${new Date(client.updatedAt).toLocaleDateString('en-AU')} · 
+            First intake: \${intakeDate}
+          </div>
+        </div>
+      </div>
+
+      <!-- Intake Forms History -->
+      \${(client.intakeForms||[]).length > 0 ? \`
+      <div class="card-plain" style="margin-bottom:16px;">
+        <div class="cp-head"><i class="fas fa-clipboard-list"></i> Intake History (\${client.intakeForms.length})</div>
+        <div class="cp-body" style="padding:0;">
+          \${client.intakeForms.map((f, i) => \`
+            <details style="border-bottom:1px solid var(--border);">
+              <summary style="padding:12px 20px;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--primary);list-style:none;display:flex;align-items:center;gap:8px;">
+                <i class="fas fa-file-alt" style="color:var(--accent);"></i>
+                Intake \${client.intakeForms.length - i}: \${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">\${f.source||''}</span>
+              </summary>
+              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">\${Object.entries(f.data||{}).map(([k,v]) => k+': '+v).join('\\n')||'No structured data captured.'}</div>
+            </details>
+          \`).join('')}
+        </div>
+      </div>
+      \` : ''}
+
+      <!-- Session History -->
+      <div class="card-plain">
+        <div class="cp-head"><i class="fas fa-history"></i> Session History (\${sessions.length})
+          \${sessions.some(s => s.pdfDriveUrl) ? '<span style="margin-left:auto;font-size:0.7rem;color:#38a169;"><i class="fab fa-google-drive"></i> Drive backups</span>' : ''}
+        </div>
+        <div class="cp-body" style="padding:0;">
+          \${sessions.length === 0
+            ? '<p style="padding:20px;font-size:0.82rem;color:var(--text-light);text-align:center;">No sessions recorded yet.</p>'
+            : sessions.map(s => \`
+              <div onclick="openSessionView('\${s.sessionId}')"
+                style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.1s;"
+                onmouseenter="this.style.background='#f0f8ff';" onmouseleave="this.style.background='';">
+                <div style="width:36px;height:36px;border-radius:50%;background:#e8f4fc;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                  <i class="fas fa-file-medical" style="color:var(--accent);font-size:0.85rem;"></i>
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:0.85rem;font-weight:600;color:var(--primary);">
+                    \${new Date(s.sessionDate).toLocaleDateString('en-AU',{weekday:'short',year:'numeric',month:'short',day:'numeric'})}
+                    \${s.pdfDriveUrl ? '<i class="fab fa-google-drive" style="color:#38a169;margin-left:6px;font-size:0.75rem;" title="PDF saved to Drive"></i>' : ''}
+                  </div>
+                  <div style="font-size:0.72rem;color:var(--text-light);margin-top:2px;">
+                    \${s.duration} · \${s.musclesTreated?.length||0} muscles treated · \${s.chiefComplaint||''}
+                  </div>
+                </div>
+                <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;font-size:0.75rem;"></i>
+              </div>
+            \`).join('')
+          }
+        </div>
+      </div>
+
+      <!-- Google Drive Connect -->
+      <div id="driveConnectSection" style="margin-top:16px;padding:14px 16px;background:#f0faf5;border:1.5px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.82rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div>
+            <strong style="color:#276749;"><i class="fab fa-google-drive" style="margin-right:6px;"></i>Google Drive PDF Backup</strong>
+            <div style="color:#2f855a;margin-top:3px;" id="driveLinkStatus">Checking connection…</div>
+          </div>
+          <button onclick="connectDriveForClient('\${client.accountNumber}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
+            <i class="fab fa-google-drive"></i> Connect Drive
+          </button>
+        </div>
+      </div>
+    \`;
+
+    // Check drive status
+    fetch('/api/drive/status').then(r => r.json()).then(d => {
+      const statusEl = document.getElementById('driveLinkStatus');
+      const btnEl = document.getElementById('driveConnectBtn');
+      if (d.connected) {
+        if (statusEl) statusEl.innerHTML = '✅ Connected — new SOAP PDFs will be automatically saved to your Google Drive.';
+        if (btnEl) btnEl.textContent = '✅ Connected';
+      } else {
+        if (statusEl) statusEl.textContent = 'Not connected. Click to authorise Google Drive access.';
+      }
+    });
+  }
+
+  function loadClientFromFile() {
+    if (!_currentClientFile) return;
+    loadClientProfile(_currentClientFile.id || _currentClientFile.accountNumber);
+    closeClientFile();
+    closeClientAccounts();
+  }
+
+  // ─── Session viewer ────────────────────────────────────────────────────────
+  async function openSessionView(sessionId) {
+    const modal = document.getElementById('sessionViewModal');
+    const body = document.getElementById('sessionViewBody');
+    body.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-light);"><i class="fas fa-spinner fa-spin"></i> Loading…</p>';
+    modal.style.display = 'flex';
+
+    try {
+      const res = await fetch('/api/sessions/' + sessionId);
+      const session = await res.json();
+      renderSessionView(session);
+    } catch(e) {
+      body.innerHTML = '<p style="color:var(--danger);">Error loading session.</p>';
+    }
+  }
+
+  function closeSessionView() {
+    document.getElementById('sessionViewModal').style.display = 'none';
+  }
+
+  function renderSessionView(s) {
+    document.getElementById('sessionViewSubtitle').textContent =
+      new Date(s.sessionDate).toLocaleDateString('en-AU',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) +
+      ' · ' + s.clientName + ' · ' + s.duration;
+
+    const soap = s.soapNote || {};
+    document.getElementById('sessionViewBody').innerHTML = \`
+      <!-- Client & session info -->
+      <div style="display:flex;gap:20px;flex-wrap:wrap;background:#f7faff;padding:14px 16px;border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.82rem;">
+        <div><strong style="color:var(--primary);">\${s.clientName}</strong><div style="color:var(--text-light);">\${s.accountNumber}</div></div>
+        <div><strong>Date</strong><div style="color:var(--text-light);">\${new Date(s.sessionDate).toLocaleDateString('en-AU')}</div></div>
+        <div><strong>Duration</strong><div style="color:var(--text-light);">\${s.duration}</div></div>
+        <div><strong>Pain</strong><div style="color:var(--text-light);">\${s.painBefore||'—'}/10 → \${s.painAfter||'—'}/10</div></div>
+        \${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+s.therapistName+(s.therapistCredentials?' ('+s.therapistCredentials+')':'')+'</div></div>' : ''}
+      </div>
+
+      <!-- Muscles -->
+      \${(s.musclesTreated?.length || s.musclesToFollowUp?.length) ? \`
+        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">
+          \${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+m+'</span>').join('')}
+          \${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+m+'</span>').join('')}
+        </div>
+      \` : ''}
+
+      <!-- SOAP sections -->
+      \${[
+        {key:'subjective', label:'S — Subjective', color:'#3b82f6'},
+        {key:'objective', label:'O — Objective', color:'#10b981'},
+        {key:'assessment', label:'A — Assessment', color:'#f59e0b'},
+        {key:'plan', label:'P — Plan', color:'#8b5cf6'},
+        {key:'therapistNotes', label:'Therapist Notes', color:'#6b7280'}
+      ].filter(sec => soap[sec.key]).map(sec => \`
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="width:4px;height:18px;background:\${sec.color};border-radius:2px;"></div>
+            <strong style="font-size:0.82rem;color:var(--primary);">\${sec.label}</strong>
+          </div>
+          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">\${soap[sec.key]}</div>
+        </div>
+      \`).join('')}
+
+      <!-- Drive link -->
+      \${s.pdfDriveUrl ? \`
+        <div style="margin-top:16px;padding:12px 14px;background:#f0faf5;border:1px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.8rem;display:flex;align-items:center;gap:10px;">
+          <i class="fab fa-google-drive" style="color:#38a169;font-size:1.1rem;"></i>
+          <div>PDF backed up to Google Drive — <a href="\${s.pdfDriveUrl}" target="_blank" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
+        </div>
+      \` : ''}
+
+      <div style="margin-top:16px;font-size:0.7rem;color:var(--text-light);">Saved: \${new Date(s.savedAt).toLocaleString('en-AU')}</div>
+    \`;
+  }
+
+  // ─── Google Drive connection ───────────────────────────────────────────────
+  function connectDriveForClient(accountNumber) {
+    const url = '/api/drive/auth?account=' + encodeURIComponent(accountNumber);
+    const popup = window.open(url, 'google-drive-auth', 'width=500,height=620,top=100,left=200');
+    window.addEventListener('message', function handler(e) {
+      if (e.data?.type === 'DRIVE_AUTH_SUCCESS') {
+        window.removeEventListener('message', handler);
+        popup?.close();
+        const statusEl = document.getElementById('driveLinkStatus');
+        const btnEl = document.getElementById('driveConnectBtn');
+        if (statusEl) statusEl.innerHTML = '✅ Connected — future SOAP PDFs will be saved to Google Drive automatically.';
+        if (btnEl) { btnEl.textContent = '✅ Connected'; btnEl.style.background = '#38a169'; }
+        showCopyFeedback('✅ Google Drive connected!');
+      }
+    });
+  }
+
+  async function checkDriveStatus() {
+    try {
+      const res = await fetch('/api/drive/status');
+      const d = await res.json();
+      const btn = document.getElementById('driveStatusBtn');
+      const label = document.getElementById('driveStatusLabel');
+      if (d.connected) {
+        if (label) label.innerHTML = '<span style="color:#38a169;">Drive ✓</span>';
+        if (btn) btn.title = 'Google Drive connected';
+      } else {
+        if (label) label.textContent = 'Drive';
+      }
+    } catch {}
+  }
+
+  // ─── Auto-save SOAP note to client file ───────────────────────────────────
+  async function saveSOAPToClientFile(contextData, soapData, treatedMuscles, followupMuscles, techniques) {
+    try {
+      const firstName = contextData.firstName || '';
+      const lastName = contextData.lastName || '';
+      const email = contextData.email || '';
+
+      // Build intake data map from the form
+      const intakeText = document.getElementById('intakeFormData')?.value || '';
+      const intakeMap = {};
+      intakeText.split('\\n').forEach(line => {
+        const colon = line.indexOf(':');
+        if (colon > 0) {
+          intakeMap[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+        }
+      });
+
+      // 1. Create/upsert client record
+      const clientRes = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email,
+          phone: intakeMap['Phone'] || '',
+          dob: contextData.dob || '',
+          occupation: intakeMap['Occupation'] || '',
+          chiefComplaint: contextData.chiefComplaint || '',
+          medications: contextData.medications || '',
+          allergies: intakeMap['Allergies'] || '',
+          medicalConditions: intakeMap['Medical Conditions'] || '',
+          areasToAvoid: intakeMap['Areas to Avoid'] || '',
+          source: 'soap-generator',
+          intakeData: intakeMap
+        })
+      });
+      const clientJson = await clientRes.json();
+      const accountNumber = clientJson.accountNumber;
+      if (!accountNumber) throw new Error('No account number returned');
+
+      // 2. Save session
+      const sessRes = await fetch('/api/clients/' + accountNumber + '/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionDate: document.getElementById('sessionDate')?.value || new Date().toISOString().split('T')[0],
+          duration: contextData.duration || '',
+          musclesTreated: treatedMuscles,
+          musclesToFollowUp: followupMuscles,
+          techniques,
+          soapNote: soapData,
+          intakeSnapshot: intakeText,
+          therapistName: document.getElementById('therapistName')?.value || '',
+          therapistCredentials: document.getElementById('therapistCredentials')?.value || '',
+          painBefore: contextData.painBefore || '',
+          painAfter: contextData.painAfter || '',
+          chiefComplaint: contextData.chiefComplaint || ''
+        })
+      });
+      const sessJson = await sessRes.json();
+
+      // Store account number and session id in state for PDF upload
+      state.lastAccountNumber = accountNumber;
+      state.lastSessionId = sessJson.sessionId;
+
+      const label = clientJson.isNew ? '✅ New client file created' : '✅ Session saved';
+      showCopyFeedback(label + ' · ' + accountNumber);
+
+      // Show save confirmation in SOAP header
+      const badge = document.getElementById('savedFileBadge');
+      if (badge) {
+        const span = badge.querySelector('span');
+        if (span) span.textContent = accountNumber;
+        badge.style.display = 'inline-flex';
+      }
+
+      return { accountNumber, sessionId: sessJson.sessionId };
+    } catch(e) {
+      console.warn('Could not save to client file:', e.message);
+      return null;
+    }
+  }
+
+  // ─── Upload PDF to Drive after save ──────────────────────────────────────
+  async function uploadPDFToDrive(sessionId, accountNumber, clientName, sessionDate) {
+    try {
+      const driveStatus = await fetch('/api/drive/status').then(r => r.json());
+      if (!driveStatus.connected) return;
+
+      // Generate PDF as base64
+      const base64 = generatePDFBase64();
+      if (!base64) return;
+
+      const filename = 'SOAP_' + accountNumber + '_' + sessionDate + '_' + clientName.replace(/\\s+/g,'_') + '.pdf';
+
+      const res = await fetch('/api/drive/upload-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, accountNumber, filename, pdfBase64: base64 })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showCopyFeedback('📁 PDF saved to Google Drive');
+        const badge = document.getElementById('driveBadge');
+        if (badge) { badge.style.display = 'inline-flex'; badge.href = data.url; }
+      }
+    } catch(e) {
+      console.warn('Drive upload failed:', e.message);
+    }
+  }
+
+  // ─── Generate PDF and return base64 string ───────────────────────────────
+  function generatePDFBase64() {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = 210, margin = 18, contentW = pageW - margin * 2;
+      let y = 20;
+      const violet = [124, 58, 237], dark = [15, 23, 42], mid = [71, 85, 105], light = [248, 250, 252];
+
+      doc.setFillColor(...violet);
+      doc.rect(0, 0, pageW, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
+      doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+      doc.text('Generated by SOAP Note Generator · Flexion & Flow', margin, 22);
+      y = 38;
+
+      const client = document.getElementById('soapClientName')?.textContent || '';
+      const dateText = document.getElementById('sessionDate')?.value || '';
+      const duration = document.getElementById('sessionDuration')?.value || '';
+      const chiefComplaint = document.getElementById('chiefComplaint')?.value || '';
+      const painBefore = document.getElementById('painLevel')?.value || '';
+      const painAfter = document.getElementById('postPainLevel')?.value || '';
+      const therapist = document.getElementById('therapistName')?.value || '';
+      const creds = document.getElementById('therapistCredentials')?.value || '';
+      const acct = state.lastAccountNumber || '';
+
+      doc.setFillColor(...light);
+      doc.rect(margin, y, contentW, 26, 'F');
+      doc.setDrawColor(200, 200, 200);
+      doc.rect(margin, y, contentW, 26, 'S');
+      doc.setTextColor(...dark); doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text(client || 'Client', margin + 3, y + 7);
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...mid);
+      doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
+      doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
+      if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
+      if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
+      if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
+      if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
+      y += 32;
+
+      const sections = [
+        { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
+        { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
+        { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
+        { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
+        { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
+      ];
+      for (const sec of sections) {
+        const text = document.getElementById(sec.id)?.value;
+        if (!text) continue;
+        if (y > 250) { doc.addPage(); y = 20; }
+        doc.setFillColor(...sec.color);
+        doc.rect(margin, y, 4, 8, 'F');
+        doc.setTextColor(...dark); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+        doc.text(sec.label, margin + 7, y + 5.5);
+        y += 11;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...mid);
+        const lines = doc.splitTextToSize(text, contentW - 5);
+        for (const line of lines) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.text(line, margin + 3, y); y += 5;
+        }
+        y += 5;
+      }
+
+      if (y > 255) { doc.addPage(); y = 20; }
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, y + 5, margin + contentW, y + 5);
+      y += 10;
+      doc.setTextColor(...mid); doc.setFontSize(8);
+      if (therapist || creds) { doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y); y += 5; }
+      doc.setFontSize(7); doc.setTextColor(180, 180, 180);
+      doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
+
+      return doc.output('datauristring').split(',')[1]; // base64 only
+    } catch(e) {
+      console.warn('PDF base64 generation failed:', e);
+      return null;
+    }
   }
   </script>
 </body>
