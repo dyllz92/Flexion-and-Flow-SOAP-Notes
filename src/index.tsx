@@ -1,18 +1,70 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { serveStatic } from 'hono/cloudflare-workers'
+import { serveStatic } from '@hono/node-server/serve-static'
+import Database from 'better-sqlite3'
+import path from 'node:path'
+import fs from 'node:fs'
 
-type Bindings = {
-  OPENAI_API_KEY: string
-  CLIENTS_KV: KVNamespace
-  SESSIONS_KV: KVNamespace
-  META_KV: KVNamespace
-  GOOGLE_CLIENT_ID: string
-  GOOGLE_CLIENT_SECRET: string
-  GOOGLE_REDIRECT_URI: string
-  GOOGLE_DRIVE_FOLDER_ID: string
-  ADMIN_PASSWORD: string
+// ─── Environment helpers (process.env for Railway / Node.js) ─────────────────
+const ENV = {
+  OPENAI_API_KEY:      process.env.OPENAI_API_KEY      || '',
+  GOOGLE_CLIENT_ID:    process.env.GOOGLE_CLIENT_ID    || '',
+  GOOGLE_CLIENT_SECRET:process.env.GOOGLE_CLIENT_SECRET|| '',
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || '',
+  GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
+  ADMIN_PASSWORD:      process.env.ADMIN_PASSWORD      || 'changeme',
+  DATA_DIR:            process.env.DATA_DIR            || path.join(process.cwd(), 'data'),
+  PORT:                parseInt(process.env.PORT || '3000', 10),
 }
+
+// ─── SQLite database setup ────────────────────────────────────────────────────
+fs.mkdirSync(ENV.DATA_DIR, { recursive: true })
+const db = new Database(path.join(ENV.DATA_DIR, 'soap.db'))
+db.pragma('journal_mode = WAL')
+db.pragma('foreign_keys = ON')
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS clients (
+    account_number TEXT PRIMARY KEY,
+    id             TEXT UNIQUE NOT NULL,
+    data           TEXT NOT NULL,
+    email          TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    session_id     TEXT PRIMARY KEY,
+    account_number TEXT NOT NULL,
+    session_date   TEXT NOT NULL,
+    data           TEXT NOT NULL,
+    saved_at       TEXT NOT NULL,
+    FOREIGN KEY (account_number) REFERENCES clients(account_number)
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_number);
+
+  CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`)
+
+// ─── KV-compatible adapter over SQLite ───────────────────────────────────────
+const kv = {
+  get(key: string): string | null {
+    const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined
+    return row?.value ?? null
+  },
+  put(key: string, value: string): void {
+    db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value)
+  },
+  del(key: string): void {
+    db.prepare('DELETE FROM meta WHERE key = ?').run(key)
+  }
+}
+
+// ─── No Cloudflare Bindings needed — plain Hono ───────────────────────────────
 
 // ─── Data Types ───────────────────────────────────────────────────────────────
 interface ClientRecord {
@@ -71,24 +123,58 @@ interface SessionRecord {
 }
 
 // ─── Helper: generate account number ─────────────────────────────────────────
-async function generateAccountNumber(metaKv: KVNamespace): Promise<string> {
+function generateAccountNumber(): string {
   const now = new Date()
   const ym = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, '0')
   const counterKey = `counter:${ym}`
-  const raw = await metaKv.get(counterKey)
+  const raw = kv.get(counterKey)
   const next = raw ? parseInt(raw) + 1 : 1
-  await metaKv.put(counterKey, String(next))
+  kv.put(counterKey, String(next))
   return `FF-${ym}-${String(next).padStart(4, '0')}`
 }
 
-// ─── Helper: find client by email or name ─────────────────────────────────────
-async function findClientByEmail(kv: KVNamespace, email: string): Promise<ClientRecord | null> {
+// ─── Helper: find client by email ────────────────────────────────────────────
+function findClientByEmail(email: string): ClientRecord | null {
   if (!email) return null
-  const idxRaw = await kv.get(`idx:email:${email.toLowerCase()}`)
-  if (!idxRaw) return null
-  const raw = await kv.get(`client:${idxRaw}`)
-  if (!raw) return null
-  try { return JSON.parse(raw) } catch { return null }
+  const row = db.prepare('SELECT data FROM clients WHERE email = ?').get(email.toLowerCase()) as { data: string } | undefined
+  if (!row) return null
+  try { return JSON.parse(row.data) } catch { return null }
+}
+
+// ─── Helper: get client by account number ────────────────────────────────────
+function getClient(accountNumber: string): ClientRecord | null {
+  const row = db.prepare('SELECT data FROM clients WHERE account_number = ?').get(accountNumber) as { data: string } | undefined
+  if (!row) return null
+  try { return JSON.parse(row.data) } catch { return null }
+}
+
+// ─── Helper: save client ─────────────────────────────────────────────────────
+function saveClient(client: ClientRecord): void {
+  db.prepare(`
+    INSERT OR REPLACE INTO clients (account_number, id, data, email, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    client.accountNumber,
+    client.id,
+    JSON.stringify(client),
+    client.email?.toLowerCase() || null,
+    client.createdAt,
+    client.updatedAt
+  )
+}
+
+// ─── Helper: save session ─────────────────────────────────────────────────────
+function saveSession(session: SessionRecord): void {
+  db.prepare(`
+    INSERT OR REPLACE INTO sessions (session_id, account_number, session_date, data, saved_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    session.sessionId,
+    session.accountNumber,
+    session.sessionDate,
+    JSON.stringify(session),
+    session.savedAt
+  )
 }
 
 // ─── Helper: Google Drive upload ──────────────────────────────────────────────
@@ -151,15 +237,15 @@ async function refreshGoogleToken(
   } catch { return null }
 }
 
-const app = new Hono<{ Bindings: Bindings }>()
+const app = new Hono()
 
 app.use('/api/*', cors())
-app.use('/static/*', serveStatic({ root: './' }))
-// Serve images and other static assets from public root
-app.use('/*.png', serveStatic({ root: './' }))
-app.use('/*.jpg', serveStatic({ root: './' }))
-app.use('/*.ico', serveStatic({ root: './' }))
-app.use('/*.svg', serveStatic({ root: './' }))
+// Serve static files from public/ directory
+app.use('/static/*', serveStatic({ root: './public' }))
+app.use('/*.png',  serveStatic({ root: './public' }))
+app.use('/*.jpg',  serveStatic({ root: './public' }))
+app.use('/*.ico',  serveStatic({ root: './public' }))
+app.use('/*.svg',  serveStatic({ root: './public' }))
 
 // Intake webhook – receives structured client data from Flexion & Flow intake form
 // The intake form POSTs here after a successful submission so the therapist can
@@ -197,7 +283,7 @@ app.post('/api/intake-webhook', async (c) => {
 
 // Generate SOAP notes via OpenAI
 app.post('/api/generate-soap', async (c) => {
-  const apiKey = c.env?.OPENAI_API_KEY
+  const apiKey = ENV.OPENAI_API_KEY
   if (!apiKey) {
     return c.json({ error: 'OpenAI API key not configured' }, 500)
   }
@@ -267,29 +353,16 @@ Return JSON with these exact keys:
 
 // POST /api/clients — create or upsert client, returns accountNumber
 app.post('/api/clients', async (c) => {
-  const kv = c.env?.CLIENTS_KV
-  const metaKv = c.env?.META_KV
-  if (!kv || !metaKv) return c.json({ error: 'Storage not configured' }, 500)
-
   const body = await c.req.json() as Partial<ClientRecord> & { source?: string; intakeData?: Record<string, string> }
   if (!body.firstName && !body.lastName) return c.json({ error: 'Name required' }, 400)
 
   const email = (body.email || '').toLowerCase().trim()
-
-  // Check for existing client by email
   let existing: ClientRecord | null = null
-  if (email) existing = await findClientByEmail(kv, email)
-
-  // Also try by id if provided
-  if (!existing && body.id) {
-    const raw = await kv.get(`client:${body.id}`)
-    if (raw) try { existing = JSON.parse(raw) } catch {}
-  }
+  if (email) existing = findClientByEmail(email)
 
   const now = new Date().toISOString()
 
   if (existing) {
-    // Update existing client
     const intakeEntry: IntakeSnapshot = {
       savedAt: now,
       source: body.source || 'soap-generator',
@@ -307,17 +380,14 @@ app.post('/api/clients', async (c) => {
     existing.medicalConditions = body.medicalConditions || existing.medicalConditions
     existing.areasToAvoid = body.areasToAvoid || existing.areasToAvoid
     existing.intakeForms = [...(existing.intakeForms || []), intakeEntry]
-
-    await kv.put(`client:${existing.accountNumber}`, JSON.stringify(existing))
+    saveClient(existing)
     return c.json({ success: true, accountNumber: existing.accountNumber, client: existing, isNew: false })
   }
 
-  // Create new client
-  const accountNumber = await generateAccountNumber(metaKv)
+  const accountNumber = generateAccountNumber()
   const id = body.id || crypto.randomUUID()
   const client: ClientRecord = {
-    accountNumber,
-    id,
+    accountNumber, id,
     firstName: body.firstName || '',
     lastName: body.lastName || '',
     email,
@@ -331,106 +401,68 @@ app.post('/api/clients', async (c) => {
     areasToAvoid: body.areasToAvoid || '',
     createdAt: now,
     updatedAt: now,
-    intakeForms: [{
-      savedAt: now,
-      source: body.source || 'soap-generator',
-      data: body.intakeData || {}
-    }],
+    intakeForms: [{ savedAt: now, source: body.source || 'soap-generator', data: body.intakeData || {} }],
     sessionCount: 0,
     lastSessionDate: ''
   }
-
-  await kv.put(`client:${accountNumber}`, JSON.stringify(client))
-  // Index by email for fast lookup
-  if (email) await metaKv.put(`idx:email:${email}`, accountNumber)
-  // Add to client list index
-  const listRaw = await metaKv.get('client_list')
-  const list: string[] = listRaw ? JSON.parse(listRaw) : []
-  list.unshift(accountNumber)
-  await metaKv.put('client_list', JSON.stringify(list))
-
+  saveClient(client)
   return c.json({ success: true, accountNumber, client, isNew: true }, 201)
 })
 
 // GET /api/clients — list all clients (summary)
-app.get('/api/clients', async (c) => {
-  const kv = c.env?.CLIENTS_KV
-  const metaKv = c.env?.META_KV
-  if (!kv || !metaKv) return c.json({ error: 'Storage not configured' }, 500)
+app.get('/api/clients', (c) => {
+  const rows = db.prepare(`
+    SELECT data FROM clients ORDER BY updated_at DESC LIMIT 500
+  `).all() as { data: string }[]
 
-  const listRaw = await metaKv.get('client_list')
-  if (!listRaw) return c.json({ clients: [] })
-
-  const accountNumbers: string[] = JSON.parse(listRaw)
-  const clients: Partial<ClientRecord>[] = []
-
-  // Fetch all (Cloudflare KV bulk fetch — up to 500)
-  for (const acct of accountNumbers.slice(0, 500)) {
-    const raw = await kv.get(`client:${acct}`)
-    if (raw) {
-      try {
-        const c2: ClientRecord = JSON.parse(raw)
-        // Return summary only (omit large intake forms array)
-        clients.push({
-          accountNumber: c2.accountNumber,
-          id: c2.id,
-          firstName: c2.firstName,
-          lastName: c2.lastName,
-          email: c2.email,
-          phone: c2.phone,
-          dob: c2.dob,
-          chiefComplaint: c2.chiefComplaint,
-          sessionCount: c2.sessionCount,
-          lastSessionDate: c2.lastSessionDate,
-          createdAt: c2.createdAt,
-          updatedAt: c2.updatedAt
-        })
-      } catch {}
-    }
-  }
+  const clients = rows.map(r => {
+    try {
+      const c2: ClientRecord = JSON.parse(r.data)
+      return {
+        accountNumber: c2.accountNumber,
+        id: c2.id,
+        firstName: c2.firstName,
+        lastName: c2.lastName,
+        email: c2.email,
+        phone: c2.phone,
+        dob: c2.dob,
+        chiefComplaint: c2.chiefComplaint,
+        sessionCount: c2.sessionCount,
+        lastSessionDate: c2.lastSessionDate,
+        createdAt: c2.createdAt,
+        updatedAt: c2.updatedAt
+      }
+    } catch { return null }
+  }).filter(Boolean)
 
   return c.json({ clients })
 })
 
 // GET /api/clients/:accountNumber — full client record
-app.get('/api/clients/:accountNumber', async (c) => {
-  const kv = c.env?.CLIENTS_KV
-  if (!kv) return c.json({ error: 'Storage not configured' }, 500)
-  const acct = c.req.param('accountNumber')
-  const raw = await kv.get(`client:${acct}`)
-  if (!raw) return c.json({ error: 'Client not found' }, 404)
-  return c.json(JSON.parse(raw))
+app.get('/api/clients/:accountNumber', (c) => {
+  const client = getClient(c.req.param('accountNumber'))
+  if (!client) return c.json({ error: 'Client not found' }, 404)
+  return c.json(client)
 })
 
 // PUT /api/clients/:accountNumber — update client details
 app.put('/api/clients/:accountNumber', async (c) => {
-  const kv = c.env?.CLIENTS_KV
-  if (!kv) return c.json({ error: 'Storage not configured' }, 500)
   const acct = c.req.param('accountNumber')
-  const raw = await kv.get(`client:${acct}`)
-  if (!raw) return c.json({ error: 'Client not found' }, 404)
-
-  const existing: ClientRecord = JSON.parse(raw)
+  const existing = getClient(acct)
+  if (!existing) return c.json({ error: 'Client not found' }, 404)
   const body = await c.req.json()
-  const updated = { ...existing, ...body, accountNumber: acct, updatedAt: new Date().toISOString() }
-  await kv.put(`client:${acct}`, JSON.stringify(updated))
+  const updated: ClientRecord = { ...existing, ...body, accountNumber: acct, updatedAt: new Date().toISOString() }
+  saveClient(updated)
   return c.json({ success: true, client: updated })
 })
 
 // POST /api/clients/:accountNumber/sessions — save SOAP note
 app.post('/api/clients/:accountNumber/sessions', async (c) => {
-  const clientsKv = c.env?.CLIENTS_KV
-  const sessionsKv = c.env?.SESSIONS_KV
-  const metaKv = c.env?.META_KV
-  if (!clientsKv || !sessionsKv) return c.json({ error: 'Storage not configured' }, 500)
-
   const acct = c.req.param('accountNumber')
-  const clientRaw = await clientsKv.get(`client:${acct}`)
-  if (!clientRaw) return c.json({ error: 'Client not found' }, 404)
+  const client = getClient(acct)
+  if (!client) return c.json({ error: 'Client not found' }, 404)
 
-  const client: ClientRecord = JSON.parse(clientRaw)
   const body = await c.req.json() as Omit<SessionRecord, 'sessionId' | 'accountNumber' | 'savedAt'>
-
   const sessionId = crypto.randomUUID()
   const now = new Date().toISOString()
 
@@ -453,85 +485,71 @@ app.post('/api/clients/:accountNumber/sessions', async (c) => {
     savedAt: now
   }
 
-  // Store session
-  await sessionsKv.put(`session:${sessionId}`, JSON.stringify(session))
-
-  // Add to client's session list index
-  const sessListRaw = metaKv ? await metaKv.get(`sessions:${acct}`) : null
-  const sessList: string[] = sessListRaw ? JSON.parse(sessListRaw) : []
-  sessList.unshift(sessionId)
-  if (metaKv) await metaKv.put(`sessions:${acct}`, JSON.stringify(sessList))
+  saveSession(session)
 
   // Update client record
   client.sessionCount = (client.sessionCount || 0) + 1
   client.lastSessionDate = session.sessionDate
   client.updatedAt = now
-  await clientsKv.put(`client:${acct}`, JSON.stringify(client))
+  saveClient(client)
 
-  // Attempt Google Drive PDF upload if token exists
-  let pdfDriveUrl: string | undefined
-  if (client.driveToken && c.env?.GOOGLE_CLIENT_ID) {
-    const accessToken = await refreshGoogleToken(
-      client.driveToken,
-      c.env.GOOGLE_CLIENT_ID,
-      c.env.GOOGLE_CLIENT_SECRET
-    )
-    if (accessToken) {
-      // Upload JSON backup
-      const jsonFilename = `SOAP_${acct}_${session.sessionDate}_${sessionId.slice(0, 8)}.json`
-      await uploadToDrive(
-        accessToken,
-        c.env.GOOGLE_DRIVE_FOLDER_ID || '',
-        jsonFilename,
-        JSON.stringify(session, null, 2),
-        'application/json'
-      )
-    }
+  // Also write JSON backup file to DATA_DIR
+  const backupPath = path.join(ENV.DATA_DIR, `session_${acct}_${sessionId.slice(0, 8)}.json`)
+  try { fs.writeFileSync(backupPath, JSON.stringify(session, null, 2)) } catch {}
+
+  // Try Drive JSON upload if token exists
+  const driveToken = kv.get('global_drive_refresh_token')
+  if (driveToken && ENV.GOOGLE_CLIENT_ID) {
+    refreshGoogleToken(driveToken, ENV.GOOGLE_CLIENT_ID, ENV.GOOGLE_CLIENT_SECRET).then(accessToken => {
+      if (accessToken) {
+        uploadToDrive(
+          accessToken,
+          ENV.GOOGLE_DRIVE_FOLDER_ID,
+          `SOAP_${acct}_${session.sessionDate}_${sessionId.slice(0, 8)}.json`,
+          JSON.stringify(session, null, 2),
+          'application/json'
+        )
+      }
+    })
   }
 
   return c.json({ success: true, sessionId, session })
 })
 
 // GET /api/clients/:accountNumber/sessions — list sessions
-app.get('/api/clients/:accountNumber/sessions', async (c) => {
-  const sessionsKv = c.env?.SESSIONS_KV
-  const metaKv = c.env?.META_KV
-  if (!sessionsKv || !metaKv) return c.json({ error: 'Storage not configured' }, 500)
-
+app.get('/api/clients/:accountNumber/sessions', (c) => {
   const acct = c.req.param('accountNumber')
-  const sessListRaw = await metaKv.get(`sessions:${acct}`)
-  if (!sessListRaw) return c.json({ sessions: [] })
+  const rows = db.prepare(`
+    SELECT data FROM sessions WHERE account_number = ? ORDER BY session_date DESC LIMIT 100
+  `).all(acct) as { data: string }[]
 
-  const sessionIds: string[] = JSON.parse(sessListRaw)
-  const sessions: SessionRecord[] = []
-  for (const sid of sessionIds.slice(0, 100)) {
-    const raw = await sessionsKv.get(`session:${sid}`)
-    if (raw) try { sessions.push(JSON.parse(raw)) } catch {}
-  }
+  const sessions = rows.map(r => {
+    try { return JSON.parse(r.data) } catch { return null }
+  }).filter(Boolean)
+
   return c.json({ sessions })
 })
 
 // GET /api/sessions/:sessionId — single session
-app.get('/api/sessions/:sessionId', async (c) => {
-  const sessionsKv = c.env?.SESSIONS_KV
-  if (!sessionsKv) return c.json({ error: 'Storage not configured' }, 500)
-  const raw = await sessionsKv.get(`session:${c.req.param('sessionId')}`)
-  if (!raw) return c.json({ error: 'Session not found' }, 404)
-  return c.json(JSON.parse(raw))
+app.get('/api/sessions/:sessionId', (c) => {
+  const row = db.prepare('SELECT data FROM sessions WHERE session_id = ?').get(c.req.param('sessionId')) as { data: string } | undefined
+  if (!row) return c.json({ error: 'Session not found' }, 404)
+  return c.json(JSON.parse(row.data))
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GOOGLE DRIVE OAUTH
 // ═══════════════════════════════════════════════════════════════════════════
 
-// GET /api/drive/auth — redirect to Google OAuth, scoped to Drive file access only
-app.get('/api/drive/auth', async (c) => {
-  const clientId = c.env?.GOOGLE_CLIENT_ID
+// GET /api/drive/auth
+app.get('/api/drive/auth', (c) => {
+  const clientId = ENV.GOOGLE_CLIENT_ID
   if (!clientId) return c.json({ error: 'Google OAuth not configured' }, 500)
 
   const acct = c.req.query('account') || ''
-  const redirectUri = c.env.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/api/drive/callback`
-  const state = btoa(JSON.stringify({ account: acct, origin: new URL(c.req.url).origin }))
+  const origin = new URL(c.req.url).origin
+  const redirectUri = ENV.GOOGLE_REDIRECT_URI || `${origin}/api/drive/callback`
+  const state = Buffer.from(JSON.stringify({ account: acct, origin })).toString('base64')
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -545,7 +563,7 @@ app.get('/api/drive/auth', async (c) => {
   return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
 })
 
-// GET /api/drive/callback — exchange code for tokens, save refresh token to client record
+// GET /api/drive/callback
 app.get('/api/drive/callback', async (c) => {
   const code = c.req.query('code')
   const stateRaw = c.req.query('state')
@@ -554,52 +572,40 @@ app.get('/api/drive/callback', async (c) => {
   let accountNumber = ''
   let origin = ''
   try {
-    const parsed = JSON.parse(atob(stateRaw || ''))
+    const parsed = JSON.parse(Buffer.from(stateRaw || '', 'base64').toString())
     accountNumber = parsed.account || ''
     origin = parsed.origin || ''
   } catch {}
 
-  const clientId = c.env?.GOOGLE_CLIENT_ID
-  const clientSecret = c.env?.GOOGLE_CLIENT_SECRET
-  const redirectUri = c.env?.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/api/drive/callback`
+  const redirectUri = ENV.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/api/drive/callback`
 
-  // Exchange code for tokens
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: clientId || '',
-      client_secret: clientSecret || '',
+      client_id: ENV.GOOGLE_CLIENT_ID,
+      client_secret: ENV.GOOGLE_CLIENT_SECRET,
       redirect_uri: redirectUri,
       grant_type: 'authorization_code'
     })
   })
 
-  if (!tokenRes.ok) {
-    return c.html('<p>Error exchanging code. Please try again.</p>', 400)
-  }
+  if (!tokenRes.ok) return c.html('<p>Error exchanging code. Please try again.</p>', 400)
 
   const tokens: any = await tokenRes.json()
   const refreshToken = tokens.refresh_token
 
-  // Store refresh token against the client record
-  if (accountNumber && refreshToken && c.env?.CLIENTS_KV) {
-    const raw = await c.env.CLIENTS_KV.get(`client:${accountNumber}`)
-    if (raw) {
-      const client: ClientRecord = JSON.parse(raw)
+  if (accountNumber && refreshToken) {
+    const client = getClient(accountNumber)
+    if (client) {
       client.driveToken = refreshToken
       client.updatedAt = new Date().toISOString()
-      await c.env.CLIENTS_KV.put(`client:${accountNumber}`, JSON.stringify(client))
+      saveClient(client)
     }
   }
+  if (refreshToken) kv.put('global_drive_refresh_token', refreshToken)
 
-  // Also store as global drive token for PDF uploads from this therapist
-  if (refreshToken && c.env?.META_KV) {
-    await c.env.META_KV.put('global_drive_refresh_token', refreshToken)
-  }
-
-  // Close the popup and notify the parent window
   return c.html(`<!DOCTYPE html><html><body>
     <p style="font-family:sans-serif;padding:20px;">✅ Google Drive connected! You can close this tab.</p>
     <script>
@@ -611,13 +617,8 @@ app.get('/api/drive/callback', async (c) => {
   </body></html>`)
 })
 
-// POST /api/drive/upload-pdf — upload a base64-encoded PDF to Drive
+// POST /api/drive/upload-pdf
 app.post('/api/drive/upload-pdf', async (c) => {
-  const metaKv = c.env?.META_KV
-  const clientsKv = c.env?.CLIENTS_KV
-  const sessionsKv = c.env?.SESSIONS_KV
-  if (!metaKv) return c.json({ error: 'Storage not configured' }, 500)
-
   const body = await c.req.json() as {
     sessionId: string
     accountNumber: string
@@ -625,30 +626,23 @@ app.post('/api/drive/upload-pdf', async (c) => {
     pdfBase64: string
   }
 
-  // Get the global refresh token
-  const refreshToken = await metaKv.get('global_drive_refresh_token')
-  if (!refreshToken) return c.json({ error: 'Google Drive not connected. Please connect Drive first.' }, 400)
+  const refreshToken = kv.get('global_drive_refresh_token')
+  if (!refreshToken) return c.json({ error: 'Google Drive not connected.' }, 400)
 
-  const accessToken = await refreshGoogleToken(
-    refreshToken,
-    c.env?.GOOGLE_CLIENT_ID || '',
-    c.env?.GOOGLE_CLIENT_SECRET || ''
-  )
+  const accessToken = await refreshGoogleToken(refreshToken, ENV.GOOGLE_CLIENT_ID, ENV.GOOGLE_CLIENT_SECRET)
   if (!accessToken) return c.json({ error: 'Could not refresh Google token' }, 400)
 
-  // Convert base64 to binary string for Drive upload
-  const folderId = c.env?.GOOGLE_DRIVE_FOLDER_ID || ''
-  const result = await uploadBase64PDFToDrive(accessToken, folderId, body.filename, body.pdfBase64)
+  const result = await uploadBase64PDFToDrive(accessToken, ENV.GOOGLE_DRIVE_FOLDER_ID, body.filename, body.pdfBase64)
   if (!result) return c.json({ error: 'Drive upload failed' }, 500)
 
-  // Update session record with drive link
-  if (body.sessionId && sessionsKv) {
-    const raw = await sessionsKv.get(`session:${body.sessionId}`)
-    if (raw) {
-      const session: SessionRecord = JSON.parse(raw)
+  // Update session with drive link
+  if (body.sessionId) {
+    const row = db.prepare('SELECT data FROM sessions WHERE session_id = ?').get(body.sessionId) as { data: string } | undefined
+    if (row) {
+      const session: SessionRecord = JSON.parse(row.data)
       session.pdfDriveFileId = result.id
       session.pdfDriveUrl = result.webViewLink
-      await sessionsKv.put(`session:${body.sessionId}`, JSON.stringify(session))
+      saveSession(session)
     }
   }
 
@@ -663,34 +657,23 @@ async function uploadBase64PDFToDrive(
   base64: string
 ): Promise<{ id: string; webViewLink: string } | null> {
   try {
-    // Decode base64 to binary
-    const binaryStr = atob(base64)
-    const bytes = new Uint8Array(binaryStr.length)
-    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-
+    const bytes = Buffer.from(base64, 'base64')
     const metadata = JSON.stringify({
       name: filename,
       mimeType: 'application/pdf',
       parents: folderId ? [folderId] : []
     })
-
     const boundary = 'ff_boundary_xyz'
     const metaPart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`
     const filePart = `--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`
     const endPart = `\r\n--${boundary}--`
 
-    const enc = new TextEncoder()
-    const metaBytes = enc.encode(metaPart)
-    const filePartBytes = enc.encode(filePart)
-    const endBytes = enc.encode(endPart)
-
-    const combined = new Uint8Array(
-      metaBytes.length + filePartBytes.length + bytes.length + endBytes.length
-    )
-    combined.set(metaBytes, 0)
-    combined.set(filePartBytes, metaBytes.length)
-    combined.set(bytes, metaBytes.length + filePartBytes.length)
-    combined.set(endBytes, metaBytes.length + filePartBytes.length + bytes.length)
+    const combined = Buffer.concat([
+      Buffer.from(metaPart),
+      Buffer.from(filePart),
+      bytes,
+      Buffer.from(endPart)
+    ])
 
     const res = await fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
@@ -703,10 +686,7 @@ async function uploadBase64PDFToDrive(
         body: combined
       }
     )
-    if (!res.ok) {
-      console.error('Drive upload failed:', await res.text())
-      return null
-    }
+    if (!res.ok) { console.error('Drive upload failed:', await res.text()); return null }
     return await res.json() as { id: string; webViewLink: string }
   } catch (e) {
     console.error('Drive upload error:', e)
@@ -714,11 +694,9 @@ async function uploadBase64PDFToDrive(
   }
 }
 
-// GET /api/drive/status — check if Drive is connected
-app.get('/api/drive/status', async (c) => {
-  const metaKv = c.env?.META_KV
-  if (!metaKv) return c.json({ connected: false })
-  const token = await metaKv.get('global_drive_refresh_token')
+// GET /api/drive/status
+app.get('/api/drive/status', (c) => {
+  const token = kv.get('global_drive_refresh_token')
   return c.json({ connected: !!token })
 })
 

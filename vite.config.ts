@@ -1,30 +1,24 @@
-import build from '@hono/vite-build/cloudflare-pages'
-import devServer from '@hono/vite-dev-server'
-import adapter from '@hono/vite-dev-server/cloudflare'
 import { defineConfig } from 'vite'
 
-export default defineConfig(({ mode }) => {
-  if (mode === 'client') {
-    return {
-      build: {
-        outDir: 'dist/static',
-        rollupOptions: {
-          input: './src/client.ts',
-          output: {
-            entryFileNames: 'client.js'
-          }
-        }
-      }
+export default defineConfig({
+  build: {
+    target: 'node20',
+    ssr: true,
+    outDir: 'dist',
+    rollupOptions: {
+      input: 'src/server.ts',
+      output: {
+        format: 'esm',
+        entryFileNames: 'server.js'
+      },
+      // Don't bundle Node.js built-ins or native modules
+      external: [
+        'node:path', 'node:fs', 'node:os', 'node:crypto',
+        'path', 'fs', 'os', 'crypto',
+        'better-sqlite3',
+        '@hono/node-server',
+        '@hono/node-server/serve-static'
+      ]
     }
-  }
-  
-  return {
-    plugins: [
-      build(),
-      devServer({
-        adapter,
-        entry: 'src/index.tsx'
-      })
-    ]
   }
 })

@@ -1,21 +1,26 @@
 {
   "name": "soap-note-generator",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && node -e \"const fs=require('fs');const r=JSON.parse(fs.readFileSync('dist/_routes.json'));r.exclude=['/static/*','/*.png','/*.jpg','/*.ico','/*.svg','/*.webp','/*.gif'];fs.writeFileSync('dist/_routes.json',JSON.stringify(r));console.log('_routes.json patched')\"",
-    "preview": "wrangler pages dev dist --ip 0.0.0.0 --port 3000",
-    "deploy": "npm run build && wrangler pages deploy dist",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "dev:sandbox": "wrangler pages dev dist --ip 0.0.0.0 --port 3000"
+    "dev": "tsx watch src/server.ts",
+    "build": "vite build",
+    "start": "node dist/server.js",
+    "preview": "npm run build && npm run start",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^1.14.4",
+    "better-sqlite3": "^11.9.1",
     "hono": "^4.12.3"
   },
   "devDependencies": {
-    "@hono/vite-build": "^1.2.0",
-    "@hono/vite-dev-server": "^0.18.2",
-    "vite": "^6.3.5",
-    "wrangler": "^4.4.0"
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.3.5"
   }
 }

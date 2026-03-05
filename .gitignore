@@ -29,5 +29,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# SQLite / data directory
+data/
+*.db
+*.db-shm
+*.db-wal
+
 # misc
 .DS_Store
