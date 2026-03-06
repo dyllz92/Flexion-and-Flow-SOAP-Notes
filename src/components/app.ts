@@ -572,6 +572,23 @@ export function renderApp(): string {
               <i class="fas fa-spinner fa-spin" style="color:var(--accent);"></i>
               <span>Extracting text from PDF…</span>
             </div>
+
+            <!-- Recent Drive PDFs -->
+            <div id="driveFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
+                  <i class="fab fa-google-drive" style="margin-right:6px;opacity:0.7;"></i>Recent Drive PDFs
+                </h3>
+                <button onclick="loadDriveFiles()" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
+                  <i class="fas fa-sync-alt" id="driveFilesRefreshIcon"></i>
+                </button>
+              </div>
+              <div id="driveFilesList" style="max-height:200px;overflow-y:auto;">
+                <p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">
+                  Loading Drive files…
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1762,6 +1779,9 @@ export function renderApp(): string {
     // Load saved OpenAI API key
     loadOpenAIKey();
 
+    // Load recent Drive PDFs
+    loadDriveFiles();
+
     // Check if client data was passed via URL (from intake form redirect)
     checkUrlClientData();
 
@@ -1908,6 +1928,85 @@ export function renderApp(): string {
     state.currentStep = step;
     if (step === 3) updateSummaryPanel();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ============================================================
+  // DRIVE FILE PICKER
+  // ============================================================
+  async function loadDriveFiles() {
+    const list = document.getElementById('driveFilesList');
+    const icon = document.getElementById('driveFilesRefreshIcon');
+    if (icon) icon.classList.add('fa-spin');
+    try {
+      const res = await fetch('/api/drive/files');
+      const data = await res.json();
+      if (!res.ok || !data.files || data.files.length === 0) {
+        if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No PDF files found in Drive folder.</p>';
+        return;
+      }
+      if (list) {
+        list.innerHTML = data.files.map(function(f) {
+          const date = new Date(f.modifiedTime);
+          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const nameShort = f.name.length > 40 ? f.name.slice(0, 37) + '…' : f.name;
+          return '<div class="drive-file-row" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + f.name.replace(/'/g, "\\\\'") + '\\')" '
+            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;" '
+            + 'onmouseenter="this.style.background=\\'rgba(91,163,217,0.08)\\'" '
+            + 'onmouseleave="this.style.background=\\'transparent\\'">'
+            + '<i class="fas fa-file-pdf" style="color:#e53e3e;opacity:0.7;flex-shrink:0;"></i>'
+            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + f.name.replace(/"/g, '&quot;') + '">' + nameShort + '</span>'
+            + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + dateStr + '</span>'
+            + '</div>';
+        }).join('');
+      }
+    } catch (err) {
+      if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load Drive files.</p>';
+    } finally {
+      if (icon) icon.classList.remove('fa-spin');
+    }
+  }
+
+  async function selectDriveFile(fileId, fileName) {
+    const list = document.getElementById('driveFilesList');
+    const progress = document.getElementById('pdfParseProgress');
+    const dropZone = document.getElementById('dropZone');
+    if (progress) progress.style.display = 'flex';
+    if (dropZone) dropZone.style.display = 'none';
+
+    // Highlight selected row
+    if (list) {
+      const rows = list.querySelectorAll('.drive-file-row');
+      rows.forEach(function(r) { r.style.background = 'transparent'; });
+    }
+
+    try {
+      const res = await fetch('/api/drive/extract-text/' + encodeURIComponent(fileId));
+      const data = await res.json();
+      if (!res.ok || !data.text) {
+        alert('Could not extract text from ' + fileName);
+        if (progress) progress.style.display = 'none';
+        if (dropZone) dropZone.style.display = '';
+        return;
+      }
+
+      const parsed = parseIntakeFields(data.text);
+      autoFillClientFields(parsed);
+      const formattedSummary = formatIntakeSummary(data.text, parsed);
+      document.getElementById('intakeFormData').value = formattedSummary;
+
+      const filledCount = Object.values(parsed).filter(function(v) { return v && v !== 'Not provided'; }).length;
+      document.getElementById('pdfFileName').textContent =
+        fileName + ' (Drive)' + (filledCount > 0 ? ' — ' + filledCount + ' fields auto-filled ✓' : '');
+
+      const pdfStatus = document.getElementById('pdfStatus');
+      if (pdfStatus) pdfStatus.style.display = 'flex';
+      if (progress) progress.style.display = 'none';
+    } catch (err) {
+      console.error('Drive PDF extract error:', err);
+      alert('Failed to extract text from Drive PDF: ' + err.message);
+      if (progress) progress.style.display = 'none';
+      if (dropZone) dropZone.style.display = '';
+    }
   }
 
   // ============================================================
@@ -2648,6 +2747,8 @@ THERAPIST NOTES:
   window.handleDrop = handleDrop;
   window.handlePDFUpload = handlePDFUpload;
   window.clearPDF = clearPDF;
+  window.loadDriveFiles = loadDriveFiles;
+  window.selectDriveFile = selectDriveFile;
   window.updateSummaryPanel = updateSummaryPanel;
   window.saveOpenAIKey = saveOpenAIKey;
   window.loadOpenAIKey = loadOpenAIKey;

@@ -256,6 +256,83 @@ drive.get("/status", (c) => {
 });
 
 /**
+ * GET /api/drive/files — List recent PDF files from the Drive folder
+ */
+drive.get("/files", async (c) => {
+  try {
+    const refreshToken = kv.get("global_drive_refresh_token");
+    if (!refreshToken) {
+      return c.json({ error: "Google Drive not connected", files: [] }, 401);
+    }
+    const accessToken = await refreshGoogleToken(
+      refreshToken,
+      ENV.GOOGLE_CLIENT_ID,
+      ENV.GOOGLE_CLIENT_SECRET,
+    );
+    if (!accessToken) {
+      return c.json({ error: "Could not refresh token", files: [] }, 401);
+    }
+    const folderId = ENV.GOOGLE_DRIVE_FOLDER_ID;
+    if (!folderId) {
+      return c.json({ error: "No Drive folder configured", files: [] }, 400);
+    }
+    const allFiles = await listDriveFiles(
+      accessToken,
+      folderId,
+      "application/pdf",
+    );
+    // Sort by most recently modified, return up to 20
+    allFiles.sort(
+      (a, b) =>
+        new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime(),
+    );
+    const recent = allFiles.slice(0, 20);
+    return c.json({ files: recent });
+  } catch (error) {
+    console.error("Drive files list error:", error);
+    return c.json({ error: "Failed to list Drive files", files: [] }, 500);
+  }
+});
+
+/**
+ * GET /api/drive/extract-text/:fileId — Download a Drive PDF and return extracted text
+ */
+drive.get("/extract-text/:fileId", async (c) => {
+  try {
+    const fileId = c.req.param("fileId");
+    if (!fileId || fileId.includes("..")) {
+      return c.json({ error: "Invalid file ID" }, 400);
+    }
+    const refreshToken = kv.get("global_drive_refresh_token");
+    if (!refreshToken) {
+      return c.json({ error: "Google Drive not connected" }, 401);
+    }
+    const accessToken = await refreshGoogleToken(
+      refreshToken,
+      ENV.GOOGLE_CLIENT_ID,
+      ENV.GOOGLE_CLIENT_SECRET,
+    );
+    if (!accessToken) {
+      return c.json({ error: "Could not refresh token" }, 401);
+    }
+    const buffer = await downloadDriveFile(accessToken, fileId);
+    if (!buffer) {
+      return c.json({ error: "Failed to download file" }, 500);
+    }
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    const textResult = await parser.getText();
+    await parser.destroy();
+    return c.json({
+      text: textResult.text,
+      pageCount: textResult.pages.length,
+    });
+  } catch (error) {
+    console.error("Drive extract-text error:", error);
+    return c.json({ error: "Failed to extract text from PDF" }, 500);
+  }
+});
+
+/**
  * POST /api/drive/sync-pdfs — Download PDFs from Drive, parse text, store as JSON
  */
 drive.post("/sync-pdfs", async (c) => {
