@@ -2660,7 +2660,6 @@ THERAPIST NOTES:
   window.closeWebhookConfig = closeWebhookConfig;
   window.saveWebhookConfig = saveWebhookConfig;
   window.copyWebhookUrl = copyWebhookUrl;
-  window.loadClientFromFile = loadClientFromFile;
   window.deleteClientProfile = deleteClientProfile;
   </script>
 
