@@ -1,9 +1,4 @@
-/**
- * Main App component - contains the full single page application
- * This is the main UI for the SOAP Notes Generator
- */
-export function renderApp(): string {
-  return `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -1216,19 +1211,19 @@ export function renderApp(): string {
       const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
       const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return \`<button onclick="loadClientProfile('\${p.id}')"
+      return `<button onclick="loadClientProfile('${p.id}')"
         class="flex items-center gap-2 px-3 py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-xl transition group text-left">
-        <div class="w-7 h-7 rounded-full bg-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">\${initials || '?'}</div>
+        <div class="w-7 h-7 rounded-full bg-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">${initials || '?'}</div>
         <div>
-          <div class="text-xs font-semibold text-slate-700">\${name || 'Unknown'}</div>
-          \${ago ? \`<div class="text-[10px] text-slate-400">\${ago}</div>\` : ''}
+          <div class="text-xs font-semibold text-slate-700">${name || 'Unknown'}</div>
+          ${ago ? `<div class="text-[10px] text-slate-400">${ago}</div>` : ''}
         </div>
-      </button>\`;
+      </button>`;
     }).join('');
     if (profiles.length > 6) {
-      container.innerHTML += \`<button onclick="openClientBrowser()" class="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition text-xs text-slate-500">
-        <i class="fas fa-ellipsis"></i> +\${profiles.length - 6} more
-      </button>\`;
+      container.innerHTML += `<button onclick="openClientBrowser()" class="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition text-xs text-slate-500">
+        <i class="fas fa-ellipsis"></i> +${profiles.length - 6} more
+      </button>`;
     }
     // Update webhook banner
     const cfg = loadWebhookConfig();
@@ -1286,11 +1281,11 @@ export function renderApp(): string {
     add('Submitted',         p.submittedAt ? new Date(p.submittedAt).toLocaleDateString('en-AU') : '');
 
     const intakeEl = document.getElementById('intakeFormData');
-    if (intakeEl) intakeEl.value = lines.join('\\n');
+    if (intakeEl) intakeEl.value = lines.join('\n');
 
     closeClientBrowser();
     updateSummaryPanel();
-    showCopyFeedback('\\u2705 Client loaded: ' + name);
+    showCopyFeedback('\u2705 Client loaded: ' + name);
   }
 
   // ============================================================
@@ -1338,20 +1333,20 @@ export function renderApp(): string {
       if (p.source === 'flexion-intake-form') tags.push('<span class="px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px]">Intake Form</span>');
       if (p.medicalConditions) tags.push('<span class="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[10px]">Medical Hx</span>');
       if (p.medications)       tags.push('<span class="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">Medications</span>');
-      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.id}')">
-        <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${initials || '?'}</div>
+      return `<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('${p.id}')">
+        <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">${initials || '?'}</div>
         <div class="flex-1 min-w-0">
-          <div class="font-semibold text-slate-800 text-sm">\${name || 'Unknown Client'}</div>
-          <div class="text-xs text-slate-400">\${[p.email, p.phone].filter(Boolean).join(' · ')}</div>
-          <div class="flex flex-wrap gap-1 mt-1">\${tags.join('')}</div>
+          <div class="font-semibold text-slate-800 text-sm">${name || 'Unknown Client'}</div>
+          <div class="text-xs text-slate-400">${[p.email, p.phone].filter(Boolean).join(' · ')}</div>
+          <div class="flex flex-wrap gap-1 mt-1">${tags.join('')}</div>
         </div>
         <div class="text-right flex-shrink-0">
-          <div class="text-xs text-slate-400">\${dateStr}</div>
-          <button onclick="event.stopPropagation(); deleteClientProfile('\${p.id}')" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
+          <div class="text-xs text-slate-400">${dateStr}</div>
+          <button onclick="event.stopPropagation(); deleteClientProfile('${p.id}')" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
             <i class="fas fa-trash"></i> Remove
           </button>
         </div>
-      </div>\`;
+      </div>`;
     }).join('');
   }
 
@@ -1381,7 +1376,7 @@ export function renderApp(): string {
   }
   function copyWebhookUrl() {
     const val = document.getElementById('myWebhookUrl')?.value;
-    if (val) { navigator.clipboard.writeText(val); showCopyFeedback('\\u2705 Webhook URL copied!'); }
+    if (val) { navigator.clipboard.writeText(val); showCopyFeedback('\u2705 Webhook URL copied!'); }
   }
   function saveWebhookConfig() {
     const intakeFormUrl = document.getElementById('intakeFormUrl')?.value.trim() || '';
@@ -1389,7 +1384,7 @@ export function renderApp(): string {
     saveWebhookConfigData({ intakeFormUrl, myUrl });
     closeWebhookConfig();
     renderClientProfilesPreview();
-    showCopyFeedback('\\u2705 Settings saved');
+    showCopyFeedback('\u2705 Settings saved');
   }
   function importManualProfile() {
     const raw = document.getElementById('manualImportJson')?.value.trim();
@@ -1402,7 +1397,7 @@ export function renderApp(): string {
       data.savedAt = new Date().toISOString();
       upsertClientProfile(data);
       document.getElementById('manualImportJson').value = '';
-      showCopyFeedback('\\u2705 Profile imported: ' + [data.firstName, data.lastName].filter(Boolean).join(' '));
+      showCopyFeedback('\u2705 Profile imported: ' + [data.firstName, data.lastName].filter(Boolean).join(' '));
       filterClients();
     } catch(e) {
       alert('Invalid JSON. Please check the format and try again.');
@@ -1428,7 +1423,7 @@ export function renderApp(): string {
         loadClientProfile(profile.id);
         // Clean URL
         window.history.replaceState({}, '', window.location.pathname);
-        showCopyFeedback('\\u2705 Client data imported from intake form!');
+        showCopyFeedback('\u2705 Client data imported from intake form!');
       }
     } catch(e) {}
   }
@@ -1650,7 +1645,7 @@ export function renderApp(): string {
     const gender    = state.currentGender;   // 'male' | 'female'
     const view      = state.currentView;     // 'anterior' | 'posterior'
     const muscles   = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    const imgSrc    = \`/muscle-map-\${gender}.png\`;
+    const imgSrc    = `/muscle-map-${gender}.png`;
 
     // Image natural dimensions
     const imgW = gender === 'male' ? 890 : 862;
@@ -1706,38 +1701,38 @@ export function renderApp(): string {
       if (st === 'treated')   { fill = 'rgba(56,161,105,0.45)';  stroke = '#276749'; sw = '2'; }
       if (st === 'follow-up') { fill = 'rgba(214,158,46,0.45)';  stroke = '#b7791f'; sw = '2'; }
       const pts = gender === 'female' ? scalePoints(m.points) : m.points;
-      return \`<polygon
+      return `<polygon
         class="muscle-hit"
-        points="\${pts}"
-        fill="\${fill}" stroke="\${stroke}" stroke-width="\${sw}"
-        data-id="\${m.id}" data-name="\${m.name}"
+        points="${pts}"
+        fill="${fill}" stroke="${stroke}" stroke-width="${sw}"
+        data-id="${m.id}" data-name="${m.name}"
         style="cursor:pointer;transition:all 0.15s;"
         onmouseenter="showTooltip(event,this.dataset.name)"
         onmouseleave="hideTooltip()"
-        onclick="toggleMuscle(this.dataset.id,this.dataset.name)"/>\`;
-    }).join('\\n');
+        onclick="toggleMuscle(this.dataset.id,this.dataset.name)"/>`;
+    }).join('\n');
 
     // Render the map at full container width, allow vertical scroll for tall aspect ratio
     // Each half dimensions: male=445×1024, female=431×1024 (nearly 1:2.3 aspect)
     // At 480px wide the map would be ~1100px tall — use a scrollable container with max-height
 
-    container.innerHTML = \`
-      <div style="position:relative;width:100%;padding-bottom:\${Math.round(imgH/halfW*100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
+    container.innerHTML = `
+      <div style="position:relative;width:100%;padding-bottom:${Math.round(imgH/halfW*100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
         <!-- Base image — 200% width, translate to show correct half -->
-        <img src="\${imgSrc}" alt="Muscle map"
-          style="position:absolute;top:0;left:0;width:200%;height:100%;transform:translateX(\${imgTranslate});pointer-events:none;object-fit:fill;"
+        <img src="${imgSrc}" alt="Muscle map"
+          style="position:absolute;top:0;left:0;width:200%;height:100%;transform:translateX(${imgTranslate});pointer-events:none;object-fit:fill;"
           onerror="this.style.opacity='0.2'"/>
         <!-- SVG overlay — covers the same half exactly -->
-        <svg viewBox="0 0 400 \${vbH}"
+        <svg viewBox="0 0 400 ${vbH}"
           xmlns="http://www.w3.org/2000/svg"
           preserveAspectRatio="none"
           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;">
           <g style="pointer-events:all;">
-            \${musclePaths}
+            ${musclePaths}
           </g>
         </svg>
       </div>
-    \`;
+    `;
   }
 
 
@@ -1785,12 +1780,12 @@ export function renderApp(): string {
 
   function renderTechniques() {
     const container = document.getElementById('techniqueCheckboxes');
-    container.innerHTML = TECHNIQUES.map(t => \`
+    container.innerHTML = TECHNIQUES.map(t => `
       <label class="technique-item">
-        <input type="checkbox" name="technique" value="\${t}"/>
-        <span>\${t}</span>
+        <input type="checkbox" name="technique" value="${t}"/>
+        <span>${t}</span>
       </label>
-    \`).join('');
+    `).join('');
   }
 
 
@@ -1836,11 +1831,11 @@ export function renderApp(): string {
     const followupEl = document.getElementById('followupList');
 
     treatedEl.innerHTML = treated.length
-      ? treated.map(n => \`<span class="muscle-chip muscle-chip-treated"><i class="fas fa-circle-dot"></i> \${n}</span>\`).join('')
+      ? treated.map(n => `<span class="muscle-chip muscle-chip-treated"><i class="fas fa-circle-dot"></i> ${n}</span>`).join('')
       : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>';
 
     followupEl.innerHTML = followup.length
-      ? followup.map(n => \`<span class="muscle-chip muscle-chip-followup"><i class="fas fa-clock"></i> \${n}</span>\`).join('')
+      ? followup.map(n => `<span class="muscle-chip muscle-chip-followup"><i class="fas fa-clock"></i> ${n}</span>`).join('')
       : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>';
     updateSummaryPanel();
   }
@@ -1950,7 +1945,7 @@ export function renderApp(): string {
           file.name + (filledCount > 0 ? ' — ' + filledCount + ' fields auto-filled ✓' : '');
       } else {
         document.getElementById('intakeFormData').value =
-          'PDF: ' + file.name + '\\n\\n[Text could not be extracted — please enter client information manually]';
+          'PDF: ' + file.name + '\n\n[Text could not be extracted — please enter client information manually]';
         document.getElementById('pdfFileName').textContent = file.name + ' (manual entry needed)';
       }
 
@@ -1960,7 +1955,7 @@ export function renderApp(): string {
     } catch (err) {
       console.error('PDF error:', err);
       document.getElementById('intakeFormData').value =
-        'PDF: ' + file.name + '\\n\\n[Please add client intake information manually]';
+        'PDF: ' + file.name + '\n\n[Please add client intake information manually]';
       document.getElementById('pdfFileName').textContent = file.name + ' (manual entry needed)';
       const pdfStatus = document.getElementById('pdfStatus');
       if (pdfStatus) pdfStatus.style.display = 'flex';
@@ -1981,7 +1976,7 @@ export function renderApp(): string {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
         const pageText = content.items.map(item => item.str).join(' ');
-        fullText += pageText + '\\n';
+        fullText += pageText + '\n';
       }
       return fullText.trim();
     }
@@ -1993,7 +1988,7 @@ export function renderApp(): string {
   // keyword and the next recognisable keyword. Avoids complex regexes that
   // break when embedded inside a TypeScript template literal.
   function parseIntakeFields(text) {
-    const t = text.replace(/[ \\t]+/g, ' ').trim();
+    const t = text.replace(/[ \t]+/g, ' ').trim();
 
     // Simple grab: find keyword, capture up to ~120 chars, trim at next cap word
     function after(keyword) {
@@ -2001,16 +1996,16 @@ export function renderApp(): string {
       if (idx === -1) return '';
       let chunk = t.slice(idx + keyword.length, idx + keyword.length + 200);
       // strip leading punctuation / spaces
-      chunk = chunk.replace(/^[?:\\s]+/, '').trim();
+      chunk = chunk.replace(/^[?:\s]+/, '').trim();
       // stop at the next sentence-like boundary or question word
-      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\/ )/);
+      const stopAt = chunk.search(/\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\d+ \/ )/);
       if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
       return chunk;
     }
 
     // ---- Name (appear before "Email" so no ambiguity) ----
-    const firstName = after('First name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
-    const lastName  = after('Last name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
+    const firstName = after('First name').split(' ')[0].replace(/[^A-Za-z\-]/g, '');
+    const lastName  = after('Last name').split(' ')[0].replace(/[^A-Za-z\-]/g, '');
 
     // ---- DOB ----
     const dobRaw = after('Birthday').split(' ').slice(0, 3).join(' ').trim();
@@ -2023,15 +2018,15 @@ export function renderApp(): string {
     }
 
     // ---- Email ----
-    const emailMatch = t.match(/[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}/i);
+    const emailMatch = t.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
     const email = emailMatch ? emailMatch[0] : '';
 
     // ---- Phone: first number after "Phone" (not "Emergency") ----
-    const phoneIdx = t.toLowerCase().indexOf('\\nphone ');
+    const phoneIdx = t.toLowerCase().indexOf('\nphone ');
     const phoneChunk = phoneIdx !== -1
       ? t.slice(phoneIdx + 7, phoneIdx + 35)
       : after('Phone +') || after('Phone ');
-    const phoneMatch2 = phoneChunk.match(/[+\\d][\\d\\s()+-]{6,18}/);
+    const phoneMatch2 = phoneChunk.match(/[+\d][\d\s()+-]{6,18}/);
     const phone = phoneMatch2 ? phoneMatch2[0].trim() : '';
 
     // ---- Chief complaint ----
@@ -2044,19 +2039,19 @@ export function renderApp(): string {
     })();
 
     // ---- Lifestyle ----
-    const occupation    = after('do for work').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
-    const sleep         = after('well do you sleep').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
-    const stress        = after('stress levels').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
-    const exercise      = after('do you ex').split(/\\s+(?:Do |Are |Have |When )/)[0].trim();
-    const lastTreatment = after('last treatment').split(/\\s+(?:Are |Do |Have )/)[0].trim();
+    const occupation    = after('do for work').split(/\s+(?:How |Are |Do |Have )/)[0].trim();
+    const sleep         = after('well do you sleep').split(/\s+(?:How |Are |Do |Have )/)[0].trim();
+    const stress        = after('stress levels').split(/\s+(?:How |Are |Do |Have )/)[0].trim();
+    const exercise      = after('do you ex').split(/\s+(?:Do |Are |Have |When )/)[0].trim();
+    const lastTreatment = after('last treatment').split(/\s+(?:Are |Do |Have )/)[0].trim();
 
     // ---- Yes/No fields (suppress "No") ----
     const no = /^no$/i;
-    const medsRaw    = after('taking any medications').split(/\\s+(?:Do |Are |Have )/)[0].trim();
-    const allergyRaw = after('any allergies').split(/\\s+(?:Have |Are |Do )/)[0].trim();
-    const injuryRaw  = after('accidents, injuries or surg').split(/\\s+(?:Do |Are |Have )/)[0].trim();
-    const condRaw    = after('medical conditions we need').split(/\\s+(?:Have |Are |Do )/)[0].trim();
-    const pregRaw    = after('pregnant or breastfeeding').split(/\\s+/)[0].trim();
+    const medsRaw    = after('taking any medications').split(/\s+(?:Do |Are |Have )/)[0].trim();
+    const allergyRaw = after('any allergies').split(/\s+(?:Have |Are |Do )/)[0].trim();
+    const injuryRaw  = after('accidents, injuries or surg').split(/\s+(?:Do |Are |Have )/)[0].trim();
+    const condRaw    = after('medical conditions we need').split(/\s+(?:Have |Are |Do )/)[0].trim();
+    const pregRaw    = after('pregnant or breastfeeding').split(/\s+/)[0].trim();
 
     return {
       firstName, lastName, dobForInput, email, phone,
@@ -2101,7 +2096,7 @@ export function renderApp(): string {
 
     // Show a brief toast
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
-    if (name) showCopyFeedback('\u2705 Client info auto-filled: ' + name);
+    if (name) showCopyFeedback('✅ Client info auto-filled: ' + name);
     updateSummaryPanel();
   }
 
@@ -2130,8 +2125,8 @@ export function renderApp(): string {
     add('Medical Conditions',p.conditions);
     add('Pregnancy / Breastfeeding', p.pregnancy);
     return lines.length > 0
-      ? lines.join('\\n')
-      : rawText.replace(/\\s+/g, ' ').trim().slice(0, 1500);
+      ? lines.join('\n')
+      : rawText.replace(/\s+/g, ' ').trim().slice(0, 1500);
   }
 
   function clearPDF() {
@@ -2270,31 +2265,31 @@ export function renderApp(): string {
   }
 
   function buildPrompt(ctx, intakeData) {
-    return \`Generate complete professional SOAP notes for a massage therapy session. Return a JSON object with keys: "subjective", "objective", "assessment", "plan", "therapistNotes".
+    return `Generate complete professional SOAP notes for a massage therapy session. Return a JSON object with keys: "subjective", "objective", "assessment", "plan", "therapistNotes".
 
 CLIENT INFORMATION:
-- Name: \${ctx.client || 'Not provided'}
-- Date of Birth: \${ctx.dob || 'Not provided'}
-- Chief Complaint: \${ctx.chiefComplaint || 'Not provided'}
-- Pain Level (before session): \${ctx.painBefore || 'Not recorded'}/10
-- Pain Level (after session): \${ctx.painAfter || 'Not recorded'}/10
-- Session Duration: \${ctx.duration}
-- Current Medications: \${ctx.medications || 'None reported'}
+- Name: ${ctx.client || 'Not provided'}
+- Date of Birth: ${ctx.dob || 'Not provided'}
+- Chief Complaint: ${ctx.chiefComplaint || 'Not provided'}
+- Pain Level (before session): ${ctx.painBefore || 'Not recorded'}/10
+- Pain Level (after session): ${ctx.painAfter || 'Not recorded'}/10
+- Session Duration: ${ctx.duration}
+- Current Medications: ${ctx.medications || 'None reported'}
 
 INTAKE FORM DATA:
-\${intakeData || 'No intake form provided'}
+${intakeData || 'No intake form provided'}
 
 MUSCLES ADDRESSED:
-\${ctx.muscles || 'No specific muscles recorded'}
+${ctx.muscles || 'No specific muscles recorded'}
 
 TECHNIQUES USED:
-\${ctx.techniques || 'Not specified'}
+${ctx.techniques || 'Not specified'}
 
 THERAPIST SESSION SUMMARY:
-\${ctx.sessionSummary || 'No summary provided'}
+${ctx.sessionSummary || 'No summary provided'}
 
 CLIENT FEEDBACK:
-\${ctx.clientFeedback || 'No feedback recorded'}
+${ctx.clientFeedback || 'No feedback recorded'}
 
 Generate detailed, clinically appropriate SOAP notes. Use professional massage therapy terminology.
 
@@ -2305,7 +2300,7 @@ Return JSON:
   "assessment": "Clinical interpretation: tissue findings, treatment response, progress toward therapeutic goals, functional improvement. 3-4 sentences.",
   "plan": "Next session plan, recommended frequency, home care exercises, self-care instructions, areas to focus on next visit. 4-5 sentences.",
   "therapistNotes": "Additional clinical notes, contraindications observed, special considerations, referral recommendations if applicable. 2-3 sentences."
-}\`;
+}`;
   }
 
   function displaySOAP(data, ctx, treatedMuscles, followupMuscles) {
@@ -2322,8 +2317,8 @@ Return JSON:
     // Muscle tags
     const tagsEl = document.getElementById('soapMusclesSummary');
     tagsEl.innerHTML = [
-      ...treatedMuscles.map(m => \`<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs">\${m}</span>\`),
-      ...followupMuscles.map(m => \`<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs">\${m}</span>\`)
+      ...treatedMuscles.map(m => `<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs">${m}</span>`),
+      ...followupMuscles.map(m => `<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs">${m}</span>`)
     ].join('');
 
     // SOAP content
@@ -2343,8 +2338,8 @@ Return JSON:
     // Muscles sidebar list
     const musclesListEl = document.getElementById('soapMusclesList');
     musclesListEl.innerHTML = [
-      treatedMuscles.length ? '<p class="font-semibold text-slate-500 uppercase text-xs tracking-wide mb-1">Treated</p>' + treatedMuscles.map(m => \`<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></span>\${m}</div>\`).join('') : '',
-      followupMuscles.length ? '<p class="font-semibold text-slate-500 uppercase text-xs tracking-wide mt-2 mb-1">Follow-up</p>' + followupMuscles.map(m => \`<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>\${m}</div>\`).join('') : ''
+      treatedMuscles.length ? '<p class="font-semibold text-slate-500 uppercase text-xs tracking-wide mb-1">Treated</p>' + treatedMuscles.map(m => `<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></span>${m}</div>`).join('') : '',
+      followupMuscles.length ? '<p class="font-semibold text-slate-500 uppercase text-xs tracking-wide mt-2 mb-1">Follow-up</p>' + followupMuscles.map(m => `<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>${m}</div>`).join('') : ''
     ].join('');
   }
 
@@ -2379,29 +2374,29 @@ Return JSON:
     const date = document.getElementById('soapDate').textContent;
     const duration = document.getElementById('soapDuration').textContent;
 
-    const text = \`SOAP NOTE - MASSAGE THERAPY
+    const text = `SOAP NOTE - MASSAGE THERAPY
 ============================
-\${client}
-\${date} | \${duration}
+${client}
+${date} | ${duration}
 
 SUBJECTIVE:
-\${s}
+${s}
 
 OBJECTIVE:
-\${o}
+${o}
 
 ASSESSMENT:
-\${a}
+${a}
 
 PLAN:
-\${p}
+${p}
 
 THERAPIST NOTES:
-\${n}
+${n}
 
-\${therapist ? 'Therapist: ' + therapist : ''}
-\${creds ? 'Credentials: ' + creds : ''}
-============================\`;
+${therapist ? 'Therapist: ' + therapist : ''}
+${creds ? 'Credentials: ' + creds : ''}
+============================`;
 
     navigator.clipboard.writeText(text).then(() => {
       showCopyFeedback('All notes copied!');
@@ -2585,7 +2580,7 @@ THERAPIST NOTES:
     doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
 
     // Save
-    const filename = 'SOAP_Note_' + (client || 'Client').replace(/\\s+/g, '_') + '_' + (dateText || 'date') + '.pdf';
+    const filename = 'SOAP_Note_' + (client || 'Client').replace(/\s+/g, '_') + '_' + (dateText || 'date') + '.pdf';
     doc.save(filename);
   }
 
@@ -2629,39 +2624,6 @@ THERAPIST NOTES:
     updateMuscleLists();
     goToStep(1);
   }
-
-  // ── Expose functions to global scope for inline HTML handlers ──
-  window.goToStep = goToStep;
-  window.setView = setView;
-  window.setGender = setGender;
-  window.toggleMuscle = toggleMuscle;
-  window.showTooltip = showTooltip;
-  window.hideTooltip = hideTooltip;
-  window.clearAllMuscles = clearAllMuscles;
-  window.generateSOAP = generateSOAP;
-  window.regenerateSOAP = regenerateSOAP;
-  window.copySection = copySection;
-  window.copyAllSOAP = copyAllSOAP;
-  window.exportPDF = exportPDF;
-  window.resetAll = resetAll;
-  window.handleDragOver = handleDragOver;
-  window.handleDrop = handleDrop;
-  window.handlePDFUpload = handlePDFUpload;
-  window.clearPDF = clearPDF;
-  window.updateSummaryPanel = updateSummaryPanel;
-  window.saveOpenAIKey = saveOpenAIKey;
-  window.loadOpenAIKey = loadOpenAIKey;
-  window.openClientBrowser = openClientBrowser;
-  window.closeClientBrowser = closeClientBrowser;
-  window.filterClients = filterClients;
-  window.loadClientProfile = loadClientProfile;
-  window.importManualProfile = importManualProfile;
-  window.openWebhookConfig = openWebhookConfig;
-  window.closeWebhookConfig = closeWebhookConfig;
-  window.saveWebhookConfig = saveWebhookConfig;
-  window.copyWebhookUrl = copyWebhookUrl;
-  window.loadClientFromFile = loadClientFromFile;
-  window.deleteClientProfile = deleteClientProfile;
   </script>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -2770,10 +2732,10 @@ THERAPIST NOTES:
     if (countEl) countEl.textContent = clients.length + ' client' + (clients.length !== 1 ? 's' : '');
 
     if (clients.length === 0) {
-      list.innerHTML = \`<div style="text-align:center;padding:48px 24px;color:var(--text-light);">
+      list.innerHTML = `<div style="text-align:center;padding:48px 24px;color:var(--text-light);">
         <i class="fas fa-users" style="font-size:2.5rem;opacity:0.25;display:block;margin-bottom:12px;"></i>
         <p style="font-size:0.88rem;">No client files yet.<br>Client accounts are created automatically when you save a SOAP note.</p>
-      </div>\`;
+      </div>`;
       return;
     }
 
@@ -2782,21 +2744,21 @@ THERAPIST NOTES:
       const initials = [(c.firstName||'')[0],(c.lastName||'')[0]].filter(Boolean).join('').toUpperCase() || '?';
       const lastSess = c.lastSessionDate ? new Date(c.lastSessionDate).toLocaleDateString('en-AU') : '—';
       const sessions = c.sessionCount || 0;
-      return \`<div onclick="openClientFile('\${c.accountNumber}')"
+      return `<div onclick="openClientFile('${c.accountNumber}')"
         style="display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;transition:all 0.15s;background:white;"
         onmouseenter="this.style.borderColor='var(--accent)';this.style.background='#f0f8ff';"
         onmouseleave="this.style.borderColor='var(--border)';this.style.background='white';">
-        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;flex-shrink:0;">\${initials}</div>
+        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;flex-shrink:0;">${initials}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;color:var(--primary);font-size:0.9rem;">\${name}</div>
-          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">\${[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</div>
+          <div style="font-weight:700;color:var(--primary);font-size:0.9rem;">${name}</div>
+          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">${[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</div>
         </div>
         <div style="text-align:center;flex-shrink:0;">
-          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">\${c.accountNumber}</div>
-          <div style="font-size:0.7rem;color:var(--text-light);margin-top:4px;">\${sessions} session\${sessions !== 1 ? 's' : ''} · Last: \${lastSess}</div>
+          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">${c.accountNumber}</div>
+          <div style="font-size:0.7rem;color:var(--text-light);margin-top:4px;">${sessions} session${sessions !== 1 ? 's' : ''} · Last: ${lastSess}</div>
         </div>
         <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;"></i>
-      </div>\`;
+      </div>`;
     }).join('');
   }
 
@@ -2850,60 +2812,60 @@ THERAPIST NOTES:
     const lastIntake = client.intakeForms?.[0];
     const intakeDate = lastIntake?.savedAt ? new Date(lastIntake.savedAt).toLocaleDateString('en-AU') : '—';
 
-    document.getElementById('clientFileBody').innerHTML = \`
+    document.getElementById('clientFileBody').innerHTML = `
       <!-- Account Details -->
       <div class="card-plain" style="margin-bottom:16px;">
         <div class="cp-head"><i class="fas fa-id-card"></i> Account Details
-          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">\${client.accountNumber}</span>
+          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">${client.accountNumber}</span>
         </div>
         <div class="cp-body">
           <div class="grid-2" style="gap:12px;">
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">\${[client.firstName,client.lastName].filter(Boolean).join(' ')||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">\${client.dob||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">\${client.email||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">\${client.phone||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">\${client.occupation||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">\${client.chiefComplaint||'—'}</div></div>
-            \${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + client.medications + '</div></div>' : ''}
-            \${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + client.allergies + '</div></div>' : ''}
-            \${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + client.medicalConditions + '</div></div>' : ''}
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">${[client.firstName,client.lastName].filter(Boolean).join(' ')||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">${client.dob||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">${client.email||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">${client.phone||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">${client.occupation||'—'}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">${client.chiefComplaint||'—'}</div></div>
+            ${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + client.medications + '</div></div>' : ''}
+            ${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + client.allergies + '</div></div>' : ''}
+            ${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + client.medicalConditions + '</div></div>' : ''}
           </div>
           <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light);">
-            Created: \${new Date(client.createdAt).toLocaleDateString('en-AU')} · 
-            Last updated: \${new Date(client.updatedAt).toLocaleDateString('en-AU')} · 
-            First intake: \${intakeDate}
+            Created: ${new Date(client.createdAt).toLocaleDateString('en-AU')} · 
+            Last updated: ${new Date(client.updatedAt).toLocaleDateString('en-AU')} · 
+            First intake: ${intakeDate}
           </div>
         </div>
       </div>
 
       <!-- Intake Forms History -->
-      \${(client.intakeForms||[]).length > 0 ? \`
+      ${(client.intakeForms||[]).length > 0 ? `
       <div class="card-plain" style="margin-bottom:16px;">
-        <div class="cp-head"><i class="fas fa-clipboard-list"></i> Intake History (\${client.intakeForms.length})</div>
+        <div class="cp-head"><i class="fas fa-clipboard-list"></i> Intake History (${client.intakeForms.length})</div>
         <div class="cp-body" style="padding:0;">
-          \${client.intakeForms.map((f, i) => \`
+          ${client.intakeForms.map((f, i) => `
             <details style="border-bottom:1px solid var(--border);">
               <summary style="padding:12px 20px;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--primary);list-style:none;display:flex;align-items:center;gap:8px;">
                 <i class="fas fa-file-alt" style="color:var(--accent);"></i>
-                Intake \${client.intakeForms.length - i}: \${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">\${f.source||''}</span>
+                Intake ${client.intakeForms.length - i}: ${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">${f.source||''}</span>
               </summary>
-              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">\${Object.entries(f.data||{}).map(([k,v]) => k+': '+v).join('\\n')||'No structured data captured.'}</div>
+              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">${Object.entries(f.data||{}).map(([k,v]) => k+': '+v).join('\n')||'No structured data captured.'}</div>
             </details>
-          \`).join('')}
+          `).join('')}
         </div>
       </div>
-      \` : ''}
+      ` : ''}
 
       <!-- Session History -->
       <div class="card-plain">
-        <div class="cp-head"><i class="fas fa-history"></i> Session History (\${sessions.length})
-          \${sessions.some(s => s.pdfDriveUrl) ? '<span style="margin-left:auto;font-size:0.7rem;color:#38a169;"><i class="fab fa-google-drive"></i> Drive backups</span>' : ''}
+        <div class="cp-head"><i class="fas fa-history"></i> Session History (${sessions.length})
+          ${sessions.some(s => s.pdfDriveUrl) ? '<span style="margin-left:auto;font-size:0.7rem;color:#38a169;"><i class="fab fa-google-drive"></i> Drive backups</span>' : ''}
         </div>
         <div class="cp-body" style="padding:0;">
-          \${sessions.length === 0
+          ${sessions.length === 0
             ? '<p style="padding:20px;font-size:0.82rem;color:var(--text-light);text-align:center;">No sessions recorded yet.</p>'
-            : sessions.map(s => \`
-              <div onclick="openSessionView('\${s.sessionId}')"
+            : sessions.map(s => `
+              <div onclick="openSessionView('${s.sessionId}')"
                 style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.1s;"
                 onmouseenter="this.style.background='#f0f8ff';" onmouseleave="this.style.background='';">
                 <div style="width:36px;height:36px;border-radius:50%;background:#e8f4fc;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -2911,16 +2873,16 @@ THERAPIST NOTES:
                 </div>
                 <div style="flex:1;min-width:0;">
                   <div style="font-size:0.85rem;font-weight:600;color:var(--primary);">
-                    \${new Date(s.sessionDate).toLocaleDateString('en-AU',{weekday:'short',year:'numeric',month:'short',day:'numeric'})}
-                    \${s.pdfDriveUrl ? '<i class="fab fa-google-drive" style="color:#38a169;margin-left:6px;font-size:0.75rem;" title="PDF saved to Drive"></i>' : ''}
+                    ${new Date(s.sessionDate).toLocaleDateString('en-AU',{weekday:'short',year:'numeric',month:'short',day:'numeric'})}
+                    ${s.pdfDriveUrl ? '<i class="fab fa-google-drive" style="color:#38a169;margin-left:6px;font-size:0.75rem;" title="PDF saved to Drive"></i>' : ''}
                   </div>
                   <div style="font-size:0.72rem;color:var(--text-light);margin-top:2px;">
-                    \${s.duration} · \${s.musclesTreated?.length||0} muscles treated · \${s.chiefComplaint||''}
+                    ${s.duration} · ${s.musclesTreated?.length||0} muscles treated · ${s.chiefComplaint||''}
                   </div>
                 </div>
                 <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;font-size:0.75rem;"></i>
               </div>
-            \`).join('')
+            `).join('')
           }
         </div>
       </div>
@@ -2932,12 +2894,12 @@ THERAPIST NOTES:
             <strong style="color:#276749;"><i class="fab fa-google-drive" style="margin-right:6px;"></i>Google Drive PDF Backup</strong>
             <div style="color:#2f855a;margin-top:3px;" id="driveLinkStatus">Checking connection…</div>
           </div>
-          <button onclick="connectDriveForClient('\${client.accountNumber}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
+          <button onclick="connectDriveForClient('${client.accountNumber}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
             <i class="fab fa-google-drive"></i> Connect Drive
           </button>
         </div>
       </div>
-    \`;
+    `;
 
     // Check drive status
     fetch('/api/drive/status').then(r => r.json()).then(d => {
@@ -2985,51 +2947,51 @@ THERAPIST NOTES:
       ' · ' + s.clientName + ' · ' + s.duration;
 
     const soap = s.soapNote || {};
-    document.getElementById('sessionViewBody').innerHTML = \`
+    document.getElementById('sessionViewBody').innerHTML = `
       <!-- Client & session info -->
       <div style="display:flex;gap:20px;flex-wrap:wrap;background:#f7faff;padding:14px 16px;border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.82rem;">
-        <div><strong style="color:var(--primary);">\${s.clientName}</strong><div style="color:var(--text-light);">\${s.accountNumber}</div></div>
-        <div><strong>Date</strong><div style="color:var(--text-light);">\${new Date(s.sessionDate).toLocaleDateString('en-AU')}</div></div>
-        <div><strong>Duration</strong><div style="color:var(--text-light);">\${s.duration}</div></div>
-        <div><strong>Pain</strong><div style="color:var(--text-light);">\${s.painBefore||'—'}/10 → \${s.painAfter||'—'}/10</div></div>
-        \${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+s.therapistName+(s.therapistCredentials?' ('+s.therapistCredentials+')':'')+'</div></div>' : ''}
+        <div><strong style="color:var(--primary);">${s.clientName}</strong><div style="color:var(--text-light);">${s.accountNumber}</div></div>
+        <div><strong>Date</strong><div style="color:var(--text-light);">${new Date(s.sessionDate).toLocaleDateString('en-AU')}</div></div>
+        <div><strong>Duration</strong><div style="color:var(--text-light);">${s.duration}</div></div>
+        <div><strong>Pain</strong><div style="color:var(--text-light);">${s.painBefore||'—'}/10 → ${s.painAfter||'—'}/10</div></div>
+        ${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+s.therapistName+(s.therapistCredentials?' ('+s.therapistCredentials+')':'')+'</div></div>' : ''}
       </div>
 
       <!-- Muscles -->
-      \${(s.musclesTreated?.length || s.musclesToFollowUp?.length) ? \`
+      ${(s.musclesTreated?.length || s.musclesToFollowUp?.length) ? `
         <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">
-          \${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+m+'</span>').join('')}
-          \${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+m+'</span>').join('')}
+          ${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+m+'</span>').join('')}
+          ${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+m+'</span>').join('')}
         </div>
-      \` : ''}
+      ` : ''}
 
       <!-- SOAP sections -->
-      \${[
+      ${[
         {key:'subjective', label:'S — Subjective', color:'#3b82f6'},
         {key:'objective', label:'O — Objective', color:'#10b981'},
         {key:'assessment', label:'A — Assessment', color:'#f59e0b'},
         {key:'plan', label:'P — Plan', color:'#8b5cf6'},
         {key:'therapistNotes', label:'Therapist Notes', color:'#6b7280'}
-      ].filter(sec => soap[sec.key]).map(sec => \`
+      ].filter(sec => soap[sec.key]).map(sec => `
         <div style="margin-bottom:14px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <div style="width:4px;height:18px;background:\${sec.color};border-radius:2px;"></div>
-            <strong style="font-size:0.82rem;color:var(--primary);">\${sec.label}</strong>
+            <div style="width:4px;height:18px;background:${sec.color};border-radius:2px;"></div>
+            <strong style="font-size:0.82rem;color:var(--primary);">${sec.label}</strong>
           </div>
-          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">\${soap[sec.key]}</div>
+          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">${soap[sec.key]}</div>
         </div>
-      \`).join('')}
+      `).join('')}
 
       <!-- Drive link -->
-      \${s.pdfDriveUrl ? \`
+      ${s.pdfDriveUrl ? `
         <div style="margin-top:16px;padding:12px 14px;background:#f0faf5;border:1px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.8rem;display:flex;align-items:center;gap:10px;">
           <i class="fab fa-google-drive" style="color:#38a169;font-size:1.1rem;"></i>
-          <div>PDF backed up to Google Drive — <a href="\${s.pdfDriveUrl}" target="_blank" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
+          <div>PDF backed up to Google Drive — <a href="${s.pdfDriveUrl}" target="_blank" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
         </div>
-      \` : ''}
+      ` : ''}
 
-      <div style="margin-top:16px;font-size:0.7rem;color:var(--text-light);">Saved: \${new Date(s.savedAt).toLocaleString('en-AU')}</div>
-    \`;
+      <div style="margin-top:16px;font-size:0.7rem;color:var(--text-light);">Saved: ${new Date(s.savedAt).toLocaleString('en-AU')}</div>
+    `;
   }
 
   // ─── Google Drive connection ───────────────────────────────────────────────
@@ -3074,7 +3036,7 @@ THERAPIST NOTES:
       // Build intake data map from the form
       const intakeText = document.getElementById('intakeFormData')?.value || '';
       const intakeMap = {};
-      intakeText.split('\\n').forEach(line => {
+      intakeText.split('\n').forEach(line => {
         const colon = line.indexOf(':');
         if (colon > 0) {
           intakeMap[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
@@ -3158,7 +3120,7 @@ THERAPIST NOTES:
       const base64 = generatePDFBase64();
       if (!base64) return;
 
-      const filename = 'SOAP_' + accountNumber + '_' + sessionDate + '_' + clientName.replace(/\\s+/g,'_') + '.pdf';
+      const filename = 'SOAP_' + accountNumber + '_' + sessionDate + '_' + clientName.replace(/\s+/g,'_') + '.pdf';
 
       const res = await fetch('/api/drive/upload-pdf', {
         method: 'POST',
@@ -3261,5 +3223,4 @@ THERAPIST NOTES:
   }
   </script>
 </body>
-</html>`;
-}
+</html>
