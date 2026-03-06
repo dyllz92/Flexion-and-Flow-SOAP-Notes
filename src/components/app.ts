@@ -822,7 +822,9 @@ export function renderApp(): string {
               <input id="openaiKey" type="password" placeholder="sk-…"
                 style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.82rem;color:var(--text);outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
                 onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
-                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"/>
+                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"
+                oninput="saveOpenAIKey(this.value)"/>
+              <p id="apiKeySavedIndicator" style="font-size:0.72rem;color:var(--success);margin-top:6px;display:none;"><i class="fas fa-check-circle" style="margin-right:4px;"></i>Key saved to browser</p>
               <p style="font-size:0.72rem;color:var(--text-light);margin-top:6px;"><i class="fas fa-lock" style="margin-right:4px;"></i>Stored in your browser only — never sent to our servers</p>
             </div>
           </div>
@@ -1141,6 +1143,27 @@ export function renderApp(): string {
   // ============================================================
   const CLIENT_PROFILES_KEY = 'flexion_soap_client_profiles';
   const WEBHOOK_CONFIG_KEY  = 'flexion_soap_webhook_config';
+  const OPENAI_KEY_STORAGE  = 'flexion_soap_openai_key';
+
+  // ── OpenAI API Key persistence ──
+  function saveOpenAIKey(value) {
+    try { localStorage.setItem(OPENAI_KEY_STORAGE, value); } catch(e) {}
+    const indicator = document.getElementById('apiKeySavedIndicator');
+    if (indicator) {
+      indicator.style.display = value ? 'block' : 'none';
+    }
+  }
+  function loadOpenAIKey() {
+    try {
+      const saved = localStorage.getItem(OPENAI_KEY_STORAGE) || '';
+      const el = document.getElementById('openaiKey');
+      if (el && saved) {
+        el.value = saved;
+        const indicator = document.getElementById('apiKeySavedIndicator');
+        if (indicator) indicator.style.display = 'block';
+      }
+    } catch(e) {}
+  }
 
   function loadClientProfiles() {
     try { return JSON.parse(localStorage.getItem(CLIENT_PROFILES_KEY) || '[]'); }
@@ -1735,6 +1758,9 @@ export function renderApp(): string {
 
     // Load client profiles from localStorage
     renderClientProfilesPreview();
+
+    // Load saved OpenAI API key
+    loadOpenAIKey();
 
     // Check if client data was passed via URL (from intake form redirect)
     checkUrlClientData();
@@ -3202,6 +3228,5 @@ THERAPIST NOTES:
   }
   </script>
 </body>
-</html>`
+</html>`;
 }
-
