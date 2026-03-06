@@ -1,5 +1,71 @@
 import type { DriveUploadResult } from "../types/index.js";
 
+export interface DriveFileEntry {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  webViewLink?: string;
+}
+
+/**
+ * List files in a Google Drive folder
+ */
+export async function listDriveFiles(
+  accessToken: string,
+  folderId: string,
+  mimeFilter?: string,
+): Promise<DriveFileEntry[]> {
+  const files: DriveFileEntry[] = [];
+  let pageToken: string | undefined;
+  const q = mimeFilter
+    ? `'${folderId}' in parents and mimeType='${mimeFilter}' and trashed=false`
+    : `'${folderId}' in parents and trashed=false`;
+
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: "nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)",
+      pageSize: "100",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) {
+      console.error("Drive list error:", await res.text());
+      break;
+    }
+    const data: any = await res.json();
+    files.push(...(data.files || []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return files;
+}
+
+/**
+ * Download file content as Buffer from Google Drive
+ */
+export async function downloadDriveFile(
+  accessToken: string,
+  fileId: string,
+): Promise<Buffer | null> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    console.error("Drive download error:", await res.text());
+    return null;
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /**
  * Upload file to Google Drive
  */
@@ -24,7 +90,7 @@ export async function uploadToDrive(
       `\r\n--${boundary}--`;
 
     const res = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink",
       {
         method: "POST",
         headers: {

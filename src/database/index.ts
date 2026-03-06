@@ -19,6 +19,7 @@ export const ENV = {
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || "",
   GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID || "",
+  GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN || "",
   ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || "changeme",
   DATA_DIR: process.env.DATA_DIR || path.join(process.cwd(), "data"),
   PORT: parseInt(process.env.PORT || "3000", 10),
@@ -93,6 +94,11 @@ export const kv: KVStore = {
     db.prepare("DELETE FROM meta WHERE key = ?").run(key);
   },
 };
+
+// Seed Google refresh token from env if not already stored
+if (ENV.GOOGLE_REFRESH_TOKEN && !kv.get("global_drive_refresh_token")) {
+  kv.put("global_drive_refresh_token", ENV.GOOGLE_REFRESH_TOKEN);
+}
 
 /**
  * Generate unique account number with format FF-YYYYMM-XXXX

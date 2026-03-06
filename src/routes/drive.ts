@@ -1,5 +1,9 @@
 import { Hono } from "hono";
-import type { SessionRecord, DriveUploadResult } from "../types/index.js";
+import type {
+  SessionRecord,
+  DriveUploadResult,
+  ClientRecord,
+} from "../types/index.js";
 import {
   ENV,
   kv,
@@ -8,7 +12,14 @@ import {
   saveSession,
   db,
 } from "../database/index.js";
-import { refreshGoogleToken } from "../services/google-drive.js";
+import {
+  refreshGoogleToken,
+  listDriveFiles,
+  downloadDriveFile,
+} from "../services/google-drive.js";
+import { PDFParse } from "pdf-parse";
+import fs from "node:fs";
+import path from "node:path";
 
 const drive = new Hono();
 
@@ -149,7 +160,7 @@ async function uploadBase64PDFToDrive(
     ]);
 
     const res = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink",
       {
         method: "POST",
         headers: {
@@ -242,6 +253,181 @@ drive.post("/upload-pdf", async (c) => {
 drive.get("/status", (c) => {
   const token = kv.get("global_drive_refresh_token");
   return c.json({ connected: !!token });
+});
+
+/**
+ * POST /api/drive/sync-pdfs — Download PDFs from Drive, parse text, store as JSON
+ */
+drive.post("/sync-pdfs", async (c) => {
+  try {
+    const refreshToken = kv.get("global_drive_refresh_token");
+    if (!refreshToken) {
+      return c.json({ error: "Google Drive not connected" }, 401);
+    }
+
+    const accessToken = await refreshGoogleToken(
+      refreshToken,
+      ENV.GOOGLE_CLIENT_ID,
+      ENV.GOOGLE_CLIENT_SECRET,
+    );
+    if (!accessToken) {
+      return c.json({ error: "Could not refresh Google token" }, 401);
+    }
+
+    const folderId = ENV.GOOGLE_DRIVE_FOLDER_ID;
+    if (!folderId) {
+      return c.json({ error: "No Drive folder configured" }, 400);
+    }
+
+    // List all PDFs in the folder
+    const pdfFiles = await listDriveFiles(
+      accessToken,
+      folderId,
+      "application/pdf",
+    );
+    if (pdfFiles.length === 0) {
+      return c.json({
+        success: true,
+        message: "No PDF files found",
+        synced: 0,
+      });
+    }
+
+    // Prepare output directory
+    const outDir = path.join(ENV.DATA_DIR, "drive-pdfs");
+    fs.mkdirSync(outDir, { recursive: true });
+
+    // Load all clients for matching
+    const allClients: ClientRecord[] = db
+      .prepare("SELECT data FROM clients")
+      .all()
+      .map((row: any) => JSON.parse(row.data));
+
+    const results: Array<{
+      fileId: string;
+      fileName: string;
+      matchedClient: string | null;
+      jsonPath: string;
+    }> = [];
+
+    for (const file of pdfFiles) {
+      try {
+        const buffer = await downloadDriveFile(accessToken, file.id);
+        if (!buffer) {
+          throw new Error("Failed to download file");
+        }
+        const parser = new PDFParse({ data: new Uint8Array(buffer) });
+        const textResult = await parser.getText();
+        await parser.destroy();
+
+        const extractedData = {
+          sourceFileId: file.id,
+          sourceFileName: file.name,
+          mimeType: file.mimeType,
+          modifiedTime: file.modifiedTime,
+          syncedAt: new Date().toISOString(),
+          pageCount: textResult.pages.length,
+          text: textResult.text,
+          matchedAccountNumber: null as string | null,
+          matchedClientName: null as string | null,
+        };
+
+        // Try to match to a client by account number or name in filename
+        const fileNameLower = file.name.toLowerCase();
+        for (const client of allClients) {
+          if (fileNameLower.includes(client.accountNumber.toLowerCase())) {
+            extractedData.matchedAccountNumber = client.accountNumber;
+            extractedData.matchedClientName = `${client.firstName} ${client.lastName}`;
+            break;
+          }
+          const fullName =
+            `${client.firstName} ${client.lastName}`.toLowerCase();
+          if (fullName.length > 2 && fileNameLower.includes(fullName)) {
+            extractedData.matchedAccountNumber = client.accountNumber;
+            extractedData.matchedClientName = `${client.firstName} ${client.lastName}`;
+            break;
+          }
+        }
+
+        // Write JSON file — sanitize filename
+        const safeName = file.name
+          .replace(/\.pdf$/i, "")
+          .replace(/[^a-zA-Z0-9_\-]/g, "_");
+        const jsonFileName = `${safeName}_${file.id.slice(0, 8)}.json`;
+        const jsonPath = path.join(outDir, jsonFileName);
+        fs.writeFileSync(jsonPath, JSON.stringify(extractedData, null, 2));
+
+        results.push({
+          fileId: file.id,
+          fileName: file.name,
+          matchedClient: extractedData.matchedClientName,
+          jsonPath: jsonFileName,
+        });
+      } catch (fileErr) {
+        console.error(`Failed to process PDF ${file.name}:`, fileErr);
+        results.push({
+          fileId: file.id,
+          fileName: file.name,
+          matchedClient: null,
+          jsonPath: `ERROR: ${fileErr instanceof Error ? fileErr.message : "Unknown error"}`,
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      synced: results.filter((r) => !r.jsonPath.startsWith("ERROR")).length,
+      errors: results.filter((r) => r.jsonPath.startsWith("ERROR")).length,
+      total: pdfFiles.length,
+      results,
+    });
+  } catch (error) {
+    console.error("Drive sync error:", error);
+    return c.json({ error: "Failed to sync PDFs from Drive" }, 500);
+  }
+});
+
+/**
+ * GET /api/drive/synced-data — List all synced PDF JSON files
+ */
+drive.get("/synced-data", (c) => {
+  const outDir = path.join(ENV.DATA_DIR, "drive-pdfs");
+  if (!fs.existsSync(outDir)) {
+    return c.json({ files: [] });
+  }
+  const files = fs.readdirSync(outDir).filter((f) => f.endsWith(".json"));
+  const data = files.map((f) => {
+    const content = JSON.parse(fs.readFileSync(path.join(outDir, f), "utf-8"));
+    return {
+      fileName: f,
+      sourceFileName: content.sourceFileName,
+      matchedClient: content.matchedClientName,
+      syncedAt: content.syncedAt,
+      pageCount: content.pageCount,
+    };
+  });
+  return c.json({ files: data });
+});
+
+/**
+ * GET /api/drive/synced-data/:filename — Get specific synced PDF JSON
+ */
+drive.get("/synced-data/:filename", (c) => {
+  const filename = c.req.param("filename");
+  // Prevent path traversal
+  if (
+    filename.includes("..") ||
+    filename.includes("/") ||
+    filename.includes("\\")
+  ) {
+    return c.json({ error: "Invalid filename" }, 400);
+  }
+  const filePath = path.join(ENV.DATA_DIR, "drive-pdfs", filename);
+  if (!fs.existsSync(filePath)) {
+    return c.json({ error: "File not found" }, 404);
+  }
+  const content = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  return c.json(content);
 });
 
 export default drive;

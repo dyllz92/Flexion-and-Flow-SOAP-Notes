@@ -2685,6 +2685,9 @@ THERAPIST NOTES:
         <button onclick="checkDriveStatus()" id="driveStatusBtn" class="btn btn-ghost btn-sm" title="Google Drive status">
           <i class="fab fa-google-drive"></i> <span id="driveStatusLabel">Drive</span>
         </button>
+        <button onclick="syncDrivePDFs()" id="driveSyncBtn" class="btn btn-ghost btn-sm" title="Sync PDFs from Google Drive">
+          <i class="fas fa-sync-alt"></i> <span id="driveSyncLabel">Sync PDFs</span>
+        </button>
       </div>
 
       <!-- Client list -->
@@ -3061,6 +3064,31 @@ THERAPIST NOTES:
         if (label) label.textContent = 'Drive';
       }
     } catch {}
+  }
+
+  async function syncDrivePDFs() {
+    const btn = document.getElementById('driveSyncBtn');
+    const label = document.getElementById('driveSyncLabel');
+    if (btn) btn.disabled = true;
+    if (label) label.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
+    try {
+      const res = await fetch('/api/drive/sync-pdfs', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert('Sync failed: ' + (data.error || 'Unknown error'));
+        return;
+      }
+      if (label) label.innerHTML = '<span style="color:#38a169;">Synced ' + data.synced + '/' + data.total + '</span>';
+      if (data.errors > 0) {
+        alert('Synced ' + data.synced + ' of ' + data.total + ' PDFs (' + data.errors + ' errors).');
+      }
+      setTimeout(() => { if (label) label.textContent = 'Sync PDFs'; }, 5000);
+    } catch (err) {
+      alert('Sync error: ' + err.message);
+      if (label) label.textContent = 'Sync PDFs';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   // ─── Auto-save SOAP note to client file ───────────────────────────────────
