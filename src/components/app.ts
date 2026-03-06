@@ -1650,7 +1650,7 @@ export function renderApp(): string {
     const gender    = state.currentGender;   // 'male' | 'female'
     const view      = state.currentView;     // 'anterior' | 'posterior'
     const muscles   = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    const imgSrc    = \`/muscle-map-\${gender}.png\`;
+    const imgSrc    = \`/static/muscle-map-\${gender}.png\`;
 
     // Image natural dimensions
     const imgW = gender === 'male' ? 890 : 862;
