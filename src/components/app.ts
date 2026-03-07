@@ -1556,9 +1556,9 @@ export function renderApp(): string {
     { id:'tibialis_ant_r', name:'Tibialis Anterior (R)', group:'Lower Leg', view:'anterior',
       points:'235,675 242,692 248,715 248,742 245,765 240,778 232,782 224,778 220,762 220,735 225,710 230,688' },
     { id:'peroneals_l', name:'Peroneals (L)', group:'Lower Leg', view:'anterior',
-      points:'155,678 148,698 143,722 145,750 150,770 158,775 163,768 162,742 158,718 155,695' },
+      points:'148,685 142,702 138,725 139,750 143,768 150,772 155,765 154,742 152,720 150,700' },
     { id:'peroneals_r', name:'Peroneals (R)', group:'Lower Leg', view:'anterior',
-      points:'248,678 255,698 260,722 258,750 253,770 245,775 240,768 242,742 245,718 248,695' },
+      points:'252,685 258,702 262,725 261,750 257,768 250,772 245,765 246,742 248,720 250,700' },
 
     // ─── POSTERIOR ──────────────────────────────────────────────
     // SVG viewBox: 0 0 400 920 (male), body center X:200
