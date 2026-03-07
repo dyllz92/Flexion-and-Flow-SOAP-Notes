@@ -129,7 +129,7 @@ sessions.get("/clients/:accountNumber/sessions", (c) => {
 /**
  * GET /api/sessions/:sessionId — get single session by ID
  */
-sessions.get("/:sessionId", (c) => {
+sessions.get("/sessions/:sessionId", (c) => {
   const row = db
     .prepare("SELECT data FROM sessions WHERE session_id = ?")
     .get(c.req.param("sessionId")) as { data: string } | undefined;
