@@ -11,6 +11,7 @@ import {
   ENV,
 } from "../database/index.js";
 import { refreshGoogleToken, uploadToDrive } from "../services/google-drive.js";
+import { notifyDashboard } from "../services/webhook.js";
 
 const sessions = new Hono();
 
@@ -95,6 +96,15 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
       })
       .catch((error) => console.error("Drive upload error:", error));
   }
+
+  // Notify Dashboard about new session
+  notifyDashboard("session_saved", {
+    accountNumber: acct,
+    sessionId,
+    clientName: session.clientName,
+    clientEmail: client.email,
+    sessionDate: session.sessionDate,
+  });
 
   return c.json({ success: true, sessionId, session });
 });

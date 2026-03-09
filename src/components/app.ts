@@ -2789,6 +2789,9 @@ THERAPIST NOTES:
         <button onclick="syncDrivePDFs()" id="driveSyncBtn" class="btn btn-ghost btn-sm" title="Sync PDFs from Google Drive">
           <i class="fas fa-sync-alt"></i> <span id="driveSyncLabel">Sync PDFs</span>
         </button>
+        <button onclick="syncClientsNow()" id="clientSyncBtn" class="btn btn-ghost btn-sm" title="Sync client profiles across apps">
+          <i class="fas fa-cloud-download-alt"></i> <span id="clientSyncLabel">Sync Clients</span>
+        </button>
       </div>
 
       <!-- Client list -->
@@ -2865,6 +2868,28 @@ THERAPIST NOTES:
     } catch(e) {
       list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--danger);">Could not load clients — KV storage may not be configured yet.</p>';
     }
+  }
+
+  async function syncClientsNow() {
+    const btn = document.getElementById('clientSyncBtn');
+    const label = document.getElementById('clientSyncLabel');
+    if (!btn || !label) return;
+    btn.disabled = true;
+    label.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/clients/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        label.textContent = 'Synced ✓';
+        await loadAccountList();
+      } else {
+        label.textContent = data.error || 'Sync failed';
+      }
+    } catch(e) {
+      label.textContent = 'Sync error';
+    }
+    btn.disabled = false;
+    setTimeout(() => { label.textContent = 'Sync Clients'; }, 3000);
   }
 
   function renderAccountList(clients) {

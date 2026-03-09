@@ -23,6 +23,9 @@ export const ENV = {
   ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || "changeme",
   DATA_DIR: process.env.DATA_DIR || path.join(process.cwd(), "data"),
   PORT: parseInt(process.env.PORT || "3000", 10),
+  DASHBOARD_WEBHOOK_URL: process.env.DASHBOARD_WEBHOOK_URL || "",
+  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || "",
+  INTAKE_FORM_URL: process.env.INTAKE_FORM_URL || "",
 };
 
 /**
