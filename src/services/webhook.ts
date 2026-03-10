@@ -8,14 +8,14 @@ export async function notifyDashboard(
   eventType: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  if (!ENV.DASHBOARD_WEBHOOK_URL || !ENV.WEBHOOK_SECRET) return;
+  if (!ENV.DASHBOARD_WEBHOOK_URL || !ENV.SESSION_SECRET) return;
 
   try {
     const res = await fetch(ENV.DASHBOARD_WEBHOOK_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Webhook-Secret": ENV.WEBHOOK_SECRET,
+        "X-Webhook-Secret": ENV.SESSION_SECRET,
       },
       body: JSON.stringify({ event: eventType, ...data }),
     });

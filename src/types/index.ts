@@ -79,7 +79,7 @@ export interface AppEnvironment {
   DATA_DIR: string;
   PORT: number;
   DASHBOARD_WEBHOOK_URL: string;
-  WEBHOOK_SECRET: string;
+  SESSION_SECRET: string;
   INTAKE_FORM_URL: string;
 }
 

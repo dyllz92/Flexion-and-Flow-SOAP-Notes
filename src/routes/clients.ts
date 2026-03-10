@@ -156,7 +156,7 @@ clients.get("/", (c) => {
  */
 clients.get("/export", (c) => {
   const secret = c.req.header("X-Webhook-Secret");
-  if (!ENV.WEBHOOK_SECRET || secret !== ENV.WEBHOOK_SECRET) {
+  if (!ENV.SESSION_SECRET || secret !== ENV.SESSION_SECRET) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -185,7 +185,7 @@ clients.get("/export", (c) => {
  */
 clients.post("/import", async (c) => {
   const secret = c.req.header("X-Webhook-Secret");
-  if (!ENV.WEBHOOK_SECRET || secret !== ENV.WEBHOOK_SECRET) {
+  if (!ENV.SESSION_SECRET || secret !== ENV.SESSION_SECRET) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -264,7 +264,7 @@ clients.post("/sync", async (c) => {
     const url = ENV.INTAKE_FORM_URL.replace(/\/$/, "") + "/api/clients/export";
     const res = await fetch(url, {
       headers: {
-        "X-Webhook-Secret": ENV.WEBHOOK_SECRET,
+        "X-Webhook-Secret": ENV.SESSION_SECRET,
         "Content-Type": "application/json",
       },
     });
