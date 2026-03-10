@@ -1065,7 +1065,7 @@ export function renderApp(): string {
         <div style="position:relative;">
           <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:0.8rem;"></i>
           <input id="clientSearch" type="text" placeholder="Search by name, email or phone…"
-            oninput="filterClients()"
+            oninput="filterClients().catch(console.error)"
             style="width:100%;padding:9px 12px 9px 34px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.82rem;outline:none;"
             onfocus="this.style.borderColor='var(--accent)'"
             onblur="this.style.borderColor='var(--border)'"/>
@@ -1182,9 +1182,27 @@ export function renderApp(): string {
     } catch(e) {}
   }
 
-  function loadClientProfiles() {
-    try { return JSON.parse(localStorage.getItem(CLIENT_PROFILES_KEY) || '[]'); }
-    catch { return []; }
+  // Load client profiles from server database (replaces localStorage)
+  async function loadClientProfiles() {
+    try {
+      const res = await fetch('/api/clients');
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.clients || []).map(c => ({
+        id: c.accountNumber,
+        firstName: c.firstName || '',
+        lastName: c.lastName || '',
+        email: c.email || '',
+        phone: c.phone || '',
+        dob: c.dob || '',
+        occupation: c.occupation || '',
+        chiefComplaint: c.chiefComplaint || '',
+        savedAt: c.updatedAt || c.createdAt,
+        accountNumber: c.accountNumber
+      }));
+    } catch {
+      return [];
+    }
   }
   function saveClientProfiles(profiles) {
     localStorage.setItem(CLIENT_PROFILES_KEY, JSON.stringify(profiles));
@@ -1197,28 +1215,41 @@ export function renderApp(): string {
     localStorage.setItem(WEBHOOK_CONFIG_KEY, JSON.stringify(cfg));
   }
 
-  // Save a single profile (upsert by id or email)
-  function upsertClientProfile(profile) {
-    const profiles = loadClientProfiles();
-    const idx = profiles.findIndex(p => p.id === profile.id || (p.email && p.email === profile.email));
-    if (idx >= 0) profiles[idx] = { ...profiles[idx], ...profile, updatedAt: new Date().toISOString() };
-    else profiles.unshift({ ...profile, savedAt: new Date().toISOString() });
-    saveClientProfiles(profiles);
-    renderClientProfilesPreview();
+  // Save a single profile (upsert by id or email) - now posts to server
+  async function upsertClientProfile(profile) {
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          email: profile.email,
+          phone: profile.phone,
+          dob: profile.dob,
+          occupation: profile.occupation,
+          chiefComplaint: profile.chiefComplaint || profile.primaryConcern,
+          source: 'manual-entry'
+        })
+      });
+      if (res.ok) {
+        await renderClientProfilesPreview();
+      }
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   // Delete a profile
-  function deleteClientProfile(id) {
-    if (!confirm('Remove this client profile?')) return;
-    const profiles = loadClientProfiles().filter(p => p.id !== id);
-    saveClientProfiles(profiles);
-    renderClientProfilesPreview();
-    filterClients();
+  // This is now handled by removeClientProfile - keeping for compatibility
+  async function deleteClientProfile(id) {
+    await removeClientProfile(id);
   }
 
   // Render the quick-access chips in Step 1
-  function renderClientProfilesPreview() {
-    const profiles = loadClientProfiles();
+  async function renderClientProfilesPreview() {
+    const profiles = await loadClientProfiles();
     const container = document.getElementById('clientProfilesPreview');
     const noMsg = document.getElementById('noClientsMsg');
     if (!container) return;
@@ -1233,7 +1264,7 @@ export function renderApp(): string {
       const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
       const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return \`<button onclick="loadClientProfile('\${p.id}')"
+      return \`<button onclick="loadClientProfile('\${p.accountNumber}').catch(console.error)"
         class="flex items-center gap-2 px-3 py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-xl transition group text-left">
         <div class="w-7 h-7 rounded-full bg-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">\${initials || '?'}</div>
         <div>
@@ -1268,8 +1299,8 @@ export function renderApp(): string {
   }
 
   // Load a client profile into the Step 1 form
-  function loadClientProfile(id) {
-    const profiles = loadClientProfiles();
+  async function loadClientProfile(id) {
+    const profiles = await loadClientProfiles();
     const p = profiles.find(x => x.id === id);
     if (!p) return;
 
@@ -1313,11 +1344,11 @@ export function renderApp(): string {
   // ============================================================
   // CLIENT BROWSER MODAL
   // ============================================================
-  function openClientBrowser() {
+  async function openClientBrowser() {
     const modal = document.getElementById('clientBrowserModal');
     modal.style.display = 'flex';
     
-    filterClients();
+    await filterClients();
     document.getElementById('clientSearch').focus();
   }
   function closeClientBrowser() {
@@ -1326,9 +1357,9 @@ export function renderApp(): string {
     
   }
 
-  function filterClients() {
+  async function filterClients() {
     const query = (document.getElementById('clientSearch')?.value || '').toLowerCase().trim();
-    const profiles = loadClientProfiles();
+    const profiles = await loadClientProfiles();
     const filtered = query
       ? profiles.filter(p =>
           [p.firstName, p.lastName, p.email, p.phone].join(' ').toLowerCase().includes(query))
@@ -1355,7 +1386,7 @@ export function renderApp(): string {
       if (p.source === 'flexion-intake-form') tags.push('<span class="px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px]">Intake Form</span>');
       if (p.medicalConditions) tags.push('<span class="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[10px]">Medical Hx</span>');
       if (p.medications)       tags.push('<span class="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">Medications</span>');
-      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.id}')">
+      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.accountNumber}').catch(console.error)">
         <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${initials || '?'}</div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-slate-800 text-sm">\${name || 'Unknown Client'}</div>
@@ -1364,7 +1395,7 @@ export function renderApp(): string {
         </div>
         <div class="text-right flex-shrink-0">
           <div class="text-xs text-slate-400">\${dateStr}</div>
-          <button onclick="event.stopPropagation(); deleteClientProfile('\${p.id}')" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
+          <button onclick="event.stopPropagation(); deleteClientProfile('\${p.accountNumber}').catch(console.error)" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
             <i class="fas fa-trash"></i> Remove
           </button>
         </div>
@@ -1405,10 +1436,10 @@ export function renderApp(): string {
     const myUrl = document.getElementById('myWebhookUrl')?.value.trim() || '';
     saveWebhookConfigData({ intakeFormUrl, myUrl });
     closeWebhookConfig();
-    renderClientProfilesPreview();
+    renderClientProfilesPreview().catch(console.error);
     showCopyFeedback('\\u2705 Settings saved');
   }
-  function importManualProfile() {
+  async function importManualProfile() {
     const raw = document.getElementById('manualImportJson')?.value.trim();
     if (!raw) return;
     try {
@@ -1417,10 +1448,10 @@ export function renderApp(): string {
       if (!data.id) data.id = 'manual-' + Date.now();
       data.source = 'manual-import';
       data.savedAt = new Date().toISOString();
-      upsertClientProfile(data);
+      await upsertClientProfile(data);
       document.getElementById('manualImportJson').value = '';
       showCopyFeedback('\\u2705 Profile imported: ' + [data.firstName, data.lastName].filter(Boolean).join(' '));
-      filterClients();
+      await filterClients();
     } catch(e) {
       alert('Invalid JSON. Please check the format and try again.');
     }
@@ -1430,7 +1461,7 @@ export function renderApp(): string {
   // HANDLE INCOMING WEBHOOK DATA (when page is the target)
   // The intake form can also redirect to this page with ?clientData=...
   // ============================================================
-  function checkUrlClientData() {
+  async function checkUrlClientData() {
     try {
       const params = new URLSearchParams(window.location.search);
       const encoded = params.get('clientData');
@@ -1440,9 +1471,9 @@ export function renderApp(): string {
         if (!profile.id) profile.id = 'url-' + Date.now();
         profile.source = profile.source || 'url-import';
         profile.savedAt = new Date().toISOString();
-        upsertClientProfile(profile);
+        await upsertClientProfile(profile);
         // Auto-load into form
-        loadClientProfile(profile.id);
+        await loadClientProfile(profile.accountNumber || profile.id);
         // Clean URL
         window.history.replaceState({}, '', window.location.pathname);
         showCopyFeedback('\\u2705 Client data imported from intake form!');
@@ -1773,8 +1804,8 @@ export function renderApp(): string {
     
     updateSummaryPanel();
 
-    // Load client profiles from localStorage
-    renderClientProfilesPreview();
+    // Load client profiles from server database
+    await renderClientProfilesPreview();
 
     // Load saved OpenAI API key
     loadOpenAIKey();
@@ -1783,7 +1814,7 @@ export function renderApp(): string {
     loadDriveFiles();
 
     // Check if client data was passed via URL (from intake form redirect)
-    checkUrlClientData();
+    await checkUrlClientData();
 
     // Close modals on backdrop click
     document.getElementById('clientBrowserModal').addEventListener('click', function(e) {
@@ -2195,7 +2226,7 @@ export function renderApp(): string {
         source:            'pdf-upload',
         savedAt:           new Date().toISOString(),
       };
-      upsertClientProfile(profile);
+      upsertClientProfile(profile).catch(console.error);
     }
 
     // Show a brief toast
@@ -3080,9 +3111,9 @@ THERAPIST NOTES:
     });
   }
 
-  function loadClientFromFile() {
+  async function loadClientFromFile() {
     if (!_currentClientFile) return;
-    loadClientProfile(_currentClientFile.id || _currentClientFile.accountNumber);
+    await loadClientProfile(_currentClientFile.id || _currentClientFile.accountNumber);
     closeClientFile();
     closeClientAccounts();
   }
