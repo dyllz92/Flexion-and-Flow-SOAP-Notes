@@ -1488,7 +1488,8 @@ export function renderApp(): string {
     currentStep: 1,
     currentView: 'anterior',
     currentGender: 'male',
-    muscleStates: {}, // muscleId -> 'treated' | 'follow-up'
+    tensionPoints: [], // Array of dot objects: { id, number, x, y, muscleId, muscleName, type, notes, timestamp }
+    treatedMuscles: new Set(), // Auto-populated from tension point muscle IDs
     pdfText: '',
     soapData: null,
     lastAccountNumber: null, // set after SOAP auto-save
@@ -1746,24 +1747,8 @@ export function renderApp(): string {
       }).join(' ');
     }
 
-    const musclePaths = muscles.map(m => {
-      const st  = state.muscleStates[m.id];
-      let fill  = 'rgba(91,163,217,0.25)';
-      let stroke = 'rgba(91,163,217,0.7)';
-      let sw    = '1.5';
-      if (st === 'treated')   { fill = 'rgba(56,161,105,0.45)';  stroke = '#276749'; sw = '2'; }
-      if (st === 'follow-up') { fill = 'rgba(214,158,46,0.45)';  stroke = '#b7791f'; sw = '2'; }
-      const pts = gender === 'female' ? scalePoints(m.points) : m.points;
-      return \`<polygon
-        class="muscle-hit"
-        points="\${pts}"
-        fill="\${fill}" stroke="\${stroke}" stroke-width="\${sw}"
-        data-id="\${m.id}" data-name="\${m.name}"
-        style="cursor:pointer;transition:all 0.15s;"
-        onmouseenter="showTooltip(event,this.dataset.name)"
-        onmouseleave="hideTooltip()"
-        onclick="toggleMuscle(this.dataset.id,this.dataset.name)"/>\`;
-    }).join('\\n');
+    // Remove old muscle polygon rendering - replaced with dot placement system
+    const tensionDots = renderTensionDots(vbH);
 
     // Render the map at full container width, allow vertical scroll for tall aspect ratio
     // Each half dimensions: male=445×1024, female=431×1024 (nearly 1:2.3 aspect)
@@ -1775,17 +1760,363 @@ export function renderApp(): string {
         <img src="\${imgSrc}" alt="Muscle map"
           style="position:absolute;top:0;left:0;width:200%;height:100%;transform:translateX(\${imgTranslate});pointer-events:none;object-fit:fill;"
           onerror="this.style.opacity='0.2'"/>
-        <!-- SVG overlay — covers the same half exactly -->
+        <!-- Dot placement overlay canvas -->
+        <canvas id="dotPlacementCanvas" 
+          style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"
+          onclick="handleCanvasClick(event)"></canvas>
+        <!-- SVG overlay for tension dots -->
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
           preserveAspectRatio="none"
-          style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;">
+          style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:20;">
           <g style="pointer-events:all;">
-            \${musclePaths}
+            \${tensionDots}
           </g>
         </svg>
       </div>
     \`;
+
+    // Set up canvas for click detection
+    setupCanvasClickDetection();
+  }
+
+  // ============================================================
+  // TENSION POINTS SYSTEM (Enhanced Muscle Map)
+  // ============================================================
+
+  // Render tension dots as SVG circles with numbers
+  function renderTensionDots(vbH) {
+    if (state.tensionPoints.length === 0) return '';
+    
+    const currentView = state.currentView;
+    const currentGender = state.currentGender;
+    
+    // Filter dots for current view
+    const viewDots = state.tensionPoints.filter(dot => {
+      // Check if muscle is from current view
+      const muscle = MUSCLES.find(m => m.id === dot.muscleId);
+      return muscle && muscle.view === currentView;
+    });
+
+    return viewDots.map(dot => {
+      // Apply gender scaling to dot position if needed
+      let x = dot.x;
+      let y = dot.y;
+      
+      if (currentGender === 'female') {
+        // Apply same scaling as muscle polygons
+        const maleVbH = 920;
+        const scaleY = vbH / maleVbH;
+        let sx, cx;
+        if      (y < 130) { sx = 0.60; cx = 214; }
+        else if (y < 220) { sx = 0.69; cx = 215; }
+        else if (y < 360) { sx = 0.80; cx = 215; }
+        else if (y < 470) { sx = 0.91; cx = 215; }
+        else if (y < 535) { sx = 1.08; cx = 214; }
+        else if (y < 680) { sx = 0.86; cx = 215; }
+        else if (y < 780) { sx = 0.69; cx = 216; }
+        else              { sx = 0.75; cx = 215; }
+        x = Math.round((dot.x - 205) * sx + cx);
+        y = Math.round(dot.y * scaleY);
+      }
+
+      return \`
+        <g class="tension-dot" style="cursor:pointer;" data-dot-id="\${dot.id}"
+           onclick="removeTensionDot('\${dot.id}')"
+           onmouseenter="showDotTooltip(event, '\${dot.number}', '\${dot.muscleName}', '\${dot.type}', '\${dot.notes}')"
+           onmouseleave="hideDotTooltip()">
+          <circle cx="\${x}" cy="\${y}" r="12" 
+                  fill="rgba(239, 68, 68, 0.9)" 
+                  stroke="rgba(239, 68, 68, 1)" 
+                  stroke-width="2"/>
+          <text x="\${x}" y="\${y + 1}" 
+                text-anchor="middle" 
+                dominant-baseline="middle"
+                fill="white" 
+                font-family="var(--font)" 
+                font-size="11" 
+                font-weight="bold">
+            \${dot.number}
+          </text>
+        </g>\`;
+    }).join('\\n');
+  }
+
+  // Set up canvas click detection
+  function setupCanvasClickDetection() {
+    const canvas = document.getElementById('dotPlacementCanvas');
+    if (!canvas) return;
+    
+    // Ensure canvas has proper dimensions for coordinate calculation
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    };
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+  }
+
+  // Handle canvas click for dot placement
+  function handleCanvasClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const canvas = document.getElementById('dotPlacementCanvas');
+    if (!canvas) return;
+    
+    // Get click coordinates relative to canvas
+    const rect = canvas.getBoundingClientRect();
+    const canvasX = event.clientX - rect.left;
+    const canvasY = event.clientY - rect.top;
+    
+    // Convert to SVG coordinates (400x920 normalized space)
+    const svgX = (canvasX / rect.width) * 400;
+    const svgY = (canvasY / rect.height) * (state.currentGender === 'male' ? 920 : 920 * (862/890)); // Adjust for female proportions
+    
+    // Find which muscle contains this point
+    const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender);
+    
+    if (detectedMuscle) {
+      // Show dot input modal
+      showDotInputModal(svgX, svgY, detectedMuscle);
+    } else {
+      showCopyFeedback('⚠️ Click on a muscle area to place a dot');
+    }
+  }
+
+  // Point-in-polygon detection to find muscle at click point
+  function findMuscleAtPoint(x, y, view, gender) {
+    const muscles = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
+    
+    for (const muscle of muscles) {
+      if (isPointInMuscle(x, y, muscle, gender)) {
+        return muscle;
+      }
+    }
+    return null;
+  }
+
+  // Check if point is inside muscle polygon
+  function isPointInMuscle(x, y, muscle, gender) {
+    const points = muscle.points;
+    let scaledPoints = points;
+    
+    // Apply gender scaling if female
+    if (gender === 'female') {
+      scaledPoints = points.split(' ').map(pair => {
+        const [px, py] = pair.split(',').map(Number);
+        let sx, cx;
+        if      (py < 130) { sx = 0.60; cx = 214; }
+        else if (py < 220) { sx = 0.69; cx = 215; }
+        else if (py < 360) { sx = 0.80; cx = 215; }
+        else if (py < 470) { sx = 0.91; cx = 215; }
+        else if (py < 535) { sx = 1.08; cx = 214; }
+        else if (py < 680) { sx = 0.86; cx = 215; }
+        else if (py < 780) { sx = 0.69; cx = 216; }
+        else              { sx = 0.75; cx = 215; }
+        const nx = Math.round((px - 205) * sx + cx);
+        const ny = Math.round(py * (gender === 'female' ? 862/890 : 1));
+        return nx + ',' + ny;
+      }).join(' ');
+    }
+    
+    // Parse polygon points
+    const coords = scaledPoints.split(' ').map(pair => {
+      const [px, py] = pair.split(',').map(Number);
+      return [px, py];
+    });
+    
+    // Ray casting algorithm for point-in-polygon
+    let inside = false;
+    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+      if (((coords[i][1] > y) !== (coords[j][1] > y)) &&
+          (x < (coords[j][0] - coords[i][0]) * (y - coords[i][1]) / (coords[j][1] - coords[i][1]) + coords[i][0])) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  // Show modal for dot input
+  function showDotInputModal(x, y, muscle) {
+    const modal = createDotInputModal(x, y, muscle);
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+    
+    // Focus on first input
+    setTimeout(() => {
+      const firstInput = modal.querySelector('input[type="radio"]:first-child');
+      if (firstInput) firstInput.focus();
+    }, 100);
+  }
+
+  // Create dot input modal
+  function createDotInputModal(x, y, muscle) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-backdrop';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    
+    modal.innerHTML = \`
+      <div class="modal-box" style="max-width:480px;background:white;border-radius:12px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);">
+        <div class="modal-header" style="padding:20px 24px 16px;border-bottom:1px solid var(--border);">
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--primary);">
+            <i class="fas fa-map-pin" style="margin-right:8px;opacity:0.8;"></i>Add Tension Point
+          </h3>
+          <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-light);">
+            Detected muscle: <strong>\${muscle.name}</strong>
+          </p>
+        </div>
+        <div class="modal-body" style="padding:20px 24px;">
+          <div class="field" style="margin-bottom:16px;">
+            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:0.85rem;color:var(--text);">Issue Type</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <label class="radio-option">
+                <input type="radio" name="issueType" value="tension" checked style="margin-right:6px;"> Tension
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="issueType" value="trigger-point" style="margin-right:6px;"> Trigger Point
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="issueType" value="knot" style="margin-right:6px;"> Knot
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="issueType" value="inflammation" style="margin-right:6px;"> Inflammation
+              </label>
+            </div>
+          </div>
+          <div class="field">
+            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:0.85rem;color:var(--text);">Notes</label>
+            <textarea id="dotNotes" rows="3" placeholder="Describe the issue and treatment approach..."
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);resize:vertical;outline:none;"
+              onfocus="this.style.borderColor='var(--accent)'" 
+              onblur="this.style.borderColor='var(--border)'"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
+          <button onclick="closeDotInputModal()" class="btn btn-ghost">Cancel</button>
+          <button onclick="saveTensionDot(\${x}, \${y}, '\${muscle.id}', '\${muscle.name}')" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add Dot
+          </button>
+        </div>
+      </div>
+    \`;
+    
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeDotInputModal();
+    });
+    
+    return modal;
+  }
+
+  // Save tension dot
+  function saveTensionDot(x, y, muscleId, muscleName) {
+    const modal = document.querySelector('.modal-backdrop');
+    if (!modal) return;
+    
+    // Get form data
+    const selectedType = modal.querySelector('input[name="issueType"]:checked')?.value || 'tension';
+    const notes = modal.querySelector('#dotNotes')?.value || '';
+    
+    // Create new tension point
+    const dotNumber = state.tensionPoints.length + 1;
+    const newDot = {
+      id: 'dot_' + Date.now(),
+      number: dotNumber,
+      x: Math.round(x),
+      y: Math.round(y),
+      muscleId,
+      muscleName,
+      type: selectedType,
+      notes: notes.trim(),
+      timestamp: new Date().toISOString()
+    };
+    
+    // Add to state
+    state.tensionPoints.push(newDot);
+    state.treatedMuscles.add(muscleId);
+    
+    // Close modal
+    closeDotInputModal();
+    
+    // Refresh display
+    renderMuscleMap();
+    updateMuscleLists();
+    updateSummaryPanel();
+    
+    showCopyFeedback(\`✅ Added dot \${dotNumber}: \${muscleName}\`);
+  }
+
+  // Remove tension dot
+  function removeTensionDot(dotId) {
+    const dotIndex = state.tensionPoints.findIndex(dot => dot.id === dotId);
+    if (dotIndex === -1) return;
+    
+    const removedDot = state.tensionPoints[dotIndex];
+    
+    // Remove dot
+    state.tensionPoints.splice(dotIndex, 1);
+    
+    // Renumber remaining dots
+    state.tensionPoints.forEach((dot, index) => {
+      dot.number = index + 1;
+    });
+    
+    // Check if muscle should remain in treated set
+    const muscleStillHasDots = state.tensionPoints.some(dot => dot.muscleId === removedDot.muscleId);
+    if (!muscleStillHasDots) {
+      state.treatedMuscles.delete(removedDot.muscleId);
+    }
+    
+    // Refresh display
+    renderMuscleMap();
+    updateMuscleLists();
+    updateSummaryPanel();
+    
+    showCopyFeedback(\`❌ Removed dot: \${removedDot.muscleName}\`);
+  }
+
+  // Close dot input modal
+  function closeDotInputModal() {
+    const modal = document.querySelector('.modal-backdrop');
+    if (modal) {
+      modal.remove();
+    }
+  }
+
+  // Show dot tooltip
+  function showDotTooltip(event, number, muscleName, type, notes) {
+    const tooltip = document.getElementById('muscleTooltip') || createTooltipElement();
+    const displayText = \`\${number}. \${muscleName}\\n\${type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ')}\${notes ? '\\n' + notes : ''}\`;
+    tooltip.innerHTML = displayText.replace(/\\n/g, '<br>');
+    tooltip.classList.remove('hidden');
+    tooltip.style.display = 'block';
+    tooltip.style.left = (event.clientX + 10) + 'px';
+    tooltip.style.top = (event.clientY + 10) + 'px';
+  }
+
+  // Hide dot tooltip
+  function hideDotTooltip() {
+    const tooltip = document.getElementById('muscleTooltip');
+    if (tooltip) {
+      tooltip.classList.add('hidden');
+      tooltip.style.display = 'none';
+    }
+  }
+
+  // Create tooltip element if it doesn't exist
+  function createTooltipElement() {
+    let tooltip = document.getElementById('muscleTooltip');
+    if (!tooltip) {
+      tooltip = document.createElement('div');
+      tooltip.id = 'muscleTooltip';
+      tooltip.className = 'muscle-tooltip hidden';
+      tooltip.style.cssText = 'position:fixed;background:rgba(0,0,0,0.9);color:white;padding:8px 12px;border-radius:6px;font-size:0.8rem;font-weight:500;z-index:9999;pointer-events:none;line-height:1.4;';
+      document.body.appendChild(tooltip);
+    }
+    return tooltip;
   }
 
 
@@ -1845,18 +2176,7 @@ export function renderApp(): string {
   }
 
 
-  function toggleMuscle(id, name) {
-    const current = state.muscleStates[id];
-    if (!current) {
-      state.muscleStates[id] = 'treated';
-    } else if (current === 'treated') {
-      state.muscleStates[id] = 'follow-up';
-    } else {
-      delete state.muscleStates[id];
-    }
-    renderMuscleMap();
-    updateMuscleLists();
-  }
+  // Remove old toggleMuscle function - replaced with dot placement system
 
   function showTooltip(event, name) {
     const tooltip = document.getElementById('muscleTooltip');
@@ -1871,33 +2191,39 @@ export function renderApp(): string {
   }
 
   function updateMuscleLists() {
-    const treated = [];
-    const followup = [];
-    const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
+    const treatedMuscles = [];
+    const dotsByMuscle = new Map();
     
-    for (const [id, status] of Object.entries(state.muscleStates)) {
-      const muscle = allMuscles.find(m => m.id === id);
-      if (muscle) {
-        if (status === 'treated') treated.push(muscle.name);
-        else followup.push(muscle.name);
+    // Group tension points by muscle
+    state.tensionPoints.forEach(dot => {
+      if (!dotsByMuscle.has(dot.muscleId)) {
+        dotsByMuscle.set(dot.muscleId, []);
+        treatedMuscles.push(dot.muscleName);
       }
-    }
+      dotsByMuscle.get(dot.muscleId).push(dot);
+    });
 
     const treatedEl = document.getElementById('treatedList');
     const followupEl = document.getElementById('followupList');
 
-    treatedEl.innerHTML = treated.length
-      ? treated.map(n => \`<span class="muscle-chip muscle-chip-treated"><i class="fas fa-circle-dot"></i> \${n}</span>\`).join('')
-      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>';
+    // Show treated muscles with dot counts
+    treatedEl.innerHTML = treatedMuscles.length
+      ? treatedMuscles.map(name => {
+          const muscleId = state.tensionPoints.find(dot => dot.muscleName === name)?.muscleId;
+          const dotCount = dotsByMuscle.get(muscleId)?.length || 0;
+          return \`<span class="muscle-chip muscle-chip-treated"><i class="fas fa-circle-dot"></i> \${name} (\${dotCount} dot\${dotCount !== 1 ? 's' : ''})</span>\`;
+        }).join('')
+      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">No tension points placed yet</p>';
 
-    followupEl.innerHTML = followup.length
-      ? followup.map(n => \`<span class="muscle-chip muscle-chip-followup"><i class="fas fa-clock"></i> \${n}</span>\`).join('')
-      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>';
+    // No follow-up system with dots - hide follow-up section
+    followupEl.innerHTML = '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Use dot placement to mark treatment areas</p>';
+    
     updateSummaryPanel();
   }
 
   function clearAllMuscles() {
-    state.muscleStates = {};
+    state.tensionPoints = [];
+    state.treatedMuscles.clear();
     renderMuscleMap();
     updateMuscleLists();
   }
@@ -1923,8 +2249,8 @@ export function renderApp(): string {
     const date = document.getElementById('sessionDate').value || '—';
     const duration = document.getElementById('sessionDuration').value || '—';
     
-    const treated = Object.values(state.muscleStates).filter(s => s === 'treated').length;
-    const followup = Object.values(state.muscleStates).filter(s => s === 'follow-up').length;
+    const treated = state.treatedMuscles.size;
+    const followup = 0; // No follow-up system with tension points
 
     document.getElementById('summaryClient').textContent = name;
     document.getElementById('summaryDate').textContent = date;
@@ -2286,18 +2612,24 @@ export function renderApp(): string {
     document.getElementById('soapLoading').style.display = 'block';
     document.getElementById('soapContent').style.display = 'none';
 
-    // Gather all muscles
+    // Gather all tension points and create muscle context
     const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
     const treatedMuscles = [];
-    const followupMuscles = [];
+    const tensionPointDetails = [];
     
-    for (const [id, status] of Object.entries(state.muscleStates)) {
-      const m = allMuscles.find(x => x.id === id);
-      if (m) {
-        if (status === 'treated') treatedMuscles.push(m.name);
-        else followupMuscles.push(m.name);
+    // Group tension points by muscle
+    const muscleGroups = new Map();
+    state.tensionPoints.forEach(dot => {
+      if (!muscleGroups.has(dot.muscleId)) {
+        muscleGroups.set(dot.muscleId, []);
+        treatedMuscles.push(dot.muscleName);
       }
-    }
+      muscleGroups.get(dot.muscleId).push(dot);
+      tensionPointDetails.push(dot.number + '. ' + dot.muscleName + ': ' + dot.type + (dot.notes ? ' - ' + dot.notes : ''));
+    });
+    
+    // No follow-up muscles with tension point system
+    const followupMuscles = [];
 
     // Gather techniques
     const techniques = Array.from(document.querySelectorAll('input[name="technique"]:checked'))
@@ -2317,8 +2649,8 @@ export function renderApp(): string {
     const intakeData = document.getElementById('intakeFormData').value;
 
     const musclesContext = [
-      treatedMuscles.length ? 'Treated: ' + treatedMuscles.join(', ') : '',
-      followupMuscles.length ? 'Needs follow-up: ' + followupMuscles.join(', ') : ''
+      treatedMuscles.length ? 'Treated muscles: ' + treatedMuscles.join(', ') : '',
+      tensionPointDetails.length ? 'Specific areas: ' + tensionPointDetails.join('; ') : ''
     ].filter(Boolean).join(' | ');
 
     const contextData = {
@@ -2651,26 +2983,30 @@ THERAPIST NOTES:
       y += 5;
     }
 
-    // Muscles section
+    // Muscles section - Tension Points
     const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
     const treatedMuscles = [];
-    const followupMuscles = [];
-    for (const [id, status] of Object.entries(state.muscleStates)) {
-      const m = allMuscles.find(x => x.id === id);
-      if (m) {
-        if (status === 'treated') treatedMuscles.push(m.name);
-        else followupMuscles.push(m.name);
+    const tensionPointDetails = [];
+    
+    // Create muscle summary from tension points
+    const muscleGroups = new Map();
+    state.tensionPoints.forEach(dot => {
+      if (!muscleGroups.has(dot.muscleId)) {
+        muscleGroups.set(dot.muscleId, []);
+        treatedMuscles.push(dot.muscleName);
       }
-    }
+      muscleGroups.get(dot.muscleId).push(dot);
+      tensionPointDetails.push(dot.number + '. ' + dot.muscleName + ': ' + dot.type + (dot.notes ? ' - ' + dot.notes : ''));
+    });
 
-    if (treatedMuscles.length || followupMuscles.length) {
+    if (treatedMuscles.length || tensionPointDetails.length) {
       if (y > 240) { doc.addPage(); y = 20; }
       doc.setFillColor(107, 114, 128);
       doc.rect(margin, y, 4, 8, 'F');
       doc.setTextColor(...dark);
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text('Muscles Addressed', margin + 7, y + 5.5);
+      doc.text('Treatment Areas & Tension Points', margin + 7, y + 5.5);
       y += 11;
 
       if (treatedMuscles.length) {
@@ -2685,16 +3021,20 @@ THERAPIST NOTES:
         lines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
         y += 2;
       }
-      if (followupMuscles.length) {
+      
+      // Add detailed tension points
+      if (tensionPointDetails.length) {
         doc.setFontSize(8);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(245, 158, 11);
-        doc.text('Needs Follow-up:', margin + 3, y);
+        doc.setTextColor(239, 68, 68);
+        doc.text('Tension Points:', margin + 3, y);
         y += 4.5;
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(followupMuscles.join(', '), contentW - 10);
-        lines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
+        tensionPointDetails.forEach(detail => {
+          const detailLines = doc.splitTextToSize(detail, contentW - 10);
+          detailLines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
+        });
       }
       y += 5;
     }
@@ -2725,7 +3065,8 @@ THERAPIST NOTES:
   function resetAll() {
     if (!confirm('Start a new session? All current data will be cleared.')) return;
     
-    state.muscleStates = {};
+    state.tensionPoints = [];
+    state.treatedMuscles.clear();
     state.soapData = null;
     state.currentView = 'anterior';
     state.currentGender = 'male';
@@ -2764,10 +3105,18 @@ THERAPIST NOTES:
   window.goToStep = goToStep;
   window.setView = setView;
   window.setGender = setGender;
-  window.toggleMuscle = toggleMuscle;
+  // Removed toggleMuscle - replaced with dot placement system
   window.showTooltip = showTooltip;
   window.hideTooltip = hideTooltip;
   window.clearAllMuscles = clearAllMuscles;
+  // New tension points functions
+  window.handleCanvasClick = handleCanvasClick;
+  window.saveTensionDot = saveTensionDot;
+  window.removeTensionDot = removeTensionDot;
+  window.closeDotInputModal = closeDotInputModal;
+  window.showDotTooltip = showDotTooltip;
+  window.hideDotTooltip = hideDotTooltip;
+  // Existing functions
   window.generateSOAP = generateSOAP;
   window.regenerateSOAP = regenerateSOAP;
   window.copySection = copySection;
