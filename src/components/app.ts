@@ -1792,7 +1792,7 @@ export function renderApp(): string {
   // ============================================================
   // INITIALIZE
   // ============================================================
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     // Set today's date
     document.getElementById('sessionDate').value = new Date().toISOString().split('T')[0];
     
