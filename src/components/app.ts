@@ -1305,11 +1305,11 @@ export function renderApp(): string {
       const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
       const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return `<button onclick="loadClientProfile('${p.accountNumber}').catch(console.error)" class="client-chip">
-        <div class="chip-avatar">${initials || '?'}</div>
+      return `<button onclick="loadClientProfile('${p.id}')" class="client-chip">
+        <div class="chip-avatar">${initials || "?"}</div>
         <div class="chip-content">
-          <div class="chip-name">${name || 'Unknown'}</div>
-          ${ago ? `<div class="chip-ago">${ago}</div>` : ''}
+          <div class="chip-name">${name || "Unknown"}</div>
+          ${ago ? `<div class="chip-ago">${ago}</div>` : ""}
         </div>
       </button>`;
     }).join('');
