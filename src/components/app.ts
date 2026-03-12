@@ -204,9 +204,34 @@ export function renderApp(): string {
     .btn-ghost:hover { background: var(--bg); color: var(--text); border-color: var(--primary); }
     .btn-danger { background: var(--danger); color: white; }
     .btn-danger:hover { background: #c53030; }
-    .btn-sm { padding: 7px 16px; font-size: 0.78rem; }
+    .btn-sm { padding: 8px 18px; font-size: 0.8rem; }
     .btn-lg { padding: 13px 36px; font-size: 0.95rem; }
     .btn-full { width: 100%; justify-content: center; border-radius: var(--radius-sm); }
+
+    /* ── Client Profile Button Variants ── */
+    .btn-profile-primary {
+      background: white; color: var(--primary);
+      border: 1.5px solid rgba(255,255,255,0.8);
+      border-radius: 24px; font-weight: 600;
+      box-shadow: 0 2px 8px rgba(27,58,107,0.15);
+    }
+    .btn-profile-primary:hover {
+      background: #f8fbff; color: var(--primary);
+      border-color: white; transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(27,58,107,0.25);
+    }
+    .btn-profile-secondary {
+      background: rgba(255,255,255,0.2); color: white;
+      border: 1.5px solid rgba(255,255,255,0.4);
+      border-radius: 24px; font-weight: 600;
+      backdrop-filter: blur(8px);
+    }
+    .btn-profile-secondary:hover {
+      background: rgba(255,255,255,0.3); color: white;
+      border-color: rgba(255,255,255,0.6);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
 
     /* ── Status badge ── */
     .badge {
@@ -221,22 +246,35 @@ export function renderApp(): string {
 
     /* ── Integration client chips ── */
     .client-chip {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 8px 14px; border-radius: 50px;
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 10px 16px; border-radius: 16px;
       border: 1.5px solid var(--border);
-      background: #f7faff; cursor: pointer;
-      transition: all 0.15s; font-size: 0.82rem;
+      background: white; cursor: pointer;
+      transition: all 0.2s ease; font-size: 0.84rem;
+      box-shadow: 0 1px 3px rgba(27,58,107,0.06);
     }
-    .client-chip:hover { border-color: var(--accent); background: #e8f4fc; }
+    .client-chip:hover { 
+      border-color: var(--accent); 
+      background: #f8fbff;
+      transform: translateY(-1px);
+      box-shadow: 0 3px 12px rgba(27,58,107,0.12);
+    }
     .client-chip .chip-avatar {
-      width: 26px; height: 26px; border-radius: 50%;
-      background: var(--primary); color: white;
-      font-size: 0.68rem; font-weight: 800;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white; font-size: 0.72rem; font-weight: 800;
       display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
+      flex-shrink: 0; box-shadow: 0 2px 4px rgba(27,58,107,0.15);
     }
-    .client-chip .chip-name { font-weight: 600; color: var(--primary); }
-    .client-chip .chip-ago { font-size: 0.7rem; color: var(--text-light); }
+    .client-chip .chip-content { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .client-chip .chip-name { 
+      font-weight: 600; color: var(--primary); 
+      font-size: 0.85rem; line-height: 1.2;
+    }
+    .client-chip .chip-ago { 
+      font-size: 0.72rem; color: var(--text-light); 
+      font-weight: 500; opacity: 0.8;
+    }
 
     /* ── Drop zone ── */
     .drop-zone {
@@ -509,29 +547,32 @@ export function renderApp(): string {
     <div id="panel1" class="step-panel active">
 
       <!-- Client Profiles Integration Banner -->
-      <div class="card" style="margin-bottom:20px; border: 1.5px solid var(--accent);">
-        <div class="card-header-bar" style="padding:16px 24px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <i class="fas fa-users" style="font-size:1.1rem;opacity:0.9;"></i>
+      <div class="card" style="margin-bottom:20px; border: 1.5px solid var(--accent); overflow: hidden;">
+        <div class="card-header-bar" style="padding:18px 24px; background: linear-gradient(135deg, var(--primary) 0%, #2c5fa3 50%, #4a84c7 100%);">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;">
+                <i class="fas fa-users" style="font-size:1rem;color:white;"></i>
+              </div>
               <div>
-                <h2 style="margin:0;font-size:0.95rem;">Client Profiles</h2>
-                <p style="margin:0;font-size:0.72rem;opacity:0.8;">Synced from Flexion &amp; Flow Intake Form</p>
+                <h2 style="margin:0;font-size:1rem;font-weight:700;color:white;">Client Profiles</h2>
+                <p style="margin:0;font-size:0.74rem;opacity:0.85;color:white;">Synced from Flexion &amp; Flow Intake Form</p>
               </div>
             </div>
-            <div style="display:flex;gap:8px;">
-              <button onclick="openClientBrowser()" class="btn btn-sm" style="background:white;color:var(--primary);border-radius:50px;">
+            <div style="display:flex;gap:10px;">
+              <button onclick="openClientBrowser()" class="btn btn-sm btn-profile-primary">
                 <i class="fas fa-search"></i> Browse Clients
               </button>
-              <button onclick="openWebhookConfig()" class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border-radius:50px;border:1px solid rgba(255,255,255,0.3);" title="Configure integration">
+              <button onclick="openWebhookConfig()" class="btn btn-sm btn-profile-secondary" title="Configure integration">
                 <i class="fas fa-link"></i> Setup
               </button>
             </div>
           </div>
         </div>
-        <div style="padding:14px 24px 16px;">
-          <div id="clientProfilesPreview" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-            <p style="font-size:0.8rem;color:var(--text-light);font-style:italic;" id="noClientsMsg">
+        <div style="padding:16px 24px 20px;">
+          <div id="clientProfilesPreview" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+            <p style="font-size:0.82rem;color:var(--text-light);font-style:italic;margin:0;" id="noClientsMsg">
+              <i class="fas fa-info-circle" style="margin-right:6px;opacity:0.7;"></i>
               No client profiles yet — connect your intake form or upload a PDF below.
             </p>
           </div>
@@ -1254,7 +1295,7 @@ export function renderApp(): string {
     const noMsg = document.getElementById('noClientsMsg');
     if (!container) return;
     if (profiles.length === 0) {
-      container.innerHTML = '<p class="text-xs text-slate-400 italic" id="noClientsMsg">No client profiles saved yet. Connect your Flexion &amp; Flow intake form to auto-populate clients, or upload a PDF below.</p>';
+      container.innerHTML = '<p style="font-size:0.82rem;color:var(--text-light);font-style:italic;margin:0;" id="noClientsMsg"><i class="fas fa-info-circle" style="margin-right:6px;opacity:0.7;"></i>No client profiles yet — connect your intake form or upload a PDF below.</p>';
       return;
     }
     if (noMsg) noMsg.remove();
@@ -1264,19 +1305,23 @@ export function renderApp(): string {
       const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
       const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return \`<button onclick="loadClientProfile('\${p.accountNumber}').catch(console.error)"
-        class="flex items-center gap-2 px-3 py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-xl transition group text-left">
-        <div class="w-7 h-7 rounded-full bg-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">\${initials || '?'}</div>
-        <div>
-          <div class="text-xs font-semibold text-slate-700">\${name || 'Unknown'}</div>
-          \${ago ? \`<div class="text-[10px] text-slate-400">\${ago}</div>\` : ''}
+      return `<button onclick="loadClientProfile('${p.accountNumber}').catch(console.error)" class="client-chip">
+        <div class="chip-avatar">${initials || '?'}</div>
+        <div class="chip-content">
+          <div class="chip-name">${name || 'Unknown'}</div>
+          ${ago ? `<div class="chip-ago">${ago}</div>` : ''}
         </div>
-      </button>\`;
+      </button>`;
     }).join('');
     if (profiles.length > 6) {
-      container.innerHTML += \`<button onclick="openClientBrowser()" class="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition text-xs text-slate-500">
-        <i class="fas fa-ellipsis"></i> +\${profiles.length - 6} more
-      </button>\`;
+      container.innerHTML += `<button onclick="openClientBrowser()" class="client-chip" style="border-style:dashed;opacity:0.7;">
+        <div class="chip-avatar" style="background:var(--text-light); font-size:0.8rem;">
+          <i class="fas fa-ellipsis"></i>
+        </div>
+        <div class="chip-content">
+          <div class="chip-name" style="color:var(--text-light);">+${profiles.length - 6} more</div>
+        </div>
+      </button>`;
     }
     // Update webhook banner
     const cfg = loadWebhookConfig();
@@ -1346,6 +1391,7 @@ export function renderApp(): string {
   // ============================================================
   async function openClientBrowser() {
     const modal = document.getElementById('clientBrowserModal');
+    modal.classList.remove('hidden');
     modal.style.display = 'flex';
     
     await filterClients();
@@ -1354,7 +1400,7 @@ export function renderApp(): string {
   function closeClientBrowser() {
     const modal = document.getElementById('clientBrowserModal');
     modal.style.display = 'none';
-    
+    modal.classList.add('hidden');
   }
 
   async function filterClients() {
@@ -1408,9 +1454,9 @@ export function renderApp(): string {
   // ============================================================
   function openWebhookConfig() {
     const modal = document.getElementById('webhookModal');
+    modal.classList.remove('hidden');
     modal.style.display = 'flex';
     
-
     const myUrl = window.location.origin + '/api/intake-webhook';
     const urlInput = document.getElementById('myWebhookUrl');
     if (urlInput) urlInput.value = myUrl;
@@ -1425,7 +1471,7 @@ export function renderApp(): string {
   function closeWebhookConfig() {
     const modal = document.getElementById('webhookModal');
     modal.style.display = 'none';
-    
+    modal.classList.add('hidden');
   }
   function copyWebhookUrl() {
     const val = document.getElementById('myWebhookUrl')?.value;
