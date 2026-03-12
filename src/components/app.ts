@@ -1305,23 +1305,23 @@ export function renderApp(): string {
       const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
       const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return `<button onclick="loadClientProfile('${p.id}')" class="client-chip">
-        <div class="chip-avatar">${initials || "?"}</div>
-        <div class="chip-content">
-          <div class="chip-name">${name || "Unknown"}</div>
-          ${ago ? `<div class="chip-ago">${ago}</div>` : ""}
-        </div>
-      </button>`;
+      return '<button onclick="loadClientProfile(\'' + p.id + '\')" class="client-chip">'
+        + '<div class="chip-avatar">' + (initials || "?") + '</div>'
+        + '<div class="chip-content">'
+        + '<div class="chip-name">' + (name || "Unknown") + '</div>'
+        + (ago ? '<div class="chip-ago">' + ago + '</div>' : "")
+        + '</div>'
+        + '</button>';
     }).join('');
     if (profiles.length > 6) {
-      container.innerHTML += `<button onclick="openClientBrowser()" class="client-chip" style="border-style:dashed;opacity:0.7;">
-        <div class="chip-avatar" style="background:var(--text-light); font-size:0.8rem;">
-          <i class="fas fa-ellipsis"></i>
-        </div>
-        <div class="chip-content">
-          <div class="chip-name" style="color:var(--text-light);">+${profiles.length - 6} more</div>
-        </div>
-      </button>`;
+      container.innerHTML += '<button onclick="openClientBrowser()" class="client-chip" style="border-style:dashed;opacity:0.7;">'
+        + '<div class="chip-avatar" style="background:var(--text-light); font-size:0.8rem;">'
+        + '<i class="fas fa-ellipsis"></i>'
+        + '</div>'
+        + '<div class="chip-content">'
+        + '<div class="chip-name" style="color:var(--text-light);">+' + (profiles.length - 6) + ' more</div>'
+        + '</div>'
+        + '</button>';
     }
     // Update webhook banner
     const cfg = loadWebhookConfig();
