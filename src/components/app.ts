@@ -1305,7 +1305,7 @@ export function renderApp(): string {
       const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
       const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return '<button onclick="loadClientProfile(\'' + p.id + '\')" class="client-chip">'
+      return '<button onclick="loadClientProfile(this.dataset.clientId)" data-client-id="' + p.id + '" class="client-chip">'
         + '<div class="chip-avatar">' + (initials || "?") + '</div>'
         + '<div class="chip-content">'
         + '<div class="chip-name">' + (name || "Unknown") + '</div>'
