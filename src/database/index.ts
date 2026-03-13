@@ -20,7 +20,12 @@ export const ENV = {
   GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || "",
   GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID || "",
   GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN || "",
-  ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || "changeme",
+  ADMIN_PASSWORD:
+    process.env.ADMIN_PASSWORD ||
+    (() => {
+      console.error("CRITICAL: ADMIN_PASSWORD environment variable not set!");
+      process.exit(1);
+    })(),
   DATA_DIR: process.env.DATA_DIR || path.join(process.cwd(), "data"),
   PORT: parseInt(process.env.PORT || "3000", 10),
   DASHBOARD_WEBHOOK_URL: process.env.DASHBOARD_WEBHOOK_URL || "",

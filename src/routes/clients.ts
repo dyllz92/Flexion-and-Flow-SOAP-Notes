@@ -9,8 +9,14 @@ import {
   ENV,
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
+import { requireAuth, authRateLimit } from "../middleware/auth.js";
 
 const clients = new Hono();
+
+// Apply authentication to all client routes except public intake
+clients.use("/*", authRateLimit);
+clients.use("/", requireAuth); // Protect client creation
+clients.use("/:accountNum/*", requireAuth); // Protect client access
 
 /**
  * POST /api/clients — create or upsert client, returns accountNumber
