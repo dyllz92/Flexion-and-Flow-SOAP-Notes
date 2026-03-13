@@ -3917,6 +3917,7 @@ THERAPIST NOTES:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          submissionId: contextData.submissionId || contextData.id || '',
           sessionDate: document.getElementById('sessionDate')?.value || new Date().toISOString().split('T')[0],
           duration: contextData.duration || '',
           musclesTreated: treatedMuscles,

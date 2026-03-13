@@ -15,6 +15,16 @@ import { notifyDashboard } from "../services/webhook.js";
 
 const sessions = new Hono();
 
+type SessionSaveRequest = Omit<
+  SessionRecord,
+  "sessionId" | "accountNumber" | "savedAt"
+> & {
+  submissionId?: string;
+  sourceSubmissionId?: string;
+  taskId?: number | string;
+  noteUrl?: string;
+};
+
 /**
  * POST /api/clients/:accountNumber/sessions — save SOAP note
  */
@@ -24,10 +34,7 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
 
   if (!client) return c.json({ error: "Client not found" }, 404);
 
-  const body = (await c.req.json()) as Omit<
-    SessionRecord,
-    "sessionId" | "accountNumber" | "savedAt"
-  >;
+  const body = (await c.req.json()) as SessionSaveRequest;
   const sessionId = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -99,11 +106,15 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
 
   // Notify Dashboard about new session
   notifyDashboard("session_saved", {
+    submissionId: body.submissionId || body.sourceSubmissionId || null,
+    taskId: body.taskId || null,
     accountNumber: acct,
     sessionId,
     clientName: session.clientName,
     clientEmail: client.email,
     sessionDate: session.sessionDate,
+    completedAt: now,
+    noteUrl: body.noteUrl || null,
   });
 
   return c.json({ success: true, sessionId, session });
