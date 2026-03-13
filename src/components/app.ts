@@ -730,8 +730,8 @@ export function renderApp(): string {
           <div class="card-header-bar">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
               <div>
-                <h2><i class="fas fa-person" style="margin-right:8px;opacity:0.8;"></i>Interactive Muscle Map</h2>
-                <p>Click muscles to mark as treated or needing follow-up</p>
+                <h2><i class="fas fa-person" style="margin-right:8px;opacity:0.8;"></i>Mark Areas of Pain or Concern</h2>
+                <p>Select your gender first, then tap or click the diagram to add pain markers</p>
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <div class="view-toggle">
@@ -755,15 +755,12 @@ export function renderApp(): string {
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <div class="legend-dot" style="background:rgba(91,163,217,0.25);border:1px solid rgba(91,163,217,0.7);"></div> Hover to identify
               </div>
-              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:rgba(56,161,105,0.45);border:1px solid #276749;"></div> Treated
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:rgba(214,158,46,0.45);border:1px solid #b7791f;"></div> Needs Follow-up
+                <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
+                <div class="legend-dot" style="background:rgba(239, 68, 68, 0.9);border:1px solid rgba(239, 68, 68, 1);"></div> Pain marker
               </div>
               <div style="margin-left:auto;font-size:0.75rem;color:var(--text-light);">
                 <i class="fas fa-hand-pointer" style="color:var(--accent);margin-right:4px;"></i>
-                Click once = treated · Twice = follow-up · 3× = clear
+                Click diagram to place marker · Click marker to remove
               </div>
             </div>
             <div style="display:flex;justify-content:center;overflow:auto;">
@@ -776,29 +773,29 @@ export function renderApp(): string {
         <div style="display:flex;flex-direction:column;gap:16px;">
           <div class="card-plain">
             <div class="cp-head">
-              <i class="fas fa-list-check"></i> Selected Muscles
+              <i class="fas fa-location-dot"></i> Pain Markers
             </div>
             <div class="cp-body">
               <div style="margin-bottom:14px;">
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-                  <div class="legend-dot" style="background:#38a169;border:1px solid #276749;"></div>
-                  <span style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;">Treated</span>
+                  <div class="legend-dot" style="background:rgba(239, 68, 68, 0.9);border:1px solid rgba(239, 68, 68, 1);"></div>
+                  <span style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;">Marked Areas</span>
                 </div>
                 <div id="treatedList" style="min-height:24px;">
-                  <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>
+                  <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">No markers placed yet</p>
                 </div>
               </div>
               <div>
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-                  <div class="legend-dot" style="background:#d69e2e;border:1px solid #b7791f;"></div>
-                  <span style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;">Follow-up Needed</span>
+                  <div class="legend-dot" style="background:rgba(91,163,217,0.25);border:1px solid rgba(91,163,217,0.7);"></div>
+                  <span style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;">Marker Notes</span>
                 </div>
                 <div id="followupList" style="min-height:24px;">
-                  <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">None selected</p>
+                  <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Add a marker on the map, then describe each area here.</p>
                 </div>
               </div>
               <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;">
-                <i class="fas fa-times"></i> Clear All
+                <i class="fas fa-times"></i> Clear All Markers
               </button>
             </div>
           </div>
@@ -867,7 +864,7 @@ export function renderApp(): string {
               <div class="summary-row"><span class="sr-label">Client</span><span class="sr-val" id="summaryClient">—</span></div>
               <div class="summary-row"><span class="sr-label">Date</span><span class="sr-val" id="summaryDate">—</span></div>
               <div class="summary-row"><span class="sr-label">Duration</span><span class="sr-val" id="summaryDuration">—</span></div>
-              <div class="summary-row"><span class="sr-label">Muscles treated</span><span class="sr-val" id="summaryMuscleCount">0</span></div>
+              <div class="summary-row"><span class="sr-label">Markers placed</span><span class="sr-val" id="summaryMuscleCount">0</span></div>
               <div class="summary-row"><span class="sr-label">Follow-up needed</span><span class="sr-val" id="summaryFollowupCount">0</span></div>
             </div>
           </div>
@@ -1925,10 +1922,9 @@ export function renderApp(): string {
     const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender);
     
     if (detectedMuscle) {
-      // Show dot input modal
-      showDotInputModal(svgX, svgY, detectedMuscle);
+      saveTensionDot(svgX, svgY, detectedMuscle.id, detectedMuscle.name, 'pain-area', '');
     } else {
-      showCopyFeedback('⚠️ Click on a muscle area to place a dot');
+      showCopyFeedback('Click on a body area to place a marker');
     }
   }
 
@@ -1985,87 +1981,11 @@ export function renderApp(): string {
     return inside;
   }
 
-  // Show modal for dot input
-  function showDotInputModal(x, y, muscle) {
-    const modal = createDotInputModal(x, y, muscle);
-    document.body.appendChild(modal);
-    modal.style.display = 'flex';
-    
-    // Focus on first input
-    setTimeout(() => {
-      const firstInput = modal.querySelector('input[type="radio"]:first-child');
-      if (firstInput) firstInput.focus();
-    }, 100);
-  }
 
-  // Create dot input modal
-  function createDotInputModal(x, y, muscle) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-backdrop';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
-    
-    modal.innerHTML = \`
-      <div class="modal-box" style="max-width:480px;background:white;border-radius:12px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);">
-        <div class="modal-header" style="padding:20px 24px 16px;border-bottom:1px solid var(--border);">
-          <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--primary);">
-            <i class="fas fa-map-pin" style="margin-right:8px;opacity:0.8;"></i>Add Tension Point
-          </h3>
-          <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-light);">
-            Detected muscle: <strong>\${muscle.name}</strong>
-          </p>
-        </div>
-        <div class="modal-body" style="padding:20px 24px;">
-          <div class="field" style="margin-bottom:16px;">
-            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:0.85rem;color:var(--text);">Issue Type</label>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-              <label class="radio-option">
-                <input type="radio" name="issueType" value="tension" checked style="margin-right:6px;"> Tension
-              </label>
-              <label class="radio-option">
-                <input type="radio" name="issueType" value="trigger-point" style="margin-right:6px;"> Trigger Point
-              </label>
-              <label class="radio-option">
-                <input type="radio" name="issueType" value="knot" style="margin-right:6px;"> Knot
-              </label>
-              <label class="radio-option">
-                <input type="radio" name="issueType" value="inflammation" style="margin-right:6px;"> Inflammation
-              </label>
-            </div>
-          </div>
-          <div class="field">
-            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:0.85rem;color:var(--text);">Notes</label>
-            <textarea id="dotNotes" rows="3" placeholder="Describe the issue and treatment approach..."
-              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);resize:vertical;outline:none;"
-              onfocus="this.style.borderColor='var(--accent)'" 
-              onblur="this.style.borderColor='var(--border)'"></textarea>
-          </div>
-        </div>
-        <div class="modal-footer" style="padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
-          <button onclick="closeDotInputModal()" class="btn btn-ghost">Cancel</button>
-          <button onclick="saveTensionDot(\${x}, \${y}, '\${muscle.id}', '\${muscle.name}')" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Add Dot
-          </button>
-        </div>
-      </div>
-    \`;
-    
-    // Close on backdrop click
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) closeDotInputModal();
-    });
-    
-    return modal;
-  }
+  
 
   // Save tension dot
-  function saveTensionDot(x, y, muscleId, muscleName) {
-    const modal = document.querySelector('.modal-backdrop');
-    if (!modal) return;
-    
-    // Get form data
-    const selectedType = modal.querySelector('input[name="issueType"]:checked')?.value || 'tension';
-    const notes = modal.querySelector('#dotNotes')?.value || '';
-    
+  function saveTensionDot(x, y, muscleId, muscleName, selectedType = 'pain-area', notes = '') {
     // Create new tension point
     const dotNumber = state.tensionPoints.length + 1;
     const newDot = {
@@ -2084,15 +2004,12 @@ export function renderApp(): string {
     state.tensionPoints.push(newDot);
     state.treatedMuscles.add(muscleId);
     
-    // Close modal
-    closeDotInputModal();
-    
     // Refresh display
     renderMuscleMap();
     updateMuscleLists();
     updateSummaryPanel();
     
-    showCopyFeedback(\`✅ Added dot \${dotNumber}: \${muscleName}\`);
+    showCopyFeedback(\`Added marker \${dotNumber}: \${muscleName}\`);
   }
 
   // Remove tension dot
@@ -2121,16 +2038,10 @@ export function renderApp(): string {
     updateMuscleLists();
     updateSummaryPanel();
     
-    showCopyFeedback(\`❌ Removed dot: \${removedDot.muscleName}\`);
+    showCopyFeedback(\`Removed marker: \${removedDot.muscleName}\`);
   }
 
-  // Close dot input modal
-  function closeDotInputModal() {
-    const modal = document.querySelector('.modal-backdrop');
-    if (modal) {
-      modal.remove();
-    }
-  }
+
 
   // Show dot tooltip
   function showDotTooltip(event, number, muscleName, type, notes) {
@@ -2236,33 +2147,45 @@ export function renderApp(): string {
     document.getElementById('muscleTooltip').classList.add('hidden');
   }
 
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function updateMarkerNotes(dotId, notes) {
+    const dot = state.tensionPoints.find(item => item.id === dotId);
+    if (!dot) return;
+    dot.notes = (notes || '').trim();
+  }
+
   function updateMuscleLists() {
-    const treatedMuscles = [];
-    const dotsByMuscle = new Map();
-    
-    // Group tension points by muscle
-    state.tensionPoints.forEach(dot => {
-      if (!dotsByMuscle.has(dot.muscleId)) {
-        dotsByMuscle.set(dot.muscleId, []);
-        treatedMuscles.push(dot.muscleName);
-      }
-      dotsByMuscle.get(dot.muscleId).push(dot);
-    });
+    const markers = state.tensionPoints.slice().sort((a, b) => a.number - b.number);
 
     const treatedEl = document.getElementById('treatedList');
     const followupEl = document.getElementById('followupList');
 
-    // Show treated muscles with dot counts
-    treatedEl.innerHTML = treatedMuscles.length
-      ? treatedMuscles.map(name => {
-          const muscleId = state.tensionPoints.find(dot => dot.muscleName === name)?.muscleId;
-          const dotCount = dotsByMuscle.get(muscleId)?.length || 0;
-          return \`<span class="muscle-chip muscle-chip-treated"><i class="fas fa-circle-dot"></i> \${name} (\${dotCount} dot\${dotCount !== 1 ? 's' : ''})</span>\`;
-        }).join('')
-      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">No tension points placed yet</p>';
+    treatedEl.innerHTML = markers.length
+      ? markers.map(dot => \`<span class="muscle-chip muscle-chip-treated"><i class="fas fa-location-dot"></i> Marker \${dot.number}: \${escapeHtml(dot.muscleName)}</span>\`).join('')
+      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">No markers placed yet</p>';
 
-    // No follow-up system with dots - hide follow-up section
-    followupEl.innerHTML = '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Use dot placement to mark treatment areas</p>';
+    followupEl.innerHTML = markers.length
+      ? markers.map(dot => {
+          const safeName = escapeHtml(dot.muscleName);
+          const safeNotes = escapeHtml(dot.notes || '');
+          return \`<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+              <strong style="font-size:0.78rem;color:var(--primary);">Marker \${dot.number}</strong>
+              <button type="button" onclick="removeTensionDot('\${dot.id}')" style="border:none;background:transparent;color:#e53e3e;font-size:1rem;line-height:1;cursor:pointer;" aria-label="Remove marker \${dot.number}">&times;</button>
+            </div>
+            <div style="font-size:0.74rem;color:var(--text-light);margin-bottom:6px;">\${safeName}</div>
+            <textarea rows="2" placeholder="Describe this pain area..." oninput="updateMarkerNotes('\${dot.id}', this.value)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font);font-size:0.78rem;resize:vertical;">\${safeNotes}</textarea>
+          </div>\`;
+        }).join('')
+      : '<p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Add a marker on the map, then describe each area here.</p>';
     
     updateSummaryPanel();
   }
@@ -3159,23 +3082,7 @@ THERAPIST NOTES:
   window.handleCanvasClick = handleCanvasClick;
   window.saveTensionDot = saveTensionDot;
   window.removeTensionDot = removeTensionDot;
-  window.closeDotInputModal = closeDotInputModal;
-  window.showDotTooltip = showDotTooltip;
-  window.hideDotTooltip = hideDotTooltip;
-  // Existing functions
-  window.generateSOAP = generateSOAP;
-  window.regenerateSOAP = regenerateSOAP;
-  window.copySection = copySection;
-  window.copyAllSOAP = copyAllSOAP;
-  window.exportPDF = exportPDF;
-  window.resetAll = resetAll;
-  window.handleDragOver = handleDragOver;
-  window.handleDrop = handleDrop;
-  window.handlePDFUpload = handlePDFUpload;
-  window.clearPDF = clearPDF;
-  window.loadDriveFiles = loadDriveFiles;
-  window.selectDriveFile = selectDriveFile;
-  window.updateSummaryPanel = updateSummaryPanel;
+  window.updateMarkerNotes = updateMarkerNotes;
   window.saveOpenAIKey = saveOpenAIKey;
   window.loadOpenAIKey = loadOpenAIKey;
   window.openClientBrowser = openClientBrowser;
