@@ -875,6 +875,30 @@ export function renderApp(): string {
             </div>
           </div>
 
+          <div class="card-plain">
+            <div class="cp-head"><i class="fas fa-clipboard-check"></i> Review Intake Data</div>
+            <div class="cp-body" style="display:flex;flex-direction:column;gap:8px;">
+              <p id="intakeReviewStatus" style="font-size:0.76rem;color:var(--text-light);">Quick final check before Generate &amp; Save.</p>
+              <div class="summary-row"><span class="sr-label">Client</span><span class="sr-val" id="reviewClientName">—</span></div>
+              <div class="summary-row"><span class="sr-label">Email</span><span class="sr-val" id="reviewClientEmail">—</span></div>
+              <div class="summary-row"><span class="sr-label">DOB</span><span class="sr-val" id="reviewClientDOB">—</span></div>
+              <div class="summary-row"><span class="sr-label">Chief complaint</span><span class="sr-val" id="reviewChiefComplaint">—</span></div>
+              <div class="summary-row"><span class="sr-label">Pain B/A</span><span class="sr-val" id="reviewPainRange">—</span></div>
+              <div class="summary-row"><span class="sr-label">Duration</span><span class="sr-val" id="reviewDuration">—</span></div>
+              <div class="summary-row"><span class="sr-label">Medications</span><span class="sr-val" id="reviewMedications">—</span></div>
+              <div class="summary-row"><span class="sr-label">Session notes</span><span class="sr-val" id="reviewSessionNotes">—</span></div>
+              <div class="summary-row" style="align-items:flex-start;"><span class="sr-label">Intake summary</span><span class="sr-val" id="reviewIntakePreview">—</span></div>
+              <div style="display:flex;gap:8px;margin-top:6px;">
+                <button onclick="jumpToField(1, 'chiefComplaint')" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;">
+                  <i class="fas fa-pen"></i> Edit Intake
+                </button>
+                <button onclick="jumpToField(3, 'sessionSummary')" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;">
+                  <i class="fas fa-pen"></i> Edit Notes
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- API Key -->
           <div class="card-plain">
             <div class="cp-head"><i class="fas fa-key"></i> OpenAI API Key</div>
@@ -891,7 +915,7 @@ export function renderApp(): string {
           </div>
 
           <div class="info-box info-box-yellow">
-            <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Before Generating:</strong> Review your muscle selections and session notes. The AI will use all this information to create comprehensive SOAP documentation.</p>
+            <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Before Generating:</strong> Confirm the intake review above. Generate &amp; Save will create SOAP notes and save the updated session data to the client file.</p>
           </div>
 
           <div style="display:flex;gap:10px;">
@@ -899,7 +923,7 @@ export function renderApp(): string {
               <i class="fas fa-arrow-left"></i> Back
             </button>
             <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
-              <i class="fas fa-wand-magic-sparkles"></i> Generate SOAP
+              <i class="fas fa-wand-magic-sparkles"></i> Generate &amp; Save
             </button>
           </div>
 
@@ -1056,6 +1080,11 @@ export function renderApp(): string {
             </div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:8px;">
+                <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
+                  <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
+                  <span>Use medical shorthand (applies to generation + PDF export)</span>
+                </label>
+                <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);">Current style: Normal writing</p>
                 <button onclick="exportPDF()" class="btn btn-primary btn-full">
                   <i class="fas fa-file-pdf"></i> Export as PDF
                 </button>
@@ -1545,11 +1574,160 @@ export function renderApp(): string {
     showMusclePolygons: false,
     tensionPoints: [], // Array of dot objects: { id, number, x, y, muscleId, muscleName, type, notes, timestamp }
     treatedMuscles: new Set(), // Auto-populated from tension point muscle IDs
+    useMedicalShorthand: false,
     pdfText: '',
     soapData: null,
     lastAccountNumber: null, // set after SOAP auto-save
     lastSessionId: null      // set after SOAP auto-save
   };
+
+  const SHORTHAND_REPLACEMENTS = [
+    [/\bbilateral\b/gi, 'B/L'],
+    [/\bunilateral\b/gi, 'U/L'],
+    [/\bcomplains of\b/gi, 'c/o'],
+    [/\breports\b/gi, 'rpts'],
+    [/\bpatient\b/gi, 'pt'],
+    [/\bclient\b/gi, 'pt'],
+    [/\brange of motion\b/gi, 'ROM'],
+    [/\bwithin normal limits\b/gi, 'WNL'],
+    [/\btenderness to palpation\b/gi, 'TTP'],
+    [/\bincreased\b/gi, 'inc'],
+    [/\bdecreased\b/gi, 'dec'],
+    [/\bapproximately\b/gi, 'approx'],
+    [/\bwithout\b/gi, 'w/o'],
+    [/\bwith\b/gi, 'w/'],
+    [/\bstatus post\b/gi, 's/p']
+  ];
+
+  function getStringValue(id) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    if (typeof el.value === 'string') return el.value.trim();
+    if (typeof el.textContent === 'string') return el.textContent.trim();
+    return '';
+  }
+
+  function formatReviewValue(value) {
+    return value && value.trim() ? value.trim() : '—';
+  }
+
+  function compactPreview(value, maxLen) {
+    const cleaned = (value || '').replace(/\s+/g, ' ').trim();
+    if (!cleaned) return '—';
+    if (cleaned.length <= maxLen) return cleaned;
+    return cleaned.slice(0, maxLen - 1) + '…';
+  }
+
+  function buildIntakeReviewSnapshot() {
+    const first = getStringValue('clientFirstName');
+    const last = getStringValue('clientLastName');
+    const painBefore = getStringValue('painLevel');
+    const painAfter = getStringValue('postPainLevel');
+    return {
+      clientName: [first, last].filter(Boolean).join(' '),
+      email: getStringValue('clientEmail'),
+      dob: getStringValue('clientDOB'),
+      chiefComplaint: getStringValue('chiefComplaint'),
+      painSummary: [painBefore ? painBefore + '/10' : '', painAfter ? painAfter + '/10' : ''].filter(Boolean).join(' -> '),
+      duration: getStringValue('sessionDuration'),
+      medications: getStringValue('medications'),
+      sessionNotes: getStringValue('sessionSummary'),
+      intakeData: getStringValue('intakeFormData')
+    };
+  }
+
+  function updateIntakeReviewPanel() {
+    const snapshot = buildIntakeReviewSnapshot();
+    const required = [
+      { key: 'clientName', label: 'client name' },
+      { key: 'chiefComplaint', label: 'chief complaint' },
+      { key: 'sessionNotes', label: 'session notes' },
+      { key: 'duration', label: 'session duration' }
+    ];
+    const missing = required.filter(item => !snapshot[item.key]).map(item => item.label);
+
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+
+    setText('reviewClientName', formatReviewValue(snapshot.clientName));
+    setText('reviewClientEmail', formatReviewValue(snapshot.email));
+    setText('reviewClientDOB', formatReviewValue(snapshot.dob));
+    setText('reviewChiefComplaint', formatReviewValue(snapshot.chiefComplaint));
+    setText('reviewPainRange', formatReviewValue(snapshot.painSummary));
+    setText('reviewDuration', formatReviewValue(snapshot.duration));
+    setText('reviewMedications', formatReviewValue(snapshot.medications));
+    setText('reviewSessionNotes', compactPreview(snapshot.sessionNotes, 100));
+    setText('reviewIntakePreview', compactPreview(snapshot.intakeData, 120));
+
+    const statusEl = document.getElementById('intakeReviewStatus');
+    if (statusEl) {
+      if (missing.length) {
+        statusEl.textContent = 'Needs review: ' + missing.join(', ');
+        statusEl.style.color = 'var(--danger)';
+      } else {
+        statusEl.textContent = 'Ready to generate and save.';
+        statusEl.style.color = 'var(--success)';
+      }
+    }
+  }
+
+  function jumpToField(step, fieldId) {
+    goToStep(step);
+    setTimeout(() => {
+      const el = document.getElementById(fieldId);
+      if (!el) return;
+      el.focus();
+      if (typeof el.select === 'function') el.select();
+      if (typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 140);
+  }
+
+  function setMedicalShorthand(enabled) {
+    state.useMedicalShorthand = !!enabled;
+    updateWritingStyleBadge();
+  }
+
+  function updateWritingStyleBadge() {
+    const badge = document.getElementById('writingStyleBadge');
+    if (badge) {
+      badge.textContent = state.useMedicalShorthand
+        ? 'Current style: Medical shorthand'
+        : 'Current style: Normal writing';
+    }
+    const toggle = document.getElementById('medicalShorthandToggle');
+    if (toggle) toggle.checked = !!state.useMedicalShorthand;
+  }
+
+  function toMedicalShorthand(text) {
+    if (!text) return '';
+    let out = text;
+    SHORTHAND_REPLACEMENTS.forEach(([pattern, replacement]) => {
+      out = out.replace(pattern, replacement);
+    });
+    out = out.replace(/\s{2,}/g, ' ');
+    return out.trim();
+  }
+
+  function applyWritingStyle(text) {
+    if (!text) return '';
+    return state.useMedicalShorthand ? toMedicalShorthand(text) : text;
+  }
+
+  function applyWritingStyleToSoapData(soapData) {
+    if (!state.useMedicalShorthand || !soapData) return soapData;
+    return {
+      ...soapData,
+      subjective: applyWritingStyle(soapData.subjective || ''),
+      objective: applyWritingStyle(soapData.objective || ''),
+      assessment: applyWritingStyle(soapData.assessment || ''),
+      plan: applyWritingStyle(soapData.plan || ''),
+      therapistNotes: applyWritingStyle(soapData.therapistNotes || '')
+    };
+  }
 
   const TECHNIQUES = [
     'Swedish Massage', 'Deep Tissue', 'Trigger Point Therapy',
@@ -1577,162 +1755,203 @@ export function renderApp(): string {
   // Posterior muscles: x=0..400, y=0..920 mapped to right half of image
 
   const MUSCLES = [
-    // ─── ANTERIOR ───────────────────────────────────────────────
-    // SVG viewBox: 0 0 400 920 (male), body spans X:90-350, Y:15-910
+    // ─── ANTERIOR ────────────────────────────────────────────────────
+
     // NECK
     { id:'scm_l', name:'Sternocleidomastoid (L)', group:'Neck', view:'anterior',
-      points:'175,110 172,118 168,128 170,140 176,143 182,135 183,123 180,113' },
+      points:'178,92 172,104 166,118 164,132 167,144 174,150 182,145 186,132 184,118 181,104' },
     { id:'scm_r', name:'Sternocleidomastoid (R)', group:'Neck', view:'anterior',
-      points:'225,110 228,118 232,128 230,140 224,143 218,135 217,123 220,113' },
-    // SHOULDER
+      points:'222,92 228,104 234,118 236,132 233,144 226,150 218,145 214,132 216,118 219,104' },
+
+    // SHOULDER — ANTERIOR DELTOID
     { id:'deltoid_ant_l', name:'Anterior Deltoid (L)', group:'Shoulder', view:'anterior',
-      points:'146,150 136,154 126,161 116,171 108,182 103,194 103,206 108,216 117,220 128,216 138,207 145,195 149,181 150,166' },
+      points:'150,148 138,152 124,160 110,170 100,182 96,198 98,214 107,222 120,226 134,222 144,212 150,198 154,182 153,165' },
     { id:'deltoid_ant_r', name:'Anterior Deltoid (R)', group:'Shoulder', view:'anterior',
-      points:'254,150 264,154 274,161 284,171 292,182 297,194 297,206 292,216 283,220 272,216 262,207 255,195 251,181 250,166' },
+      points:'250,148 262,152 276,160 290,170 300,182 304,198 302,214 293,222 280,226 266,222 256,212 250,198 246,182 247,165' },
+
     // CHEST
     { id:'pec_major_l', name:'Pectoralis Major (L)', group:'Chest', view:'anterior',
-      points:'200,188 196,180 188,174 176,172 163,172 150,176 138,184 128,196 122,210 120,226 124,240 132,252 144,260 158,264 172,262 184,257 194,247 199,233 200,218' },
+      points:'200,172 194,168 182,166 168,168 152,174 138,184 126,198 120,215 118,234 124,252 135,264 150,272 166,274 180,270 192,260 198,246 200,228' },
     { id:'pec_major_r', name:'Pectoralis Major (R)', group:'Chest', view:'anterior',
-      points:'200,188 204,180 212,174 224,172 237,172 250,176 262,184 272,196 278,210 280,226 276,240 268,252 256,260 242,264 228,262 216,257 206,247 201,233 200,218' },
-    // BICEPS
-    { id:'biceps_l', name:'Biceps Brachii (L)', group:'Upper Arm', view:'anterior',
-      points:'136,222 126,234 116,250 106,272 98,298 95,325 98,348 105,365 116,368 126,355 132,332 136,305 138,275 140,248' },
-    { id:'biceps_r', name:'Biceps Brachii (R)', group:'Upper Arm', view:'anterior',
-      points:'264,222 274,234 284,250 294,272 302,298 305,325 302,348 295,365 284,368 274,355 268,332 264,305 262,275 260,248' },
-    // FOREARM
-    { id:'forearm_flex_l', name:'Forearm Flexors (L)', group:'Forearm', view:'anterior',
-      points:'112,368 102,382 90,398 80,416 74,436 74,452 78,462 90,464 104,452 114,434 122,414 124,392' },
-    { id:'forearm_flex_r', name:'Forearm Flexors (R)', group:'Forearm', view:'anterior',
-      points:'288,368 298,382 310,398 320,416 326,436 326,452 322,462 310,464 296,452 286,434 278,414 276,392' },
-    // ABS
-    { id:'rectus_abdominis', name:'Rectus Abdominis', group:'Core', view:'anterior',
-      points:'185,262 183,288 182,315 182,345 184,375 188,405 195,422 205,425 215,422 220,405 220,375 220,345 220,315 218,288 215,262 200,258' },
-    { id:'oblique_l', name:'External Oblique (L)', group:'Core', view:'anterior',
-      points:'182,262 178,278 172,302 164,326 156,352 152,380 154,405 162,416 174,408 180,392 183,370 184,342 183,312' },
-    { id:'oblique_r', name:'External Oblique (R)', group:'Core', view:'anterior',
-      points:'220,262 224,278 230,302 238,326 246,352 250,380 248,405 240,416 228,408 222,392 220,370 218,342 220,312' },
-    { id:'serratus_l', name:'Serratus Anterior (L)', group:'Core', view:'anterior',
-      points:'152,198 145,215 143,235 148,255 158,260 165,250 165,228 160,208' },
-    { id:'serratus_r', name:'Serratus Anterior (R)', group:'Core', view:'anterior',
-      points:'250,198 258,215 260,235 255,255 245,260 238,250 238,228 243,208' },
-    // HIP
-    { id:'iliopsoas_l', name:'Iliopsoas / Hip Flexor (L)', group:'Hip', view:'anterior',
-      points:'178,428 170,442 165,460 168,478 175,490 185,492 193,482 195,462 190,442 183,428' },
-    { id:'iliopsoas_r', name:'Iliopsoas / Hip Flexor (R)', group:'Hip', view:'anterior',
-      points:'225,428 232,442 238,460 235,478 228,490 218,492 210,482 208,462 212,442 220,428' },
-    { id:'tfl_l', name:'Tensor Fascia Latae (L)', group:'Hip', view:'anterior',
-      points:'152,432 144,445 136,462 132,480 134,496 142,504 152,498 158,482 158,462 156,442' },
-    { id:'tfl_r', name:'Tensor Fascia Latae (R)', group:'Hip', view:'anterior',
-      points:'248,432 256,445 264,462 268,480 266,496 258,504 248,498 242,482 242,462 244,442' },
-    // THIGH
-    { id:'quad_l', name:'Quadriceps (L)', group:'Thigh', view:'anterior',
-      points:'156,498 146,515 134,540 124,568 120,598 122,628 128,648 140,658 154,658 164,648 170,628 172,598 168,568 160,540 155,515' },
-    { id:'quad_r', name:'Quadriceps (R)', group:'Thigh', view:'anterior',
-      points:'244,498 254,515 266,540 276,568 280,598 278,628 272,648 260,658 246,658 236,648 230,628 228,598 232,568 240,540 245,515' },
-    { id:'adductors_l', name:'Adductors (L)', group:'Thigh', view:'anterior',
-      points:'190,505 188,520 185,545 184,570 184,595 186,612 190,622 194,618 194,598 194,575 194,552 195,528 194,512' },
-    { id:'adductors_r', name:'Adductors (R)', group:'Thigh', view:'anterior',
-      points:'210,505 212,520 215,545 216,570 216,595 214,612 210,622 206,618 206,598 206,575 206,552 205,528 206,512' },
-    { id:'sartorius_l', name:'Sartorius (L)', group:'Thigh', view:'anterior',
-      points:'165,498 160,518 158,542 159,570 163,600 168,630 172,652 178,652 176,630 170,600 166,570 165,542 166,518 168,498' },
-    { id:'sartorius_r', name:'Sartorius (R)', group:'Thigh', view:'anterior',
-      points:'235,498 240,518 242,542 241,570 237,600 232,630 228,652 222,652 224,630 230,600 234,570 235,542 234,518 232,498' },
-    // LOWER LEG
-    { id:'tibialis_ant_l', name:'Tibialis Anterior (L)', group:'Lower Leg', view:'anterior',
-      points:'168,675 160,692 155,715 155,742 158,765 163,778 172,782 180,778 185,762 183,735 178,710 172,688' },
-    { id:'tibialis_ant_r', name:'Tibialis Anterior (R)', group:'Lower Leg', view:'anterior',
-      points:'235,675 242,692 248,715 248,742 245,765 240,778 232,782 224,778 220,762 220,735 225,710 230,688' },
-    { id:'peroneals_l', name:'Peroneals (L)', group:'Lower Leg', view:'anterior',
-      points:'148,685 142,702 138,725 139,750 143,768 150,772 155,765 154,742 152,720 150,700' },
-    { id:'peroneals_r', name:'Peroneals (R)', group:'Lower Leg', view:'anterior',
-      points:'252,685 258,702 262,725 261,750 257,768 250,772 245,765 246,742 248,720 250,700' },
+      points:'200,172 206,168 218,166 232,168 248,174 262,184 274,198 280,215 282,234 276,252 265,264 250,272 234,274 220,270 208,260 202,246 200,228' },
 
-    // ─── POSTERIOR ──────────────────────────────────────────────
-    // SVG viewBox: 0 0 400 920 (male), body center X:200
-    // NECK / UPPER BACK
+    // SERRATUS ANTERIOR (lateral ribs, below pec)
+    { id:'serratus_l', name:'Serratus Anterior (L)', group:'Core', view:'anterior',
+      points:'152,220 145,238 142,258 146,272 155,278 164,272 167,254 164,236 158,220' },
+    { id:'serratus_r', name:'Serratus Anterior (R)', group:'Core', view:'anterior',
+      points:'248,220 255,238 258,258 254,272 245,278 236,272 233,254 236,236 242,220' },
+
+    // BICEPS BRACHII
+    { id:'biceps_l', name:'Biceps Brachii (L)', group:'Upper Arm', view:'anterior',
+      points:'138,228 126,238 114,256 104,276 97,302 95,330 97,356 106,372 120,376 132,366 140,344 142,314 140,284 138,256' },
+    { id:'biceps_r', name:'Biceps Brachii (R)', group:'Upper Arm', view:'anterior',
+      points:'262,228 274,238 286,256 296,276 303,302 305,330 303,356 294,372 280,376 268,366 260,344 258,314 260,284 262,256' },
+
+    // FOREARM FLEXORS
+    { id:'forearm_flex_l', name:'Forearm Flexors (L)', group:'Forearm', view:'anterior',
+      points:'118,374 106,388 94,406 82,426 75,446 74,462 79,472 93,474 108,462 118,444 126,422 128,400' },
+    { id:'forearm_flex_r', name:'Forearm Flexors (R)', group:'Forearm', view:'anterior',
+      points:'282,374 294,388 306,406 318,426 325,446 326,462 321,472 307,474 292,462 282,444 274,422 272,400' },
+
+    // CORE — RECTUS ABDOMINIS
+    { id:'rectus_abdominis', name:'Rectus Abdominis', group:'Core', view:'anterior',
+      points:'187,272 184,298 183,326 183,356 184,386 188,412 194,428 200,431 206,428 212,412 216,386 217,356 217,326 216,298 213,272 200,266' },
+
+    // CORE — EXTERNAL OBLIQUES (lateral to rectus, taper downward)
+    { id:'oblique_l', name:'External Oblique (L)', group:'Core', view:'anterior',
+      points:'185,272 176,285 168,310 160,338 152,366 148,392 151,415 162,424 175,418 180,400 183,374 183,342 183,308 184,280' },
+    { id:'oblique_r', name:'External Oblique (R)', group:'Core', view:'anterior',
+      points:'215,272 224,285 232,310 240,338 248,366 252,392 249,415 238,424 225,418 220,400 217,374 217,342 217,308 216,280' },
+
+    // HIP — ILIOPSOAS
+    { id:'iliopsoas_l', name:'Iliopsoas / Hip Flexor (L)', group:'Hip', view:'anterior',
+      points:'182,440 174,455 170,472 173,488 181,498 191,500 199,492 200,474 196,456 189,441' },
+    { id:'iliopsoas_r', name:'Iliopsoas / Hip Flexor (R)', group:'Hip', view:'anterior',
+      points:'218,440 226,455 230,472 227,488 219,498 209,500 201,492 200,474 204,456 211,441' },
+
+    // HIP — TENSOR FASCIA LATAE (outer hip, superior to IT band)
+    { id:'tfl_l', name:'Tensor Fascia Latae (L)', group:'Hip', view:'anterior',
+      points:'153,440 144,454 136,472 132,490 135,506 145,514 156,510 162,494 162,474 158,454' },
+    { id:'tfl_r', name:'Tensor Fascia Latae (R)', group:'Hip', view:'anterior',
+      points:'247,440 256,454 264,472 268,490 265,506 255,514 244,510 238,494 238,474 242,454' },
+
+    // THIGH — QUADRICEPS (large anterior thigh)
+    { id:'quad_l', name:'Quadriceps (L)', group:'Thigh', view:'anterior',
+      points:'158,508 146,526 134,554 124,582 120,612 122,644 129,664 144,674 159,674 170,663 176,644 177,612 172,582 163,554 157,526' },
+    { id:'quad_r', name:'Quadriceps (R)', group:'Thigh', view:'anterior',
+      points:'242,508 254,526 266,554 276,582 280,612 278,644 271,664 256,674 241,674 230,663 223,644 223,612 228,582 237,554 243,526' },
+
+    // THIGH — ADDUCTORS (inner thigh — widened for better hit detection)
+    { id:'adductors_l', name:'Adductors (L)', group:'Thigh', view:'anterior',
+      points:'186,510 180,530 176,558 174,586 174,614 177,634 186,642 196,638 200,620 200,590 200,560 198,532 192,512' },
+    { id:'adductors_r', name:'Adductors (R)', group:'Thigh', view:'anterior',
+      points:'214,510 220,530 224,558 226,586 226,614 223,634 214,642 204,638 200,620 200,590 200,560 202,532 208,512' },
+
+    // THIGH — SARTORIUS (diagonal strap, lateral hip to medial knee)
+    { id:'sartorius_l', name:'Sartorius (L)', group:'Thigh', view:'anterior',
+      points:'162,506 157,528 155,554 156,582 160,612 166,640 171,662 178,662 176,640 170,612 166,582 165,554 165,528 167,506' },
+    { id:'sartorius_r', name:'Sartorius (R)', group:'Thigh', view:'anterior',
+      points:'238,506 243,528 245,554 244,582 240,612 234,640 229,662 222,662 224,640 230,612 234,582 235,554 235,528 233,506' },
+
+    // LOWER LEG — TIBIALIS ANTERIOR (medial shin)
+    { id:'tibialis_ant_l', name:'Tibialis Anterior (L)', group:'Lower Leg', view:'anterior',
+      points:'168,682 160,700 155,724 154,750 158,774 165,788 175,790 184,784 188,768 185,742 179,718 172,698' },
+    { id:'tibialis_ant_r', name:'Tibialis Anterior (R)', group:'Lower Leg', view:'anterior',
+      points:'232,682 240,700 245,724 246,750 242,774 235,788 225,790 216,784 212,768 215,742 221,718 228,698' },
+
+    // LOWER LEG — PERONEALS (lateral shin)
+    { id:'peroneals_l', name:'Peroneals (L)', group:'Lower Leg', view:'anterior',
+      points:'151,690 144,708 140,733 141,758 146,776 154,780 160,773 159,748 156,724 153,706' },
+    { id:'peroneals_r', name:'Peroneals (R)', group:'Lower Leg', view:'anterior',
+      points:'249,690 256,708 260,733 259,758 254,776 246,780 240,773 241,748 244,724 247,706' },
+
+    // ─── POSTERIOR ────────────────────────────────────────────────────
+
+    // NECK — UPPER TRAPEZIUS (large triangle from C-spine to acromion)
     { id:'upper_trap_l', name:'Upper Trapezius (L)', group:'Neck/Shoulder', view:'posterior',
-      points:'198,88 190,98 178,115 162,135 145,155 130,175 118,195 112,215 122,228 140,228 162,220 182,205 198,185 200,160' },
+      points:'200,90 191,100 178,118 162,140 146,160 130,180 118,200 112,220 120,230 140,230 162,222 182,208 197,190 200,164' },
     { id:'upper_trap_r', name:'Upper Trapezius (R)', group:'Neck/Shoulder', view:'posterior',
-      points:'202,88 210,98 222,115 238,135 255,155 270,175 282,195 288,215 278,228 260,228 238,220 218,205 202,185 200,160' },
+      points:'200,90 209,100 222,118 238,140 254,160 270,180 282,200 288,220 280,230 260,230 238,222 218,208 203,190 200,164' },
+
+    // NECK — LEVATOR SCAPULAE (small, under upper trap)
     { id:'levator_scap_l', name:'Levator Scapulae (L)', group:'Neck', view:'posterior',
-      points:'190,88 185,98 180,112 182,128 188,132 194,125 196,110 193,95' },
+      points:'192,90 186,103 183,118 186,130 193,135 199,130 199,114 196,99' },
     { id:'levator_scap_r', name:'Levator Scapulae (R)', group:'Neck', view:'posterior',
-      points:'210,88 215,98 220,112 218,128 212,132 206,125 204,110 207,95' },
-    // SHOULDERS POSTERIOR
+      points:'208,90 214,103 217,118 214,130 207,135 201,130 201,114 204,99' },
+
+    // SHOULDER — POSTERIOR DELTOID
     { id:'deltoid_post_l', name:'Posterior Deltoid (L)', group:'Shoulder', view:'posterior',
-      points:'118,193 105,205 93,222 88,242 93,262 108,270 125,265 138,248 142,228 135,208' },
+      points:'120,196 106,210 93,228 88,248 93,268 108,276 126,270 140,254 145,230 136,212' },
     { id:'deltoid_post_r', name:'Posterior Deltoid (R)', group:'Shoulder', view:'posterior',
-      points:'282,193 295,205 308,222 312,242 308,262 295,270 278,265 262,248 258,228 265,208' },
-    // ROTATOR CUFF / MID BACK
+      points:'280,196 294,210 307,228 312,248 307,268 292,276 274,270 260,254 255,230 264,212' },
+
+    // ROTATOR CUFF — INFRASPINATUS (fills scapula fossa)
     { id:'infraspinatus_l', name:'Infraspinatus (L)', group:'Rotator Cuff', view:'posterior',
-      points:'145,188 135,205 130,228 135,252 148,262 165,265 182,258 195,242 198,222 192,200 175,188' },
+      points:'148,192 135,210 130,232 135,254 149,266 166,270 184,264 197,248 198,226 191,204 174,192' },
     { id:'infraspinatus_r', name:'Infraspinatus (R)', group:'Rotator Cuff', view:'posterior',
-      points:'255,188 265,205 270,228 265,252 252,262 235,265 218,258 205,242 202,222 208,200 225,188' },
+      points:'252,192 265,210 270,232 265,254 251,266 234,270 216,264 203,248 202,226 209,204 226,192' },
+
+    // ROTATOR CUFF — TERES MAJOR / MINOR
     { id:'teres_l', name:'Teres Major / Minor (L)', group:'Rotator Cuff', view:'posterior',
-      points:'132,252 125,268 125,290 132,305 145,308 158,298 160,278 152,260' },
+      points:'133,255 126,272 126,293 134,308 147,312 160,302 163,282 154,262' },
     { id:'teres_r', name:'Teres Major / Minor (R)', group:'Rotator Cuff', view:'posterior',
-      points:'268,252 275,268 275,290 268,305 255,308 242,298 240,278 248,260' },
-    // RHOMBOIDS / MIDDLE TRAP (center spine area)
+      points:'267,255 274,272 274,293 266,308 253,312 240,302 237,282 246,262' },
+
+    // UPPER BACK — RHOMBOIDS (between spine and medial scapula border)
     { id:'rhomboids_l', name:'Rhomboids (L)', group:'Upper Back', view:'posterior',
-      points:'198,162 190,172 180,188 175,208 178,228 188,235 200,230 200,205 200,180' },
+      points:'200,164 191,176 180,195 176,216 179,234 190,240 200,235 200,210 200,184' },
     { id:'rhomboids_r', name:'Rhomboids (R)', group:'Upper Back', view:'posterior',
-      points:'202,162 210,172 220,188 225,208 222,228 212,235 200,230 200,205 200,180' },
-    // TRICEPS
+      points:'200,164 209,176 220,195 224,216 221,234 210,240 200,235 200,210 200,184' },
+
+    // UPPER ARM — TRICEPS BRACHII
     { id:'triceps_l', name:'Triceps Brachii (L)', group:'Upper Arm', view:'posterior',
-      points:'112,220 102,235 90,258 82,285 80,315 85,345 95,362 108,365 120,355 130,330 135,298 132,268 122,242' },
+      points:'114,224 102,240 90,262 82,290 80,320 84,350 95,368 110,372 124,362 133,338 136,306 133,274 122,246' },
     { id:'triceps_r', name:'Triceps Brachii (R)', group:'Upper Arm', view:'posterior',
-      points:'288,220 298,235 312,258 320,285 322,315 318,345 308,362 295,365 282,355 272,330 268,298 272,268 280,242' },
-    // FOREARM POSTERIOR
+      points:'286,224 298,240 310,262 318,290 320,320 316,350 305,368 290,372 276,362 267,338 264,306 267,274 278,246' },
+
+    // FOREARM — EXTENSORS (posterior)
     { id:'forearm_ext_l', name:'Forearm Extensors (L)', group:'Forearm', view:'posterior',
-      points:'98,368 85,385 72,405 62,428 60,448 65,462 78,465 92,455 105,435 115,412 120,390' },
+      points:'100,374 86,392 72,412 62,434 60,454 65,466 80,470 94,460 107,440 117,418 120,396' },
     { id:'forearm_ext_r', name:'Forearm Extensors (R)', group:'Forearm', view:'posterior',
-      points:'305,368 318,385 332,405 342,428 342,448 338,462 325,465 312,455 298,435 290,412 282,390' },
-    // LATS (big wing-shaped back muscles)
+      points:'300,374 314,392 328,412 338,434 340,454 335,466 320,470 306,460 293,440 283,418 280,396' },
+
+    // MID/LOWER BACK — LATISSIMUS DORSI
     { id:'lats_l', name:'Latissimus Dorsi (L)', group:'Mid/Lower Back', view:'posterior',
-      points:'140,230 130,255 118,285 110,318 108,348 112,378 122,398 138,408 155,405 168,390 172,368 165,338 155,305 148,272 145,245' },
+      points:'142,234 130,260 118,292 110,325 108,358 112,388 123,408 140,416 157,412 170,396 175,372 168,340 157,308 148,276 146,250' },
     { id:'lats_r', name:'Latissimus Dorsi (R)', group:'Mid/Lower Back', view:'posterior',
-      points:'262,230 272,255 285,285 292,318 295,348 292,378 282,398 265,408 248,405 235,390 230,368 238,338 248,305 255,272 258,245' },
-    // ERECTOR SPINAE (vertical columns flanking spine)
+      points:'258,234 270,260 282,292 290,325 292,358 288,388 277,408 260,416 243,412 230,396 225,372 232,340 243,308 252,276 254,250' },
+
+    // LOWER BACK — ERECTOR SPINAE (parallel columns flanking spine)
     { id:'erector_l', name:'Erector Spinae (L)', group:'Lower Back', view:'posterior',
-      points:'185,248 180,268 175,298 172,328 172,358 175,388 180,408 190,412 198,405 200,378 200,348 198,315 195,282 192,255' },
+      points:'186,252 181,274 177,305 175,336 175,368 177,398 182,416 192,418 200,410 200,380 200,350 198,318 195,286 191,260' },
     { id:'erector_r', name:'Erector Spinae (R)', group:'Lower Back', view:'posterior',
-      points:'215,248 220,268 225,298 228,328 228,358 225,388 220,408 210,412 202,405 200,378 200,348 202,315 205,282 208,255' },
-    // QUADRATUS LUMBORUM
+      points:'214,252 219,274 223,305 225,336 225,368 223,398 218,416 208,418 200,410 200,380 200,350 202,318 205,286 209,260' },
+
+    // LOWER BACK — QUADRATUS LUMBORUM
     { id:'ql_l', name:'Quadratus Lumborum (L)', group:'Lower Back', view:'posterior',
-      points:'178,385 172,400 170,420 175,435 185,440 195,432 198,412 195,392' },
+      points:'180,390 172,406 170,426 176,440 187,445 198,437 200,416 196,398' },
     { id:'ql_r', name:'Quadratus Lumborum (R)', group:'Lower Back', view:'posterior',
-      points:'222,385 228,400 230,420 225,435 215,440 205,432 202,412 205,392' },
+      points:'220,390 228,406 230,426 224,440 213,445 202,437 200,416 204,398' },
+
     // GLUTES
     { id:'glut_max_l', name:'Gluteus Maximus (L)', group:'Glutes', view:'posterior',
-      points:'155,435 142,452 132,475 128,500 132,528 142,545 158,552 175,548 190,535 198,515 200,490 198,462 188,442 172,435' },
+      points:'158,442 143,460 131,483 128,508 132,536 143,554 160,560 178,556 193,542 200,522 200,494 198,466 188,448 173,442' },
     { id:'glut_max_r', name:'Gluteus Maximus (R)', group:'Glutes', view:'posterior',
-      points:'248,435 262,452 272,475 275,500 272,528 262,545 248,552 232,548 215,535 205,515 202,490 205,462 215,442 232,435' },
+      points:'245,442 260,460 272,483 275,508 270,536 260,554 243,560 225,556 210,542 202,522 200,494 202,466 215,448 230,442' },
     { id:'glut_med_l', name:'Gluteus Medius (L)', group:'Glutes', view:'posterior',
-      points:'148,408 138,422 132,440 135,458 145,468 158,470 170,460 175,442 172,422 162,410' },
+      points:'150,413 138,428 132,446 136,464 147,474 161,476 173,465 178,446 174,428 163,415' },
     { id:'glut_med_r', name:'Gluteus Medius (R)', group:'Glutes', view:'posterior',
-      points:'255,408 265,422 272,440 268,458 258,468 245,470 232,460 228,442 232,422 242,410' },
+      points:'253,413 265,428 272,446 268,464 257,474 243,476 230,465 226,446 230,428 241,415' },
+
+    // GLUTES/HIP — PIRIFORMIS (deep, under glute max)
     { id:'piriformis_l', name:'Piriformis (L)', group:'Glutes/Hip', view:'posterior',
-      points:'178,472 170,485 170,502 178,512 192,515 202,505 200,488 190,475' },
+      points:'180,478 171,492 171,508 180,518 194,521 202,510 202,492 192,480' },
     { id:'piriformis_r', name:'Piriformis (R)', group:'Glutes/Hip', view:'posterior',
-      points:'222,472 230,485 230,502 222,512 208,515 198,505 200,488 210,475' },
-    // HAMSTRINGS
+      points:'222,478 232,492 232,508 224,518 210,521 200,510 200,492 210,480' },
+
+    // HAMSTRINGS — BICEPS FEMORIS (lateral/outer)
     { id:'biceps_fem_l', name:'Biceps Femoris (L)', group:'Hamstrings', view:'posterior',
-      points:'158,555 148,575 138,605 130,638 128,668 132,692 140,705 155,708 168,698 175,672 175,640 170,608 162,578' },
+      points:'160,562 148,583 138,615 130,648 128,678 132,702 143,714 158,716 170,706 177,679 176,648 170,616 162,584' },
     { id:'biceps_fem_r', name:'Biceps Femoris (R)', group:'Hamstrings', view:'posterior',
-      points:'245,555 255,575 265,605 272,638 275,668 272,692 265,705 252,708 240,698 232,672 228,640 232,608 242,578' },
+      points:'243,562 255,583 265,615 272,648 275,678 270,702 260,714 245,716 234,706 226,679 226,648 232,616 242,584' },
+
+    // HAMSTRINGS — SEMIMEMBRANOSUS / SEMITENDINOSUS (medial/inner)
     { id:'semimem_l', name:'Semimembranosus / Semitendinosus (L)', group:'Hamstrings', view:'posterior',
-      points:'192,555 182,578 175,608 172,638 172,668 175,695 185,708 198,710 208,700 212,672 210,640 205,605 200,575' },
+      points:'195,562 184,584 177,616 173,648 173,678 177,704 188,716 202,718 212,707 214,678 212,646 207,614 200,582' },
     { id:'semimem_r', name:'Semimembranosus / Semitendinosus (R)', group:'Hamstrings', view:'posterior',
-      points:'210,555 222,578 228,608 230,638 230,668 228,695 218,708 205,710 198,700 195,672 195,640 198,605 202,575' },
-    // CALF
+      points:'208,562 219,584 226,616 230,648 230,678 226,704 218,716 204,718 194,707 190,678 191,646 196,614 204,582' },
+
+    // CALF — GASTROCNEMIUS
     { id:'gastroc_l', name:'Gastrocnemius (L)', group:'Calf', view:'posterior',
-      points:'148,712 138,732 130,758 128,785 132,808 142,822 155,825 168,818 175,800 175,772 170,745 160,722' },
+      points:'150,718 138,738 130,764 128,792 133,815 143,828 157,832 170,824 177,806 177,778 172,751 160,728' },
     { id:'gastroc_r', name:'Gastrocnemius (R)', group:'Calf', view:'posterior',
-      points:'255,712 265,732 272,758 275,785 272,808 262,822 250,825 238,818 228,800 228,772 235,745 248,722' },
+      points:'253,718 265,738 273,764 275,792 270,815 260,828 246,832 233,824 226,806 226,778 231,751 242,728' },
+
+    // CALF — SOLEUS (below gastroc)
     { id:'soleus_l', name:'Soleus (L)', group:'Calf', view:'posterior',
-      points:'155,802 145,820 140,842 142,862 150,872 162,875 172,868 178,848 178,825 168,808' },
+      points:'157,810 146,828 140,851 142,872 151,881 164,883 174,876 179,858 178,832 168,814' },
     { id:'soleus_r', name:'Soleus (R)', group:'Calf', view:'posterior',
-      points:'248,802 258,820 262,842 262,862 255,872 242,875 232,868 225,848 225,825 238,808' },
+      points:'246,810 258,828 263,851 262,872 253,881 240,883 230,876 224,858 226,832 238,814' },
   ];
 
   // Convenience lookups
@@ -2127,6 +2346,20 @@ export function renderApp(): string {
     if (polyToggle) polyToggle.checked = !!state.showMusclePolygons;
     
     updateSummaryPanel();
+    updateIntakeReviewPanel();
+    updateWritingStyleBadge();
+
+    const reviewFieldIds = [
+      'clientFirstName', 'clientLastName', 'clientEmail', 'clientDOB', 'sessionDate',
+      'chiefComplaint', 'painLevel', 'postPainLevel', 'sessionDuration', 'medications',
+      'sessionSummary', 'clientFeedback', 'intakeFormData'
+    ];
+    reviewFieldIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', updateIntakeReviewPanel);
+      el.addEventListener('change', updateIntakeReviewPanel);
+    });
 
     // Load client profiles from server database
     await renderClientProfilesPreview();
@@ -2267,6 +2500,7 @@ export function renderApp(): string {
     document.getElementById('summaryDuration').textContent = duration;
     document.getElementById('summaryMuscleCount').textContent = treated;
     document.getElementById('summaryFollowupCount').textContent = followup;
+    updateIntakeReviewPanel();
   }
 
   // ============================================================
@@ -2294,6 +2528,7 @@ export function renderApp(): string {
 
     state.currentStep = step;
     if (step === 3) updateSummaryPanel();
+    if (step === 4) updateWritingStyleBadge();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -2696,7 +2931,7 @@ export function renderApp(): string {
 
     try {
       // Call OpenAI directly from frontend with provided key
-      const prompt = buildPrompt(contextData, intakeData);
+      const prompt = buildPrompt(contextData, intakeData, state.useMedicalShorthand);
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -2728,13 +2963,14 @@ export function renderApp(): string {
 
       const data = await response.json();
       const soapData = JSON.parse(data.choices[0].message.content);
-      state.soapData = soapData;
+      const formattedSoapData = applyWritingStyleToSoapData(soapData);
+      state.soapData = formattedSoapData;
 
-      displaySOAP(soapData, contextData, treatedMuscles, followupMuscles);
+      displaySOAP(formattedSoapData, contextData, treatedMuscles, followupMuscles);
 
       // ── Auto-save to client file ──────────────────────────────────────────
       const saved = await saveSOAPToClientFile(
-        contextData, soapData, treatedMuscles, followupMuscles, techniques
+        contextData, formattedSoapData, treatedMuscles, followupMuscles, techniques
       );
       if (saved) {
         // Try to upload PDF to Drive in background
@@ -2755,7 +2991,31 @@ export function renderApp(): string {
     }
   }
 
-  function buildPrompt(ctx, intakeData) {
+  function buildPrompt(ctx, intakeData, useMedicalShorthand) {
+    const writingStyleGuide = useMedicalShorthand
+      ? 'Writing style: Use concise medical shorthand where safe and clear (e.g., ROM, TTP, B/L, w/, w/o, c/o). Keep statements clinically clear and avoid ambiguous abbreviations.'
+      : 'Writing style: Use full clinical sentences in clear professional language.';
+
+    const responseGuide = useMedicalShorthand
+      ? [
+        '{',
+        '  "subjective": "Concise pt-reported symptoms/history in medical shorthand. 2-4 lines.",',
+        '  "objective": "Objective findings in shorthand: palpation, tissue quality, ROM, and treatment response. 3-5 lines.",',
+        '  "assessment": "Clinical interpretation using concise shorthand. 2-4 lines.",',
+        '  "plan": "Next-session plan + self-care in concise shorthand. 3-5 lines.",',
+        '  "therapistNotes": "Additional key notes/precautions in shorthand. 1-3 lines."',
+        '}'
+      ].join('\\n')
+      : [
+        '{',
+        '  "subjective": "Patient-reported complaints, pain levels, history, goals. 3-4 clinical sentences.",',
+        '  "objective": "Observable findings: palpation results for each muscle treated, tissue texture, ROM findings, postural observations, technique response. 4-6 sentences.",',
+        '  "assessment": "Clinical interpretation: tissue findings, treatment response, progress toward therapeutic goals, functional improvement. 3-4 sentences.",',
+        '  "plan": "Next session plan, recommended frequency, home care exercises, self-care instructions, areas to focus on next visit. 4-5 sentences.",',
+        '  "therapistNotes": "Additional clinical notes, contraindications observed, special considerations, referral recommendations if applicable. 2-3 sentences."',
+        '}'
+      ].join('\\n');
+
     return \`Generate complete professional SOAP notes for a massage therapy session. Return a JSON object with keys: "subjective", "objective", "assessment", "plan", "therapistNotes".
 
 CLIENT INFORMATION:
@@ -2783,15 +3043,10 @@ CLIENT FEEDBACK:
 \${ctx.clientFeedback || 'No feedback recorded'}
 
 Generate detailed, clinically appropriate SOAP notes. Use professional massage therapy terminology.
+\${writingStyleGuide}
 
 Return JSON:
-{
-  "subjective": "Patient-reported complaints, pain levels, history, goals. 3-4 clinical sentences.",
-  "objective": "Observable findings: palpation results for each muscle treated, tissue texture, ROM findings, postural observations, technique response. 4-6 sentences.",
-  "assessment": "Clinical interpretation: tissue findings, treatment response, progress toward therapeutic goals, functional improvement. 3-4 sentences.",
-  "plan": "Next session plan, recommended frequency, home care exercises, self-care instructions, areas to focus on next visit. 4-5 sentences.",
-  "therapistNotes": "Additional clinical notes, contraindications observed, special considerations, referral recommendations if applicable. 2-3 sentences."
-}\`;
+\${responseGuide}\`;
   }
 
   function displaySOAP(data, ctx, treatedMuscles, followupMuscles) {
@@ -2972,7 +3227,8 @@ THERAPIST NOTES:
     ];
 
     for (const section of sections) {
-      const text = document.getElementById(section.id).value;
+      const rawText = document.getElementById(section.id).value;
+      const text = applyWritingStyle(rawText);
       if (!text) continue;
 
       // Check if we need a new page
@@ -3095,6 +3351,7 @@ THERAPIST NOTES:
     state.currentView = 'anterior';
     state.currentGender = 'male';
     state.showMusclePolygons = false;
+    state.useMedicalShorthand = false;
 
     const polyToggle = document.getElementById('toggleMusclePolygons');
     if (polyToggle) polyToggle.checked = false;
@@ -3126,6 +3383,8 @@ THERAPIST NOTES:
     setGender('male');
     renderMuscleMap();
     updateMuscleLists();
+    updateWritingStyleBadge();
+    updateIntakeReviewPanel();
     goToStep(1);
   }
 
@@ -3155,6 +3414,8 @@ THERAPIST NOTES:
   window.saveWebhookConfig = saveWebhookConfig;
   window.copyWebhookUrl = copyWebhookUrl;
   window.deleteClientProfile = deleteClientProfile;
+  window.jumpToField = jumpToField;
+  window.setMedicalShorthand = setMedicalShorthand;
   </script>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -3773,7 +4034,8 @@ THERAPIST NOTES:
         { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
       ];
       for (const sec of sections) {
-        const text = document.getElementById(sec.id)?.value;
+        const rawText = document.getElementById(sec.id)?.value;
+        const text = applyWritingStyle(rawText);
         if (!text) continue;
         if (y > 250) { doc.addPage(); y = 20; }
         doc.setFillColor(...sec.color);
