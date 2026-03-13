@@ -6,3 +6,9 @@ GOOGLE_DRIVE_FOLDER_ID=
 ADMIN_PASSWORD=changeme
 DATA_DIR=./data
 PORT=3000
+
+# Dashboard Integration
+# Set this to your Dashboard webhook URL to enable automatic
+# task completion notifications when SOAP notes are completed
+DASHBOARD_WEBHOOK_URL=https://flexion-and-flow-dashboard-production.up.railway.app/api/webhook/soap
+WEBHOOK_SECRET=wh_soap_m7n2q5r8s3t1u6v9w4x7y2z5a8b3c1d6
