@@ -764,7 +764,7 @@ export function renderApp(): string {
               </div>
             </div>
             <div style="display:flex;justify-content:center;overflow:auto;">
-              <div id="muscleMapContainer" style="min-width:280px;max-width:480px;width:100%;"></div>
+              <div id="muscleMapContainer" style="min-width:260px;max-width:400px;width:100%;"></div>
             </div>
           </div>
         </div>
@@ -1267,7 +1267,12 @@ export function renderApp(): string {
           dob: profile.dob,
           occupation: profile.occupation,
           chiefComplaint: profile.chiefComplaint || profile.primaryConcern,
-          source: 'manual-entry'
+          medications: profile.medications,
+          allergies: profile.allergies,
+          medicalConditions: profile.medicalConditions,
+          areasToAvoid: profile.areasToAvoid,
+          source: profile.source || 'manual-entry',
+          intakeData: profile.intakeData || {}
         })
       });
       if (res.ok) {
@@ -1914,9 +1919,9 @@ export function renderApp(): string {
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
     
-    // Convert to SVG coordinates (400x920 normalized space)
+    // Convert to base coordinates (400x920 normalized space)
     const svgX = (canvasX / rect.width) * 400;
-    const svgY = (canvasY / rect.height) * (state.currentGender === 'male' ? 920 : 920 * (862/890)); // Adjust for female proportions
+    const svgY = (canvasY / rect.height) * 920;
     
     // Find which muscle contains this point
     const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender);
@@ -1959,8 +1964,7 @@ export function renderApp(): string {
         else if (py < 780) { sx = 0.69; cx = 216; }
         else              { sx = 0.75; cx = 215; }
         const nx = Math.round((px - 205) * sx + cx);
-        const ny = Math.round(py * (gender === 'female' ? 862/890 : 1));
-        return nx + ',' + ny;
+        return nx + ',' + py;
       }).join(' ');
     }
     
@@ -2275,10 +2279,10 @@ export function renderApp(): string {
           const date = new Date(f.modifiedTime);
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           const nameShort = f.name.length > 40 ? f.name.slice(0, 37) + '…' : f.name;
-          return '<div class="drive-file-row" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + f.name.replace(/'/g, "\\\\'") + '\\')" '
+          return '<div class="drive-file-row" data-file-id="' + f.id + '" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + f.name.replace(/'/g, "\\\\'") + '\\')" '
             + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;" '
-            + 'onmouseenter="this.style.background=\\'rgba(91,163,217,0.08)\\'" '
-            + 'onmouseleave="this.style.background=\\'transparent\\'">'
+            + 'onmouseenter="if(this.dataset.selected!==\\'1\\') this.style.background=\\'rgba(91,163,217,0.08)\\'" '
+            + 'onmouseleave="if(this.dataset.selected!==\\'1\\') this.style.background=\\'transparent\\'">'
             + '<i class="fas fa-file-pdf" style="color:#e53e3e;opacity:0.7;flex-shrink:0;"></i>'
             + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + f.name.replace(/"/g, '&quot;') + '">' + nameShort + '</span>'
             + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + dateStr + '</span>'
@@ -2302,7 +2306,15 @@ export function renderApp(): string {
     // Highlight selected row
     if (list) {
       const rows = list.querySelectorAll('.drive-file-row');
-      rows.forEach(function(r) { r.style.background = 'transparent'; });
+      rows.forEach(function(r) {
+        r.dataset.selected = '0';
+        r.style.background = 'transparent';
+      });
+      const selected = list.querySelector('[data-file-id="' + fileId + '"]');
+      if (selected) {
+        selected.dataset.selected = '1';
+        selected.style.background = 'rgba(91,163,217,0.16)';
+      }
     }
 
     try {
@@ -2316,7 +2328,7 @@ export function renderApp(): string {
       }
 
       const parsed = parseIntakeFields(data.text);
-      autoFillClientFields(parsed);
+      autoFillClientFields(parsed, { overwrite: true, source: 'pdf-upload' });
       const formattedSummary = formatIntakeSummary(data.text, parsed);
       document.getElementById('intakeFormData').value = formattedSummary;
 
@@ -2367,7 +2379,7 @@ export function renderApp(): string {
 
       if (text && text.length > 30) {
         const parsed = parseIntakeFields(text);
-        autoFillClientFields(parsed);
+        autoFillClientFields(parsed, { overwrite: true, source: 'pdf-upload' });
         const formattedSummary = formatIntakeSummary(text, parsed);
         document.getElementById('intakeFormData').value = formattedSummary;
         const filledCount = Object.values(parsed).filter(v => v && v !== 'Not provided').length;
@@ -2496,12 +2508,16 @@ export function renderApp(): string {
   }
 
   // ---- Auto-fill the Step 1 client fields ----
-  function autoFillClientFields(p) {
-    if (p.firstName)  setIfEmpty('clientFirstName',  p.firstName);
-    if (p.lastName)   setIfEmpty('clientLastName',   p.lastName);
-    if (p.dobForInput) setIfEmpty('clientDOB',       p.dobForInput);
-    if (p.chiefComplaint) setIfEmpty('chiefComplaint', p.chiefComplaint);
-    if (p.medications)    setIfEmpty('medications',     p.medications);
+  function autoFillClientFields(p, options = {}) {
+    const overwrite = !!options.overwrite;
+    const source = options.source || 'manual-entry';
+
+    if (p.firstName) setFieldValue('clientFirstName', p.firstName, overwrite);
+    if (p.lastName) setFieldValue('clientLastName', p.lastName, overwrite);
+    if (p.email) setFieldValue('clientEmail', p.email, overwrite);
+    if (p.dobForInput) setFieldValue('clientDOB', p.dobForInput, overwrite);
+    if (p.chiefComplaint) setFieldValue('chiefComplaint', p.chiefComplaint, overwrite);
+    if (p.medications) setFieldValue('medications', p.medications, overwrite);
 
     // Save to client profiles so it's available for future sessions
     if (p.firstName || p.lastName) {
@@ -2517,8 +2533,9 @@ export function renderApp(): string {
         medications:       p.medications    || '',
         allergies:         p.allergies      || '',
         medicalConditions: p.conditions     || '',
+        areasToAvoid:      p.injuries       || '',
         lastTreatment:     p.lastTreatment  || '',
-        source:            'pdf-upload',
+        source,
         savedAt:           new Date().toISOString(),
       };
       upsertClientProfile(profile).catch(console.error);
@@ -2530,9 +2547,10 @@ export function renderApp(): string {
     updateSummaryPanel();
   }
 
-  function setIfEmpty(id, value) {
+  function setFieldValue(id, value, overwrite) {
     const el = document.getElementById(id);
-    if (el && !el.value) el.value = value;
+    if (!el || !value) return;
+    if (overwrite || !el.value) el.value = value;
   }
 
   // ---- Build a clean intake summary for the textarea ----
