@@ -755,6 +755,12 @@ export function renderApp(): string {
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <div class="legend-dot" style="background:rgba(91,163,217,0.25);border:1px solid rgba(91,163,217,0.7);"></div> Hover to identify
               </div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
+                <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                  <input id="toggleMusclePolygons" type="checkbox" onchange="toggleMusclePolygons(this.checked)" />
+                  Show muscle polygons
+                </label>
+              </div>
                 <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <div class="legend-dot" style="background:rgba(239, 68, 68, 0.9);border:1px solid rgba(239, 68, 68, 1);"></div> Pain marker
               </div>
@@ -1536,6 +1542,7 @@ export function renderApp(): string {
     currentStep: 1,
     currentView: 'anterior',
     currentGender: 'male',
+    showMusclePolygons: false,
     tensionPoints: [], // Array of dot objects: { id, number, x, y, muscleId, muscleName, type, notes, timestamp }
     treatedMuscles: new Set(), // Auto-populated from tension point muscle IDs
     pdfText: '',
@@ -1795,7 +1802,9 @@ export function renderApp(): string {
       }).join(' ');
     }
 
-    // Remove old muscle polygon rendering - replaced with dot placement system
+    const musclePolygons = state.showMusclePolygons
+      ? renderMusclePolygons(muscles, scalePoints)
+      : '';
     const tensionDots = renderTensionDots(vbH);
 
     // Render the map at full container width, allow vertical scroll for tall aspect ratio
@@ -1812,6 +1821,14 @@ export function renderApp(): string {
         <canvas id="dotPlacementCanvas" 
           style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"
           onclick="handleCanvasClick(event)"></canvas>
+        <svg viewBox="0 0 400 \${vbH}"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;">
+          <g>
+            \${musclePolygons}
+          </g>
+        </svg>
         <!-- SVG overlay for tension dots -->
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
@@ -1826,6 +1843,18 @@ export function renderApp(): string {
 
     // Set up canvas for click detection
     setupCanvasClickDetection();
+  }
+
+  function renderMusclePolygons(muscles, scalePoints) {
+    return muscles.map(function(muscle) {
+      const points = state.currentGender === 'female'
+        ? scalePoints(muscle.points)
+        : muscle.points;
+      return '<polygon points="' + points + '" '
+        + 'fill="rgba(91,163,217,0.18)" '
+        + 'stroke="rgba(37,99,235,0.65)" '
+        + 'stroke-width="1.2"></polygon>';
+    }).join('');
   }
 
   // ============================================================
@@ -2093,6 +2122,9 @@ export function renderApp(): string {
     
     // Render muscle map
     renderMuscleMap();
+
+    const polyToggle = document.getElementById('toggleMusclePolygons');
+    if (polyToggle) polyToggle.checked = !!state.showMusclePolygons;
     
     updateSummaryPanel();
 
@@ -2212,6 +2244,11 @@ export function renderApp(): string {
     state.currentGender = gender;
     document.getElementById('btnMale').classList.toggle('active', gender === 'male');
     document.getElementById('btnFemale').classList.toggle('active', gender === 'female');
+    renderMuscleMap();
+  }
+
+  function toggleMusclePolygons(show) {
+    state.showMusclePolygons = !!show;
     renderMuscleMap();
   }
 
@@ -3057,6 +3094,10 @@ THERAPIST NOTES:
     state.soapData = null;
     state.currentView = 'anterior';
     state.currentGender = 'male';
+    state.showMusclePolygons = false;
+
+    const polyToggle = document.getElementById('toggleMusclePolygons');
+    if (polyToggle) polyToggle.checked = false;
 
     // Reset fields
     ['clientFirstName', 'clientLastName', 'clientEmail', 'clientDOB', 'chiefComplaint', 
@@ -3092,6 +3133,7 @@ THERAPIST NOTES:
   window.goToStep = goToStep;
   window.setView = setView;
   window.setGender = setGender;
+  window.toggleMusclePolygons = toggleMusclePolygons;
   // Removed toggleMuscle - replaced with dot placement system
   window.showTooltip = showTooltip;
   window.hideTooltip = hideTooltip;
