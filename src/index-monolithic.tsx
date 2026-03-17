@@ -1400,24 +1400,22 @@ function renderApp(): string {
           </div>
           <div class="card-body">
             <!-- Legend -->
-            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px;align-items:center;">
-              <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:rgba(91,163,217,0.25);border:1px solid rgba(91,163,217,0.7);"></div> Hover to identify
-              </div>
+            <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;align-items:center;">
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <div class="legend-dot" style="background:rgba(56,161,105,0.45);border:1px solid #276749;"></div> Treated
               </div>
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
-                <div class="legend-dot" style="background:rgba(214,158,46,0.45);border:1px solid #b7791f;"></div> Needs Follow-up
-              </div>
-              <div style="margin-left:auto;font-size:0.75rem;color:var(--text-light);">
-                <i class="fas fa-hand-pointer" style="color:var(--accent);margin-right:4px;"></i>
-                Click once = treated · Twice = follow-up · 3× = clear
+                <div class="legend-dot" style="background:rgba(214,158,46,0.45);border:1px solid #b7791f;"></div> Follow-up
               </div>
             </div>
-            <div style="display:flex;justify-content:center;overflow:auto;">
+            <!-- Region Filter Tabs -->
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;" id="regionTabs"></div>
+            <!-- Muscle Map -->
+            <div style="display:flex;justify-content:center;overflow:auto;margin-bottom:14px;">
               <div id="muscleMapContainer" style="min-width:280px;max-width:480px;width:100%;"></div>
             </div>
+            <!-- Muscle Action Panel (list with buttons) -->
+            <div id="muscleActionPanel" style="max-height:300px;overflow-y:auto;"></div>
           </div>
         </div>
 
@@ -2139,24 +2137,19 @@ function renderApp(): string {
   ];
 
   // ============================================================
-  // MUSCLE MAP IMAGE DATA
-  // Images: 890x1024 (male), 862x1024 (female)
-  // Each image: LEFT HALF = anterior, RIGHT HALF = posterior
-  // SVG viewBox per half = 445x1024 (male) / 431x1024 (female)
-  // Muscles mapped as ellipses in the HALF-IMAGE coordinate space
-  // Anterior: coords as-is; Posterior: subtract half-width offset
+  // STATE
   // ============================================================
-
-  // Male image: 890x1024 — each half is 445x1024
-  // Female image: 862x1024 — each half is 431x1024
-  // We use a normalised 400x920 viewBox for both, scaled to fit
-
-  // Muscle regions defined as { id, name, group, view, cx, cy, rx, ry }
-  // Coordinates are in the 400x920 normalised space PER HALF VIEW
-  // Anterior muscles: x=0..400, y=0..920 mapped to left half of image
-  // Posterior muscles: x=0..400, y=0..920 mapped to right half of image
-
-  const MUSCLES = [
+  const state = {
+    currentStep: 1,
+    currentView: 'anterior',
+    currentGender: 'male',
+    currentRegion: 'all', // Track selected region for filtering
+    muscleStates: {}, // muscleId -> 'treated' | 'follow-up'
+    pdfText: '',
+    soapData: null,
+    lastAccountNumber: null,
+    lastSessionId: null
+  };
     // ─── ANTERIOR ───────────────────────────────────────────────
     // SVG viewBox: 0 0 400 920 (male), body spans X:90-350, Y:15-910
     // NECK
@@ -2319,6 +2312,20 @@ function renderApp(): string {
   const ANTERIOR_MUSCLES = MUSCLES.filter(m => m.view === 'anterior');
   const POSTERIOR_MUSCLES = MUSCLES.filter(m => m.view === 'posterior');
 
+  // Muscle regions for easier browsing (grouped by body zone)
+  const MUSCLE_REGIONS = [
+    { id: 'all', label: 'All Muscles', muscles: MUSCLES.map(m => m.id) },
+    { id: 'neck', label: 'Neck', muscles: ['scm_l', 'scm_r', 'levator_scap_l', 'levator_scap_r'] },
+    { id: 'shoulder', label: 'Shoulder & Rotator Cuff', muscles: ['deltoid_ant_l', 'deltoid_ant_r', 'deltoid_post_l', 'deltoid_post_r', 'serratus_l', 'serratus_r', 'infraspinatus_l', 'infraspinatus_r', 'teres_l', 'teres_r'] },
+    { id: 'back', label: 'Back', muscles: ['upper_trap_l', 'upper_trap_r', 'rhomboids_l', 'rhomboids_r', 'lats_l', 'lats_r', 'erector_l', 'erector_r', 'ql_l', 'ql_r'] },
+    { id: 'chest', label: 'Chest & Core', muscles: ['pec_major_l', 'pec_major_r', 'rectus_abdominis', 'oblique_l', 'oblique_r'] },
+    { id: 'arm', label: 'Upper Arm', muscles: ['biceps_l', 'biceps_r', 'triceps_l', 'triceps_r'] },
+    { id: 'forearm', label: 'Forearm', muscles: ['forearm_flex_l', 'forearm_flex_r', 'forearm_ext_l', 'forearm_ext_r'] },
+    { id: 'hips', label: 'Hips & Glutes', muscles: ['iliopsoas_l', 'iliopsoas_r', 'tfl_l', 'tfl_r', 'glut_max_l', 'glut_max_r', 'glut_med_l', 'glut_med_r', 'piriformis_l', 'piriformis_r'] },
+    { id: 'thigh', label: 'Thigh', muscles: ['quad_l', 'quad_r', 'adductors_l', 'adductors_r', 'sartorius_l', 'sartorius_r', 'biceps_fem_l', 'biceps_fem_r', 'semimem_l', 'semimem_r'] },
+    { id: 'leg', label: 'Lower Leg', muscles: ['tibialis_ant_l', 'tibialis_ant_r', 'peroneals_l', 'peroneals_r', 'gastroc_l', 'gastroc_r', 'soleus_l', 'soleus_r'] }
+  ];
+
   // ============================================================
   // IMAGE-BASED MUSCLE MAP
   // ============================================================
@@ -2331,10 +2338,27 @@ function renderApp(): string {
 
   function renderMuscleMap() {
     const container = document.getElementById('muscleMapContainer');
+    const tabsContainer = document.getElementById('regionTabs');
     const gender    = state.currentGender;   // 'male' | 'female'
     const view      = state.currentView;     // 'anterior' | 'posterior'
-    const muscles   = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
+    let muscles     = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
     const imgSrc    = \`/muscle-map-\${gender}.png\`;
+
+    // Filter muscles by current region
+    const region = MUSCLE_REGIONS.find(r => r.id === state.currentRegion);
+    if (region) {
+      muscles = muscles.filter(m => region.muscles.includes(m.id));
+    }
+
+    // Render region tabs
+    if (tabsContainer) {
+      tabsContainer.innerHTML = MUSCLE_REGIONS.map(r => {
+        const isActive = state.currentRegion === r.id;
+        return \`<button onclick="setRegion('\${r.id}')" class="btn btn-sm" style="background:\${isActive ? 'var(--primary)' : 'var(--bg)'};color:\${isActive ? 'white' : 'var(--text-light)'};border:1px solid \${isActive ? 'var(--primary)' : 'var(--border)'};">
+          \${r.label}
+        </button>\`;
+      }).join('');
+    }
 
     // Image natural dimensions
     const imgW = gender === 'male' ? 890 : 862;
@@ -2435,8 +2459,9 @@ function renderApp(): string {
     // Render techniques
     renderTechniques();
     
-    // Render muscle map
+    // Render muscle map and action panel
     renderMuscleMap();
+    renderMuscleActionPanel();
     
     updateSummaryPanel();
 
@@ -2474,6 +2499,69 @@ function renderApp(): string {
     \`).join('');
   }
 
+  // ============================================================
+  // REGION FILTERING & MUSCLE SELECTION
+  // ============================================================
+  function setRegion(regionId) {
+    state.currentRegion = regionId;
+    renderMuscleMap();
+    renderMuscleActionPanel();
+  }
+
+  function renderMuscleActionPanel() {
+    const panel = document.getElementById('muscleActionPanel');
+    if (!panel) return;
+
+    const region = MUSCLE_REGIONS.find(r => r.id === state.currentRegion);
+    if (!region) return;
+
+    const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
+    const regionMuscles = allMuscles.filter(m => region.muscles.includes(m.id));
+
+    if (regionMuscles.length === 0) {
+      panel.innerHTML = '<p style="font-size:0.8rem;color:var(--text-light);padding:16px;text-align:center;">No muscles in this region</p>';
+      return;
+    }
+
+    panel.innerHTML = regionMuscles.map(m => {
+      const st = state.muscleStates[m.id];
+      const treatedClass = st === 'treated' ? 'background:#e6f7ed;border-color:#c6f6d5;' : '';
+      const followupClass = st === 'follow-up' ? 'background:#fef9e8;border-color:#fde68a;' : '';
+      const bgStyle = treatedClass || followupClass || '';
+      
+      return \`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;\${bgStyle}transition:all 0.15s;">
+          <div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text);">\${m.name}</div>
+            <div style="font-size:0.72rem;color:var(--text-light);">\${m.group}</div>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button onclick="setMuscleStatus('\${m.id}', 'treated')" class="btn btn-sm" style="background:\${st === 'treated' ? '#38a169' : 'var(--bg)'};color:\${st === 'treated' ? 'white' : 'var(--text-light)'};border:1px solid \${st === 'treated' ? '#276749' : 'var(--border)'};" title="Treat">
+              <i class="fas fa-check"></i>
+            </button>
+            <button onclick="setMuscleStatus('\${m.id}', 'follow-up')" class="btn btn-sm" style="background:\${st === 'follow-up' ? '#d69e2e' : 'var(--bg)'};color:\${st === 'follow-up' ? 'white' : 'var(--text-light)'};border:1px solid \${st === 'follow-up' ? '#b7791f' : 'var(--border)'};" title="Follow-up">
+              <i class="fas fa-clock"></i>
+            </button>
+            <button onclick="setMuscleStatus('\${m.id}', 'clear')" class="btn btn-sm btn-ghost" style="min-width:38px;padding:6px 8px;" title="Clear">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+      \`;
+    }).join('');
+  }
+
+  function setMuscleStatus(id, status) {
+    if (status === 'clear') {
+      delete state.muscleStates[id];
+    } else {
+      state.muscleStates[id] = status; // 'treated' or 'follow-up'
+    }
+    renderMuscleMap();
+    renderMuscleActionPanel();
+    updateMuscleLists();
+  }
+
 
   function toggleMuscle(id, name) {
     const current = state.muscleStates[id];
@@ -2485,6 +2573,7 @@ function renderApp(): string {
       delete state.muscleStates[id];
     }
     renderMuscleMap();
+    renderMuscleActionPanel();
     updateMuscleLists();
   }
 
@@ -2529,6 +2618,7 @@ function renderApp(): string {
   function clearAllMuscles() {
     state.muscleStates = {};
     renderMuscleMap();
+    renderMuscleActionPanel();
     updateMuscleLists();
   }
 
@@ -2537,6 +2627,7 @@ function renderApp(): string {
     document.getElementById('btnAnterior').classList.toggle('active', view === 'anterior');
     document.getElementById('btnPosterior').classList.toggle('active', view === 'posterior');
     renderMuscleMap();
+    renderMuscleActionPanel();
   }
 
   function setGender(gender) {
@@ -2544,6 +2635,7 @@ function renderApp(): string {
     document.getElementById('btnMale').classList.toggle('active', gender === 'male');
     document.getElementById('btnFemale').classList.toggle('active', gender === 'female');
     renderMuscleMap();
+    renderMuscleActionPanel();
   }
 
   function updateSummaryPanel() {
@@ -3306,7 +3398,9 @@ THERAPIST NOTES:
 
     setView('anterior');
     setGender('male');
+    state.currentRegion = 'all';
     renderMuscleMap();
+    renderMuscleActionPanel();
     updateMuscleLists();
     goToStep(1);
   }
