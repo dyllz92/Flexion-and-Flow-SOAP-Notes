@@ -2741,80 +2741,161 @@ export function renderApp(): string {
   // keyword and the next recognisable keyword. Avoids complex regexes that
   // break when embedded inside a TypeScript template literal.
   function parseIntakeFields(text) {
-    const t = text.replace(/[ \\t]+/g, ' ').trim();
+    const t = String(text || '').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').trim();
+    const flat = t.replace(/\n+/g, ' ');
 
-    // Simple grab: find keyword, capture up to ~120 chars, trim at next cap word
+    function clean(v) {
+      return String(v || '').replace(/\s+/g, ' ').replace(/^[\s:;,.\-]+|[\s:;,.\-]+$/g, '').trim();
+    }
+
+    function firstCapture(patterns, source) {
+      const src = source || flat;
+      for (let i = 0; i < patterns.length; i++) {
+        const m = src.match(patterns[i]);
+        if (m && m[1]) {
+          const val = clean(m[1]);
+          if (val) return val;
+        }
+      }
+      return '';
+    }
+
+    // Simple grab by keyword for long free-text prompts.
     function after(keyword) {
-      const idx = t.toLowerCase().indexOf(keyword.toLowerCase());
+      const idx = flat.toLowerCase().indexOf(String(keyword || '').toLowerCase());
       if (idx === -1) return '';
-      let chunk = t.slice(idx + keyword.length, idx + keyword.length + 200);
-      // strip leading punctuation / spaces
-      chunk = chunk.replace(/^[?:\\s]+/, '').trim();
-      // stop at the next sentence-like boundary or question word
-      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\/ )/);
+      let chunk = flat.slice(idx + keyword.length, idx + keyword.length + 260);
+      chunk = chunk.replace(/^[?:\s]+/, '').trim();
+      const stopAt = chunk.search(/\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|Consent|Date of Birth|DOB|Phone|Email|Address)/i);
       if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
       return chunk;
     }
 
-    // ---- Name (appear before "Email" so no ambiguity) ----
-    const firstName = after('First name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
-    const lastName  = after('Last name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
+    function normalizeDateToInput(raw) {
+      const v = clean(raw);
+      if (!v) return '';
 
-    // ---- DOB ----
-    const dobRaw = after('Birthday').split(' ').slice(0, 3).join(' ').trim();
-    let dobForInput = '';
-    if (dobRaw) {
-      try {
-        const d = new Date(dobRaw);
-        if (!isNaN(d.getTime())) dobForInput = d.toISOString().split('T')[0];
-      } catch(e) {}
+      const slash = v.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+      if (slash) {
+        let dd = parseInt(slash[1], 10);
+        let mm = parseInt(slash[2], 10);
+        let yy = parseInt(slash[3], 10);
+        if (yy < 100) yy += yy < 30 ? 2000 : 1900;
+        if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+          return String(yy) + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+        }
+      }
+
+      const d = new Date(v);
+      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      return '';
     }
 
-    // ---- Email ----
-    const emailMatch = t.match(/[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}/i);
+    let firstName = firstCapture([
+      /\bfirst\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
+      /\bgiven\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
+      /\bname\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{1,60})\s+(?:last\s*name|surname)\b/i,
+    ], flat);
+
+    let lastName = firstCapture([
+      /\blast\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
+      /\bsurname\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
+    ], flat);
+
+    // Fallback: "Client Name: First Last"
+    const fullName = firstCapture([
+      /\b(?:client|patient)\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{2,80})/i,
+      /\bname\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{2,80})\s+\bemail\b/i,
+    ], flat);
+    if ((!firstName || !lastName) && fullName) {
+      const parts = clean(fullName).split(/\s+/).filter(Boolean);
+      if (!firstName && parts.length) firstName = parts[0].replace(/[^A-Za-z'\-]/g, '');
+      if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ').replace(/[^A-Za-z'\- ]/g, '').trim();
+    }
+
+    firstName = clean(firstName).replace(/[^A-Za-z'\-]/g, '');
+    lastName = clean(lastName).replace(/[^A-Za-z'\- ]/g, '').trim();
+
+    const dobRaw = firstCapture([
+      /\b(?:date\s*of\s*birth|dob|birthday)\b\s*[:\-]?\s*([A-Za-z0-9,\/-]{4,30})/i,
+      /\bbirthday\b\s*[:\-]?\s*([A-Za-z0-9,\/-]{4,30})/i,
+    ], flat) || after('Birthday');
+    const dobForInput = normalizeDateToInput(dobRaw);
+
+    const emailMatch = flat.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
     const email = emailMatch ? emailMatch[0] : '';
 
-    // ---- Phone: first number after "Phone" (not "Emergency") ----
-    const phoneIdx = t.toLowerCase().indexOf('\\nphone ');
-    const phoneChunk = phoneIdx !== -1
-      ? t.slice(phoneIdx + 7, phoneIdx + 35)
-      : after('Phone +') || after('Phone ');
-    const phoneMatch2 = phoneChunk.match(/[+\\d][\\d\\s()+-]{6,18}/);
-    const phone = phoneMatch2 ? phoneMatch2[0].trim() : '';
+    const phone = firstCapture([
+      /\b(?:phone|mobile|contact\s*number|telephone)\b\s*[:\-]?\s*([+\d][\d\s()+-]{6,24})/i,
+    ], flat).replace(/\s{2,}/g, ' ').trim();
 
-    // ---- Chief complaint ----
-    const chiefComplaint = (() => {
-      const raw = after('brings you to see me today');
-      if (!raw) return after('Reason for visit');
-      // stop before "How did you hear"
-      const cut = raw.toLowerCase().indexOf('how did you hear');
-      return cut > 3 ? raw.slice(0, cut).trim() : raw;
-    })();
+    const chiefComplaint = clean(
+      firstCapture([
+        /\b(?:chief\s*complaint|primary\s*concern|reason\s*for\s*visit|what\s*brings\s*you\s*in\s*today)\b\s*[:\-]?\s*([^\n]{3,220})/i,
+      ], flat) ||
+      after('brings you to see me today') ||
+      after('Reason for visit') ||
+      after('primary concern')
+    );
 
-    // ---- Lifestyle ----
-    const occupation    = after('do for work').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
-    const sleep         = after('well do you sleep').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
-    const stress        = after('stress levels').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
-    const exercise      = after('do you ex').split(/\\s+(?:Do |Are |Have |When )/)[0].trim();
-    const lastTreatment = after('last treatment').split(/\\s+(?:Are |Do |Have )/)[0].trim();
+    const occupation = clean(firstCapture([
+      /\b(?:occupation|job|employment|work)\b\s*[:\-]?\s*([^\n]{2,120})/i,
+    ], flat) || after('do for work'));
 
-    // ---- Yes/No fields (suppress "No") ----
-    const no = /^no$/i;
-    const medsRaw    = after('taking any medications').split(/\\s+(?:Do |Are |Have )/)[0].trim();
-    const allergyRaw = after('any allergies').split(/\\s+(?:Have |Are |Do )/)[0].trim();
-    const injuryRaw  = after('accidents, injuries or surg').split(/\\s+(?:Do |Are |Have )/)[0].trim();
-    const condRaw    = after('medical conditions we need').split(/\\s+(?:Have |Are |Do )/)[0].trim();
-    const pregRaw    = after('pregnant or breastfeeding').split(/\\s+/)[0].trim();
+    const sleep = clean(firstCapture([
+      /\b(?:sleep\s*quality|sleep)\b\s*[:\-]?\s*([^\n]{1,120})/i,
+    ], flat) || after('well do you sleep'));
+
+    const stress = clean(firstCapture([
+      /\b(?:stress\s*levels?|stress)\b\s*[:\-]?\s*([^\n]{1,120})/i,
+    ], flat) || after('stress levels'));
+
+    const exercise = clean(firstCapture([
+      /\b(?:exercise\s*frequency|exercise|activity\s*level)\b\s*[:\-]?\s*([^\n]{1,120})/i,
+    ], flat) || after('do you ex'));
+
+    const lastTreatment = clean(firstCapture([
+      /\b(?:last\s*treatment|previous\s*treatment|last\s*massage)\b\s*[:\-]?\s*([^\n]{1,120})/i,
+    ], flat) || after('last treatment'));
+
+    const no = /^\s*no\s*$/i;
+    const medsRaw = clean(firstCapture([
+      /\b(?:medications?|current\s*medications?)\b\s*[:\-]?\s*([^\n]{1,180})/i,
+    ], flat) || after('taking any medications'));
+
+    const allergyRaw = clean(firstCapture([
+      /\b(?:allerg(?:y|ies))\b\s*[:\-]?\s*([^\n]{1,180})/i,
+    ], flat) || after('any allergies'));
+
+    const injuryRaw = clean(firstCapture([
+      /\b(?:injur(?:y|ies)|surger(?:y|ies)|accidents?)\b\s*[:\-]?\s*([^\n]{1,220})/i,
+    ], flat) || after('accidents, injuries or surg'));
+
+    const condRaw = clean(firstCapture([
+      /\b(?:medical\s*conditions?|health\s*conditions?)\b\s*[:\-]?\s*([^\n]{1,220})/i,
+    ], flat) || after('medical conditions we need'));
+
+    const pregRaw = clean(firstCapture([
+      /\b(?:pregnan(?:t|cy)|breastfeeding)\b\s*[:\-]?\s*([^\n]{1,120})/i,
+    ], flat) || after('pregnant or breastfeeding'));
 
     return {
-      firstName, lastName, dobForInput, email, phone,
+      firstName,
+      lastName,
+      dobForInput,
+      email,
+      phone,
       chiefComplaint,
-      occupation, sleep, stress, exercise, lastTreatment,
-      medications:  (!no.test(medsRaw)    && medsRaw)    ? medsRaw    : '',
-      allergies:    (!no.test(allergyRaw) && allergyRaw) ? allergyRaw : '',
-      injuries:     (!no.test(injuryRaw)  && injuryRaw)  ? injuryRaw  : '',
-      conditions:   (!no.test(condRaw)    && condRaw)    ? condRaw    : '',
-      pregnancy:    (!no.test(pregRaw)    && pregRaw)    ? pregRaw    : '',
+      occupation,
+      sleep,
+      stress,
+      exercise,
+      lastTreatment,
+      medications: (!no.test(medsRaw) && medsRaw) ? medsRaw : '',
+      allergies: (!no.test(allergyRaw) && allergyRaw) ? allergyRaw : '',
+      injuries: (!no.test(injuryRaw) && injuryRaw) ? injuryRaw : '',
+      conditions: (!no.test(condRaw) && condRaw) ? condRaw : '',
+      pregnancy: (!no.test(pregRaw) && pregRaw) ? pregRaw : '',
     };
   }
 
