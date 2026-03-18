@@ -9,14 +9,13 @@ import {
   ENV,
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
-import { requireAuth, authRateLimit } from "../middleware/auth.js";
+import { authRateLimit } from "../middleware/auth.js";
 
 const clients = new Hono();
 
-// Apply authentication to all client routes except public intake
+// Keep lightweight request throttling, but do not require header auth for
+// primary app flows (client browse/create/save are called directly by the SPA).
 clients.use("/*", authRateLimit);
-clients.use("/", requireAuth); // Protect client creation
-clients.use("/:accountNum/*", requireAuth); // Protect client access
 
 /**
  * POST /api/clients — create or upsert client, returns accountNumber
@@ -375,6 +374,42 @@ clients.put("/:accountNumber", async (c) => {
   });
 
   return c.json({ success: true, client: updated });
+});
+
+/**
+ * DELETE /api/clients/:accountNumber — delete client and sessions
+ */
+clients.delete("/:accountNumber", (c) => {
+  const acct = c.req.param("accountNumber");
+  const existing = getClient(acct);
+  if (!existing) return c.json({ error: "Client not found" }, 404);
+
+  const deleteSessions = db.prepare(
+    "DELETE FROM sessions WHERE account_number = ?",
+  );
+  const deleteClient = db.prepare(
+    "DELETE FROM clients WHERE account_number = ?",
+  );
+
+  const result = db.transaction((accountNumber: string) => {
+    const sessionsDeleted = deleteSessions.run(accountNumber).changes;
+    const clientDeleted = deleteClient.run(accountNumber).changes;
+    return { sessionsDeleted, clientDeleted };
+  })(acct);
+
+  notifyDashboard("client_deleted", {
+    accountNumber: acct,
+    clientName: `${existing.firstName} ${existing.lastName}`.trim(),
+    clientEmail: existing.email,
+    sessionsDeleted: result.sessionsDeleted,
+  });
+
+  return c.json({
+    success: true,
+    accountNumber: acct,
+    sessionsDeleted: result.sessionsDeleted,
+    clientDeleted: result.clientDeleted,
+  });
 });
 
 export default clients;

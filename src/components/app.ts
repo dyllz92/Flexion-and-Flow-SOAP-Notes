@@ -1310,12 +1310,48 @@ export function renderApp(): string {
           intakeData: profile.intakeData || {}
         })
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         await renderClientProfilesPreview();
       }
-      return res.ok;
+      return {
+        success: res.ok,
+        accountNumber: data.accountNumber || null
+      };
     } catch {
-      return false;
+      return {
+        success: false,
+        accountNumber: null
+      };
+    }
+  }
+
+  async function removeClientProfile(id) {
+    if (!id) return;
+    if (!confirm('Remove this client profile and all saved sessions?')) return;
+
+    try {
+      const res = await fetch('/api/clients/' + encodeURIComponent(id), {
+        method: 'DELETE'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to remove profile');
+      }
+
+      if (_currentClientFile && _currentClientFile.accountNumber === id) {
+        closeClientFile();
+      }
+
+      await renderClientProfilesPreview();
+      await filterClients();
+      if (document.getElementById('clientAccountsModal')?.style.display === 'flex') {
+        await loadAccountList();
+      }
+
+      showCopyFeedback('\u2705 Profile removed: ' + id);
+    } catch (e) {
+      alert('Could not remove profile: ' + (e?.message || 'Unknown error'));
     }
   }
 
@@ -1531,7 +1567,10 @@ export function renderApp(): string {
       if (!data.id) data.id = 'manual-' + Date.now();
       data.source = 'manual-import';
       data.savedAt = new Date().toISOString();
-      await upsertClientProfile(data);
+      const result = await upsertClientProfile(data);
+      if (!result.success) {
+        throw new Error('Import failed');
+      }
       document.getElementById('manualImportJson').value = '';
       showCopyFeedback('\\u2705 Profile imported: ' + [data.firstName, data.lastName].filter(Boolean).join(' '));
       await filterClients();
@@ -1554,9 +1593,9 @@ export function renderApp(): string {
         if (!profile.id) profile.id = 'url-' + Date.now();
         profile.source = profile.source || 'url-import';
         profile.savedAt = new Date().toISOString();
-        await upsertClientProfile(profile);
+        const upsertResult = await upsertClientProfile(profile);
         // Auto-load into form
-        await loadClientProfile(profile.accountNumber || profile.id);
+        await loadClientProfile(upsertResult.accountNumber || profile.accountNumber || profile.id);
         // Clean URL
         window.history.replaceState({}, '', window.location.pathname);
         showCopyFeedback('\\u2705 Client data imported from intake form!');
@@ -3414,6 +3453,7 @@ THERAPIST NOTES:
   window.saveWebhookConfig = saveWebhookConfig;
   window.copyWebhookUrl = copyWebhookUrl;
   window.deleteClientProfile = deleteClientProfile;
+  window.removeClientProfile = removeClientProfile;
   window.jumpToField = jumpToField;
   window.setMedicalShorthand = setMedicalShorthand;
   </script>
@@ -3736,7 +3776,7 @@ THERAPIST NOTES:
 
   async function loadClientFromFile() {
     if (!_currentClientFile) return;
-    await loadClientProfile(_currentClientFile.id || _currentClientFile.accountNumber);
+    await loadClientProfile(_currentClientFile.accountNumber || _currentClientFile.id);
     closeClientFile();
     closeClientAccounts();
   }
