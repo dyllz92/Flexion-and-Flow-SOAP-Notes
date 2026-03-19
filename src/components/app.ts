@@ -1277,9 +1277,6 @@ export function renderApp(): string {
       return [];
     }
   }
-  function saveClientProfiles(profiles) {
-    localStorage.setItem(CLIENT_PROFILES_KEY, JSON.stringify(profiles));
-  }
   function loadWebhookConfig() {
     try { return JSON.parse(localStorage.getItem(WEBHOOK_CONFIG_KEY) || '{}'); }
     catch { return {}; }
@@ -1507,14 +1504,18 @@ export function renderApp(): string {
       if (p.medications)       tags.push('<span class="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">Medications</span>');
       return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.accountNumber}').catch(console.error)">
         <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${initials || '?'}</div>
+        <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${escapeHtml(initials || '?')}</div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-slate-800 text-sm">\${name || 'Unknown Client'}</div>
           <div class="text-xs text-slate-400">\${[p.email, p.phone].filter(Boolean).join(' · ')}</div>
+          <div class="font-semibold text-slate-800 text-sm">\${escapeHtml(name || 'Unknown Client')}</div>
+          <div class="text-xs text-slate-400">\${escapeHtml([p.email, p.phone].filter(Boolean).join(' · '))}</div>
           <div class="flex flex-wrap gap-1 mt-1">\${tags.join('')}</div>
         </div>
         <div class="text-right flex-shrink-0">
           <div class="text-xs text-slate-400">\${dateStr}</div>
           <button onclick="event.stopPropagation(); deleteClientProfile('\${p.accountNumber}').catch(console.error)" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
+          <button onclick="event.stopPropagation(); deleteClientProfile('\${escJsSingle(p.accountNumber)}').catch(console.error)" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
             <i class="fas fa-trash"></i> Remove
           </button>
         </div>
@@ -2378,6 +2379,27 @@ export function renderApp(): string {
     // Render techniques
     renderTechniques();
     
+    // CSRF Protection: Automatically add CSRF token to state-changing requests
+    const getCsrfToken = () => {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      return meta ? meta.getAttribute('content') : '';
+    };
+
+    const originalFetch = window.fetch;
+    window.fetch = async (url, options) => {
+      const method = options?.method?.toUpperCase();
+      if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+          options.headers = {
+            ...options.headers,
+            'X-CSRF-Token': csrfToken,
+          };
+        }
+      }
+      return originalFetch(url, options);
+    };
+
     // Render muscle map
     renderMuscleMap();
 
@@ -2462,6 +2484,10 @@ export function renderApp(): string {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function escJsSingle(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 
   function updateMarkerNotes(dotId, notes) {
@@ -3005,6 +3031,7 @@ export function renderApp(): string {
       const prompt = buildPrompt(contextData, intakeData, state.useMedicalShorthand);
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('/api/generate-soap', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3024,6 +3051,10 @@ export function renderApp(): string {
           ],
           response_format: { type: 'json_object' },
           temperature: 0.3
+          prompt: prompt,
+          intakeData: intakeData,
+          sessionSummary: contextData.sessionSummary,
+          muscles: treatedMuscles,
         })
       });
 
@@ -3034,6 +3065,7 @@ export function renderApp(): string {
 
       const data = await response.json();
       const soapData = JSON.parse(data.choices[0].message.content);
+      const soapData = await response.json();
       const formattedSoapData = applyWritingStyleToSoapData(soapData);
       state.soapData = formattedSoapData;
 
@@ -3232,12 +3264,14 @@ THERAPIST NOTES:
   // PDF EXPORT
   // ============================================================
   function exportPDF() {
+  function generatePdfDocument(outputType = 'save') { // 'save' or 'base64'
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     
     const pageW = 210;
     const margin = 18;
     const contentW = pageW - margin * 2;
+    const pageW = 210, margin = 18, contentW = pageW - margin * 2;
     let y = 20;
 
     // Colors
@@ -3254,6 +3288,7 @@ THERAPIST NOTES:
     doc.setFont('helvetica', 'bold');
     doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
     doc.setFontSize(9);
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
     doc.setFont('helvetica', 'normal');
     doc.text('Generated by SOAP Note Generator', margin, 22);
     y = 38;
@@ -3266,6 +3301,7 @@ THERAPIST NOTES:
     const painBefore = document.getElementById('painLevel').value;
     const painAfter = document.getElementById('postPainLevel').value;
     const therapist = document.getElementById('therapistName').value || '';
+    const acct = state.lastAccountNumber || '';
     const creds = document.getElementById('therapistCredentials').value || '';
 
     doc.setFillColor(...light);
@@ -3286,6 +3322,7 @@ THERAPIST NOTES:
     if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
     if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
     if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
+    if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
     y += 28;
 
     // SOAP Sections

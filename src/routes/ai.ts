@@ -4,7 +4,7 @@ import { ENV } from "../database/index.js";
 const ai = new Hono();
 
 /**
- * Build SOAP prompt for OpenAI
+ * Build SOAP prompt for OpenAI (now optional, if client sends full prompt)
  */
 function buildSOAPPrompt(
   muscles: string[],
@@ -12,7 +12,8 @@ function buildSOAPPrompt(
   intakeData: string,
 ): string {
   const muscleList =
-    muscles.length > 0 ? muscles.join(", ") : "No specific muscles recorded";
+    muscles?.length > 0 ? muscles.join(", ") : "No specific muscles recorded";
+  const intakeInfo = intakeData || "No intake form provided";
 
   return `Generate a complete SOAP note for a massage therapy session. Return a JSON object with keys: "subjective", "objective", "assessment", "plan", "therapistNotes".
 
@@ -44,9 +45,11 @@ ai.post("/generate-soap", async (c) => {
 
   try {
     const body = await c.req.json();
-    const { muscles, sessionSummary, intakeData } = body;
+    const { muscles, sessionSummary, intakeData, prompt: clientPrompt } = body; // Accept client-generated prompt
 
-    const prompt = buildSOAPPrompt(muscles, sessionSummary, intakeData);
+    // Use client-generated prompt if available, otherwise build it
+    const prompt =
+      clientPrompt || buildSOAPPrompt(muscles, sessionSummary, intakeData);
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -61,12 +64,9 @@ ai.post("/generate-soap", async (c) => {
             role: "system",
             content: `You are an expert massage therapist and clinical documentation specialist. Generate professional SOAP notes in a structured JSON format based on the provided session information. Use clinical terminology appropriate for massage therapy.`,
           },
-          {
-            role: "user",
-            content: prompt,
-          },
+          { role: "user", content: prompt },
         ],
-        response_format: { type: "json_object" },
+        response_format: { type: "json_object" }, // Ensure JSON output
         temperature: 0.3,
       }),
     });
@@ -77,9 +77,9 @@ ai.post("/generate-soap", async (c) => {
       return c.json({ error: `OpenAI error: ${errorText}` }, 500);
     }
 
-    const data: any = await response.json();
-    const content = JSON.parse(data.choices[0].message.content);
-    return c.json(content);
+    const data: any = await response.json(); // Raw response from OpenAI
+    const content = JSON.parse(data.choices[0].message.content); // Parse the content string
+    return c.json(content); // Return the parsed JSON object
   } catch (error) {
     console.error("SOAP generation error:", error);
     return c.json({ error: "Failed to generate SOAP note" }, 500);
