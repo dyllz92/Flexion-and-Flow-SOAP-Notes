@@ -620,7 +620,7 @@ export function renderApp(): string {
                 <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
                   <i class="fab fa-google-drive" style="margin-right:6px;opacity:0.7;"></i>Recent Drive PDFs
                 </h3>
-                <button onclick="loadDriveFiles()" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
+                <button onclick="console.log('[DEBUG] onclick clicked, window.loadDriveFiles=', typeof window.loadDriveFiles, window.loadDriveFiles); window.loadDriveFiles();" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
                   <i class="fas fa-sync-alt" id="driveFilesRefreshIcon"></i>
                 </button>
               </div>
@@ -2610,6 +2610,11 @@ export function renderApp(): string {
       if (icon) icon.classList.remove('fa-spin');
     }
   }
+  // Expose immediately to window
+  if (typeof window !== 'undefined') { 
+    window.loadDriveFiles = loadDriveFiles; 
+    console.log('[DEBUG] window.loadDriveFiles assigned:', typeof window.loadDriveFiles, typeof loadDriveFiles);
+  }
 
   async function selectDriveFile(fileId, fileName) {
     const list = document.getElementById('driveFilesList');
@@ -2739,6 +2744,8 @@ export function renderApp(): string {
     }
     return null;
   }
+  // Expose immediately to window
+  if (typeof window !== 'undefined') { window.selectDriveFile = selectDriveFile; }
 
   // ---- Parse Flexion & Flow (and similar) intake form fields ----
   // Strategy: extract each Q->A pair by finding the answer between a question
@@ -3460,6 +3467,7 @@ THERAPIST NOTES:
   window.removeClientProfile = removeClientProfile;
   window.jumpToField = jumpToField;
   window.setMedicalShorthand = setMedicalShorthand;
+  // loadDriveFiles and selectDriveFile are exposed to window immediately after their definitions
   </script>
 
   <!-- ═══════════════════════════════════════════════════════════
