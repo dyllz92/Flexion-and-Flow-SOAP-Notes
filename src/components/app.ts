@@ -620,7 +620,7 @@ export function renderApp(): string {
                 <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
                   <i class="fab fa-google-drive" style="margin-right:6px;opacity:0.7;"></i>Recent Drive PDFs
                 </h3>
-                <button onclick="console.log('[DEBUG] onclick clicked, window.loadDriveFiles=', typeof window.loadDriveFiles, window.loadDriveFiles); window.loadDriveFiles();" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
+                <button id="driveFilesRefreshBtn" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
                   <i class="fas fa-sync-alt" id="driveFilesRefreshIcon"></i>
                 </button>
               </div>
@@ -2202,7 +2202,7 @@ export function renderApp(): string {
             \${dot.number}
           </text>
         </g>\`;
-    }).join('\n');
+    }).join('\\n');
   }
 
   function setupCanvasClickDetection() {
@@ -2406,8 +2406,8 @@ export function renderApp(): string {
     // Load saved OpenAI API key
     loadOpenAIKey();
 
-    // Load recent Drive PDFs
-    loadDriveFiles();
+    // Load recent Drive PDFs (deferred to ensure function is defined)
+    setTimeout(() => { if (typeof loadDriveFiles === 'function') loadDriveFiles(); }, 10);
 
     // Check if client data was passed via URL (from intake form redirect)
     await checkUrlClientData();
@@ -2574,6 +2574,8 @@ export function renderApp(): string {
   // ============================================================
   // DRIVE FILE PICKER
   // ============================================================
+  
+  // Hoisted function declaration (available immediately)
   async function loadDriveFiles() {
     const list = document.getElementById('driveFilesList');
     const icon = document.getElementById('driveFilesRefreshIcon');
@@ -2590,30 +2592,39 @@ export function renderApp(): string {
           const date = new Date(f.modifiedTime);
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           const rawName = String(f.name || '');
-          const fileNameForJs = rawName.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+          const fileNameEncoded = encodeURIComponent(rawName.replace(/\\r?\\n/g, ' '));
           const nameShort = rawName.length > 40 ? rawName.slice(0, 37) + '…' : rawName;
           const safeNameShort = escapeHtml(nameShort);
           const safeTitle = escapeHtml(rawName);
-          return '<div class="drive-file-row" data-file-id="' + f.id + '" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + fileNameForJs + '\\')" '
-            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;" '
-            + 'onmouseenter="if(this.dataset.selected!==\\'1\\') this.style.background=\\'rgba(91,163,217,0.08)\\'" '
-            + 'onmouseleave="if(this.dataset.selected!==\\'1\\') this.style.background=\\'transparent\\'">'
+          return '<div class="drive-file-row" data-file-id="' + f.id + '" data-file-name="' + fileNameEncoded + '" '
+            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;">'
             + '<i class="fas fa-file-pdf" style="color:#e53e3e;opacity:0.7;flex-shrink:0;"></i>'
             + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeTitle + '">' + safeNameShort + '</span>'
             + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + dateStr + '</span>'
             + '</div>';
         }).join('');
+
+        const rows = list.querySelectorAll('.drive-file-row');
+        rows.forEach(function(row) {
+          row.addEventListener('mouseenter', function() {
+            if (row.dataset.selected !== '1') row.style.background = 'rgba(91,163,217,0.08)';
+          });
+          row.addEventListener('mouseleave', function() {
+            if (row.dataset.selected !== '1') row.style.background = 'transparent';
+          });
+          row.addEventListener('click', function() {
+            const fileId = row.dataset.fileId || '';
+            const fileName = decodeURIComponent(row.dataset.fileName || '');
+            if (!fileId) return;
+            selectDriveFile(fileId, fileName);
+          });
+        });
       }
     } catch (err) {
       if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load Drive files.</p>';
     } finally {
       if (icon) icon.classList.remove('fa-spin');
     }
-  }
-  // Expose immediately to window
-  if (typeof window !== 'undefined') { 
-    window.loadDriveFiles = loadDriveFiles; 
-    console.log('[DEBUG] window.loadDriveFiles assigned:', typeof window.loadDriveFiles, typeof loadDriveFiles);
   }
 
   async function selectDriveFile(fileId, fileName) {
@@ -2665,6 +2676,18 @@ export function renderApp(): string {
       if (progress) progress.style.display = 'none';
       if (dropZone) dropZone.style.display = '';
     }
+  }
+
+  // Expose to window for button onclick handlers
+  window.loadDriveFiles = loadDriveFiles;
+  window.selectDriveFile = selectDriveFile;
+  
+  // Wire up the refresh button using addEventListener
+  const refreshBtn = document.getElementById('driveFilesRefreshBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      loadDriveFiles();
+    });
   }
 
   // ============================================================
@@ -2744,8 +2767,6 @@ export function renderApp(): string {
     }
     return null;
   }
-  // Expose immediately to window
-  if (typeof window !== 'undefined') { window.selectDriveFile = selectDriveFile; }
 
   // ---- Parse Flexion & Flow (and similar) intake form fields ----
   // Strategy: extract each Q->A pair by finding the answer between a question
@@ -3676,7 +3697,7 @@ THERAPIST NOTES:
 
   function renderClientFile(client, sessions) {
     const esc = (v) => escapeHtml(String(v ?? ''));
-    const escJsSingle = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+    const escJsSingle = (v) => String(v ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/\\r?\\n/g, ' ');
     const safeFullName = esc([client.firstName, client.lastName].filter(Boolean).join(' ') || '—');
     const safeAccountNumber = esc(client.accountNumber || '');
     const safeConnectAccount = escJsSingle(client.accountNumber || '');
