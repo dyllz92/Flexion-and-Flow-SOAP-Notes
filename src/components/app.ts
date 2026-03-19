@@ -2000,94 +2000,139 @@ export function renderApp(): string {
   // ============================================================
   // IMAGE-BASED MUSCLE MAP
   // ============================================================
-  // The image viewBox is 400×870 (normalised from actual half-image).
-  // For the MALE image (890×1024): each half = 445×1024, normalised to 400×870
-  // For the FEMALE image (862×1024): each half = 431×1024, normalised to 400×870
-  // Image is positioned so only the correct half is visible:
-  //   anterior → show left half  (image translateX 0)
-  //   posterior → show right half (image translateX -100%)
+  // Geometry helpers keep polygon rendering, hit-testing and dot placement
+  // aligned in the same coordinate system for both male and female figures.
+
+  const VIEWBOX_WIDTH = 400;
+  const MALE_VIEWBOX_HEIGHT = 920;
+
+  function getViewBoxHeight(gender) {
+    const g = gender || state.currentGender;
+    if (g === 'male') return 920;
+    // Female half image width = 431 (862 / 2)
+    return Math.round(1024 / (431 / VIEWBOX_WIDTH));
+  }
+
+  function scalePointForGender(x, y, gender, vbH) {
+    const g = gender || state.currentGender;
+    const targetHeight = vbH || getViewBoxHeight(g);
+
+    if (g !== 'female') {
+      return { x: x, y: y };
+    }
+
+    let sx, cx;
+    if      (y < 130) { sx = 0.60; cx = 214; }
+    else if (y < 220) { sx = 0.69; cx = 215; }
+    else if (y < 360) { sx = 0.80; cx = 215; }
+    else if (y < 470) { sx = 0.91; cx = 215; }
+    else if (y < 535) { sx = 1.08; cx = 214; }
+    else if (y < 680) { sx = 0.86; cx = 215; }
+    else if (y < 780) { sx = 0.69; cx = 216; }
+    else              { sx = 0.75; cx = 215; }
+
+    return {
+      x: Math.round((x - 205) * sx + cx),
+      y: Math.round(y * (targetHeight / MALE_VIEWBOX_HEIGHT))
+    };
+  }
+
+  function getPolygonPoints(muscle, gender, vbH) {
+    const g = gender || state.currentGender;
+    const targetHeight = vbH || getViewBoxHeight(g);
+    return muscle.points.split(' ').map(function(pair) {
+      const nums = pair.split(',').map(Number);
+      return scalePointForGender(nums[0], nums[1], g, targetHeight);
+    });
+  }
+
+  function polygonToString(points) {
+    return points.map(function(p) {
+      return p.x + ',' + p.y;
+    }).join(' ');
+  }
+
+  function pointInPolygon(x, y, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i].x, yi = points[i].y;
+      const xj = points[j].x, yj = points[j].y;
+      const intersects = ((yi > y) !== (yj > y)) &&
+        (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  }
+
+  function polygonArea(points) {
+    let area = 0;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      area += (points[j].x * points[i].y) - (points[i].x * points[j].y);
+    }
+    return Math.abs(area / 2);
+  }
+
+  function polygonCentroid(points) {
+    let x = 0;
+    let y = 0;
+    let areaFactor = 0;
+
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const cross = (points[j].x * points[i].y) - (points[i].x * points[j].y);
+      areaFactor += cross;
+      x += (points[j].x + points[i].x) * cross;
+      y += (points[j].y + points[i].y) * cross;
+    }
+
+    const area = areaFactor / 2;
+    if (Math.abs(area) < 1e-9) {
+      return {
+        x: points.reduce(function(sum, p) { return sum + p.x; }, 0) / points.length,
+        y: points.reduce(function(sum, p) { return sum + p.y; }, 0) / points.length
+      };
+    }
+
+    return {
+      x: x / (6 * area),
+      y: y / (6 * area)
+    };
+  }
 
   function renderMuscleMap() {
     const container = document.getElementById('muscleMapContainer');
-    const gender    = state.currentGender;   // 'male' | 'female'
-    const view      = state.currentView;     // 'anterior' | 'posterior'
-    const muscles   = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    const imgSrc    = \`/static/muscle-map-\${gender}.png\`;
+    const gender = state.currentGender;
+    const view = state.currentView;
+    const muscles = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
+    const imgSrc = "/static/muscle-map-" + gender + ".png";
 
-    // Image natural dimensions
     const imgW = gender === 'male' ? 890 : 862;
     const halfW = imgW / 2;
     const imgH = 1024;
-
-    // We display a 400px wide viewport and scale proportionally
-    // SVG viewBox per half: halfW × imgH, displayed at width=400, height=auto
-    const vbH = Math.round(imgH / (halfW / 400));
-
-    // Translate the image: anterior = left half (translateX 0), posterior = right half (translateX -50%)
+    const vbH = getViewBoxHeight(gender);
     const imgTranslate = view === 'anterior' ? '0' : '-50%';
 
-    // Scale muscle polygons to match each gender's body proportions.
-    // Coordinates were authored for the MALE figure (SVG 400×920).
-    // Female body proportions differ by region (computed from image pixel analysis):
-    //   Y=0-130  (head/neck):  scale≈0.60, center shifts to X:214
-    //   Y=130-220 (shoulders): scale≈0.69, center X:215
-    //   Y=220-360 (chest/biceps): scale≈0.80, center X:215
-    //   Y=360-470 (forearms/abdomen): scale≈0.91, center X:215
-    //   Y=470-535 (hips): scale≈1.08 (female hips wider), center X:214
-    //   Y=535-680 (quads): scale≈0.86, center X:215
-    //   Y=680-780 (shins): scale≈0.69, center X:216
-    //   Y=780+    (feet): scale≈0.75, center X:215
-    const maleVbH  = 920;
-    const scaleY   = gender === 'female' ? (vbH / maleVbH) : 1;
-
-    function scalePoints(pts) {
-      if (gender !== 'female') return pts;
-      return pts.split(' ').map(pair => {
-        const [x, y] = pair.split(',').map(Number);
-        let sx, cx;
-        // Y-based horizontal scale toward female body proportions
-        if      (y < 130) { sx = 0.60; cx = 214; }
-        else if (y < 220) { sx = 0.69; cx = 215; }
-        else if (y < 360) { sx = 0.80; cx = 215; }
-        else if (y < 470) { sx = 0.91; cx = 215; }
-        else if (y < 535) { sx = 1.08; cx = 214; }
-        else if (y < 680) { sx = 0.86; cx = 215; }
-        else if (y < 780) { sx = 0.69; cx = 216; }
-        else              { sx = 0.75; cx = 215; }
-        const nx = Math.round((x - 205) * sx + cx);  // male center ~205
-        const ny = Math.round(y * scaleY);
-        return nx + ',' + ny;
-      }).join(' ');
-    }
-
-    const musclePolygons = state.showMusclePolygons
-      ? renderMusclePolygons(muscles, scalePoints)
-      : '';
+    // Keep selected muscles visible even when the polygon toggle is off.
+    const shouldRenderPolygons = state.showMusclePolygons || state.treatedMuscles.size > 0;
+    const musclePolygons = shouldRenderPolygons ? renderMusclePolygons(muscles, vbH) : '';
     const tensionDots = renderTensionDots(vbH);
 
-    // Render the map at full container width, allow vertical scroll for tall aspect ratio
-    // Each half dimensions: male=445×1024, female=431×1024 (nearly 1:2.3 aspect)
-    // At 480px wide the map would be ~1100px tall — use a scrollable container with max-height
-
     container.innerHTML = \`
-      <div style="position:relative;width:100%;padding-bottom:\${Math.round(imgH/halfW*100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
-        <!-- Base image — 200% width, translate to show correct half -->
+      <div style="position:relative;width:100%;padding-bottom:\${Math.round(imgH / halfW * 100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
         <img src="\${imgSrc}" alt="Muscle map"
           style="position:absolute;top:0;left:0;width:200%;height:100%;transform:translateX(\${imgTranslate});pointer-events:none;object-fit:fill;"
           onerror="this.style.opacity='0.2'"/>
-        <!-- Dot placement overlay canvas -->
-        <canvas id="dotPlacementCanvas" 
+
+        <canvas id="dotPlacementCanvas"
           style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"
           onclick="handleCanvasClick(event)"></canvas>
+
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
           preserveAspectRatio="none"
           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;">
-          <g>
-            \${musclePolygons}
-          </g>
+          <g>\${musclePolygons}</g>
         </svg>
-        <!-- SVG overlay for tension dots -->
+
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
           preserveAspectRatio="none"
@@ -2099,19 +2144,24 @@ export function renderApp(): string {
       </div>
     \`;
 
-    // Set up canvas for click detection
     setupCanvasClickDetection();
   }
 
-  function renderMusclePolygons(muscles, scalePoints) {
+  function renderMusclePolygons(muscles, vbH) {
     return muscles.map(function(muscle) {
-      const points = state.currentGender === 'female'
-        ? scalePoints(muscle.points)
-        : muscle.points;
-      return '<polygon points="' + points + '" '
-        + 'fill="rgba(91,163,217,0.18)" '
-        + 'stroke="rgba(37,99,235,0.65)" '
-        + 'stroke-width="1.2"></polygon>';
+      const points = polygonToString(getPolygonPoints(muscle, state.currentGender, vbH));
+      const isTreated = state.treatedMuscles.has(muscle.id);
+      const fill = isTreated ? 'rgba(56, 161, 105, 0.42)' : 'rgba(91,163,217,0.14)';
+      const stroke = isTreated ? 'rgba(39, 103, 73, 0.95)' : 'rgba(37,99,235,0.45)';
+      const strokeWidth = isTreated ? 2 : 1.1;
+
+      return '<polygon '
+        + 'class="muscle-path ' + (isTreated ? 'treated' : '') + '" '
+        + 'data-muscle-id="' + muscle.id + '" '
+        + 'points="' + points + '" '
+        + 'fill="' + fill + '" '
+        + 'stroke="' + stroke + '" '
+        + 'stroke-width="' + strokeWidth + '"></polygon>';
     }).join('');
   }
 
@@ -2119,161 +2169,111 @@ export function renderApp(): string {
   // TENSION POINTS SYSTEM (Enhanced Muscle Map)
   // ============================================================
 
-  // Render tension dots as SVG circles with numbers
   function renderTensionDots(vbH) {
     if (state.tensionPoints.length === 0) return '';
-    
+
     const currentView = state.currentView;
     const currentGender = state.currentGender;
-    
-    // Filter dots for current view
-    const viewDots = state.tensionPoints.filter(dot => {
-      // Check if muscle is from current view
-      const muscle = MUSCLES.find(m => m.id === dot.muscleId);
+
+    const viewDots = state.tensionPoints.filter(function(dot) {
+      const muscle = MUSCLES.find(function(m) { return m.id === dot.muscleId; });
       return muscle && muscle.view === currentView;
     });
 
-    return viewDots.map(dot => {
-      // Apply gender scaling to dot position if needed
-      let x = dot.x;
-      let y = dot.y;
-      
-      if (currentGender === 'female') {
-        // Apply same scaling as muscle polygons
-        const maleVbH = 920;
-        const scaleY = vbH / maleVbH;
-        let sx, cx;
-        if      (y < 130) { sx = 0.60; cx = 214; }
-        else if (y < 220) { sx = 0.69; cx = 215; }
-        else if (y < 360) { sx = 0.80; cx = 215; }
-        else if (y < 470) { sx = 0.91; cx = 215; }
-        else if (y < 535) { sx = 1.08; cx = 214; }
-        else if (y < 680) { sx = 0.86; cx = 215; }
-        else if (y < 780) { sx = 0.69; cx = 216; }
-        else              { sx = 0.75; cx = 215; }
-        x = Math.round((dot.x - 205) * sx + cx);
-        y = Math.round(dot.y * scaleY);
-      }
+    return viewDots.map(function(dot) {
+      const scaled = scalePointForGender(dot.x, dot.y, currentGender, vbH);
 
       return \`
         <g class="tension-dot" style="cursor:pointer;" data-dot-id="\${dot.id}"
            onclick="removeTensionDot('\${dot.id}')"
            onmouseenter="showDotTooltip(event, '\${dot.number}', '\${dot.muscleName}', '\${dot.type}', '\${dot.notes}')"
            onmouseleave="hideDotTooltip()">
-          <circle cx="\${x}" cy="\${y}" r="12" 
-                  fill="rgba(239, 68, 68, 0.9)" 
-                  stroke="rgba(239, 68, 68, 1)" 
+          <circle cx="\${scaled.x}" cy="\${scaled.y}" r="12"
+                  fill="rgba(239, 68, 68, 0.9)"
+                  stroke="rgba(239, 68, 68, 1)"
                   stroke-width="2"/>
-          <text x="\${x}" y="\${y + 1}" 
-                text-anchor="middle" 
+          <text x="\${scaled.x}" y="\${scaled.y + 1}"
+                text-anchor="middle"
                 dominant-baseline="middle"
-                fill="white" 
-                font-family="var(--font)" 
-                font-size="11" 
+                fill="white"
+                font-family="var(--font)"
+                font-size="11"
                 font-weight="bold">
             \${dot.number}
           </text>
         </g>\`;
-    }).join('\\n');
+    }).join('\n');
   }
 
-  // Set up canvas click detection
   function setupCanvasClickDetection() {
     const canvas = document.getElementById('dotPlacementCanvas');
     if (!canvas) return;
-    
-    // Ensure canvas has proper dimensions for coordinate calculation
-    const resizeCanvas = () => {
+
+    const resizeCanvas = function() {
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
     };
-    
+
+    if (window.__soapCanvasResizeHandler) {
+      window.removeEventListener('resize', window.__soapCanvasResizeHandler);
+    }
+
+    window.__soapCanvasResizeHandler = resizeCanvas;
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
   }
 
-  // Handle canvas click for dot placement
   function handleCanvasClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    
+
     const canvas = document.getElementById('dotPlacementCanvas');
     if (!canvas) return;
-    
-    // Get click coordinates relative to canvas
+
     const rect = canvas.getBoundingClientRect();
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
-    
-    // Convert to base coordinates (400x920 normalized space)
-    const svgX = (canvasX / rect.width) * 400;
-    const svgY = (canvasY / rect.height) * 920;
-    
-    // Find which muscle contains this point
-    const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender);
-    
+    const vbH = getViewBoxHeight(state.currentGender);
+    const svgX = (canvasX / rect.width) * VIEWBOX_WIDTH;
+    const svgY = (canvasY / rect.height) * vbH;
+
+    const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender, vbH);
+
     if (detectedMuscle) {
       saveTensionDot(svgX, svgY, detectedMuscle.id, detectedMuscle.name, 'pain-area', '');
     } else {
-      showCopyFeedback('Click on a body area to place a marker');
+      showCopyFeedback('Click on a mapped muscle area to place a marker');
     }
   }
 
-  // Point-in-polygon detection to find muscle at click point
-  function findMuscleAtPoint(x, y, view, gender) {
+  function findMuscleAtPoint(x, y, view, gender, vbH) {
     const muscles = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    
-    for (const muscle of muscles) {
-      if (isPointInMuscle(x, y, muscle, gender)) {
-        return muscle;
-      }
-    }
-    return null;
+    const targetHeight = vbH || getViewBoxHeight(gender);
+
+    const matches = muscles
+      .map(function(muscle) {
+        const points = getPolygonPoints(muscle, gender, targetHeight);
+        if (!pointInPolygon(x, y, points)) return null;
+
+        const centroid = polygonCentroid(points);
+        const area = polygonArea(points);
+        const distance = Math.hypot(x - centroid.x, y - centroid.y);
+        const score = distance + (area * 0.0025);
+
+        return { muscle: muscle, score: score };
+      })
+      .filter(Boolean)
+      .sort(function(a, b) { return a.score - b.score; });
+
+    return matches.length ? matches[0].muscle : null;
   }
 
-  // Check if point is inside muscle polygon
-  function isPointInMuscle(x, y, muscle, gender) {
-    const points = muscle.points;
-    let scaledPoints = points;
-    
-    // Apply gender scaling if female
-    if (gender === 'female') {
-      scaledPoints = points.split(' ').map(pair => {
-        const [px, py] = pair.split(',').map(Number);
-        let sx, cx;
-        if      (py < 130) { sx = 0.60; cx = 214; }
-        else if (py < 220) { sx = 0.69; cx = 215; }
-        else if (py < 360) { sx = 0.80; cx = 215; }
-        else if (py < 470) { sx = 0.91; cx = 215; }
-        else if (py < 535) { sx = 1.08; cx = 214; }
-        else if (py < 680) { sx = 0.86; cx = 215; }
-        else if (py < 780) { sx = 0.69; cx = 216; }
-        else              { sx = 0.75; cx = 215; }
-        const nx = Math.round((px - 205) * sx + cx);
-        return nx + ',' + py;
-      }).join(' ');
-    }
-    
-    // Parse polygon points
-    const coords = scaledPoints.split(' ').map(pair => {
-      const [px, py] = pair.split(',').map(Number);
-      return [px, py];
-    });
-    
-    // Ray casting algorithm for point-in-polygon
-    let inside = false;
-    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-      if (((coords[i][1] > y) !== (coords[j][1] > y)) &&
-          (x < (coords[j][0] - coords[i][0]) * (y - coords[i][1]) / (coords[j][1] - coords[i][1]) + coords[i][0])) {
-        inside = !inside;
-      }
-    }
-    return inside;
+  function isPointInMuscle(x, y, muscle, gender, vbH) {
+    const points = getPolygonPoints(muscle, gender, vbH || getViewBoxHeight(gender));
+    return pointInPolygon(x, y, points);
   }
 
-
-  
 
   // Save tension dot
   function saveTensionDot(x, y, muscleId, muscleName, selectedType = 'pain-area', notes = '') {
@@ -2589,13 +2589,17 @@ export function renderApp(): string {
         list.innerHTML = data.files.map(function(f) {
           const date = new Date(f.modifiedTime);
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          const nameShort = f.name.length > 40 ? f.name.slice(0, 37) + '…' : f.name;
-          return '<div class="drive-file-row" data-file-id="' + f.id + '" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + f.name.replace(/'/g, "\\\\'") + '\\')" '
+          const rawName = String(f.name || '');
+          const fileNameForJs = rawName.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+          const nameShort = rawName.length > 40 ? rawName.slice(0, 37) + '…' : rawName;
+          const safeNameShort = escapeHtml(nameShort);
+          const safeTitle = escapeHtml(rawName);
+          return '<div class="drive-file-row" data-file-id="' + f.id + '" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + fileNameForJs + '\\')" '
             + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;" '
             + 'onmouseenter="if(this.dataset.selected!==\\'1\\') this.style.background=\\'rgba(91,163,217,0.08)\\'" '
             + 'onmouseleave="if(this.dataset.selected!==\\'1\\') this.style.background=\\'transparent\\'">'
             + '<i class="fas fa-file-pdf" style="color:#e53e3e;opacity:0.7;flex-shrink:0;"></i>'
-            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + f.name.replace(/"/g, '&quot;') + '">' + nameShort + '</span>'
+            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeTitle + '">' + safeNameShort + '</span>'
             + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + dateStr + '</span>'
             + '</div>';
         }).join('');
@@ -2741,161 +2745,80 @@ export function renderApp(): string {
   // keyword and the next recognisable keyword. Avoids complex regexes that
   // break when embedded inside a TypeScript template literal.
   function parseIntakeFields(text) {
-    const t = String(text || '').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').trim();
-    const flat = t.replace(/\n+/g, ' ');
+    const t = text.replace(/[ \\t]+/g, ' ').trim();
 
-    function clean(v) {
-      return String(v || '').replace(/\s+/g, ' ').replace(/^[\s:;,.\-]+|[\s:;,.\-]+$/g, '').trim();
-    }
-
-    function firstCapture(patterns, source) {
-      const src = source || flat;
-      for (let i = 0; i < patterns.length; i++) {
-        const m = src.match(patterns[i]);
-        if (m && m[1]) {
-          const val = clean(m[1]);
-          if (val) return val;
-        }
-      }
-      return '';
-    }
-
-    // Simple grab by keyword for long free-text prompts.
+    // Simple grab: find keyword, capture up to ~120 chars, trim at next cap word
     function after(keyword) {
-      const idx = flat.toLowerCase().indexOf(String(keyword || '').toLowerCase());
+      const idx = t.toLowerCase().indexOf(keyword.toLowerCase());
       if (idx === -1) return '';
-      let chunk = flat.slice(idx + keyword.length, idx + keyword.length + 260);
-      chunk = chunk.replace(/^[?:\s]+/, '').trim();
-      const stopAt = chunk.search(/\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|Consent|Date of Birth|DOB|Phone|Email|Address)/i);
+      let chunk = t.slice(idx + keyword.length, idx + keyword.length + 200);
+      // strip leading punctuation / spaces
+      chunk = chunk.replace(/^[?:\\s]+/, '').trim();
+      // stop at the next sentence-like boundary or question word
+      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\/ )/);
       if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
       return chunk;
     }
 
-    function normalizeDateToInput(raw) {
-      const v = clean(raw);
-      if (!v) return '';
+    // ---- Name (appear before "Email" so no ambiguity) ----
+    const firstName = after('First name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
+    const lastName  = after('Last name').split(' ')[0].replace(/[^A-Za-z\\-]/g, '');
 
-      const slash = v.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
-      if (slash) {
-        let dd = parseInt(slash[1], 10);
-        let mm = parseInt(slash[2], 10);
-        let yy = parseInt(slash[3], 10);
-        if (yy < 100) yy += yy < 30 ? 2000 : 1900;
-        if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
-          return String(yy) + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
-        }
-      }
-
-      const d = new Date(v);
-      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-      return '';
+    // ---- DOB ----
+    const dobRaw = after('Birthday').split(' ').slice(0, 3).join(' ').trim();
+    let dobForInput = '';
+    if (dobRaw) {
+      try {
+        const d = new Date(dobRaw);
+        if (!isNaN(d.getTime())) dobForInput = d.toISOString().split('T')[0];
+      } catch(e) {}
     }
 
-    let firstName = firstCapture([
-      /\bfirst\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
-      /\bgiven\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
-      /\bname\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{1,60})\s+(?:last\s*name|surname)\b/i,
-    ], flat);
-
-    let lastName = firstCapture([
-      /\blast\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
-      /\bsurname\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{0,40})/i,
-    ], flat);
-
-    // Fallback: "Client Name: First Last"
-    const fullName = firstCapture([
-      /\b(?:client|patient)\s*name\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{2,80})/i,
-      /\bname\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\- ]{2,80})\s+\bemail\b/i,
-    ], flat);
-    if ((!firstName || !lastName) && fullName) {
-      const parts = clean(fullName).split(/\s+/).filter(Boolean);
-      if (!firstName && parts.length) firstName = parts[0].replace(/[^A-Za-z'\-]/g, '');
-      if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ').replace(/[^A-Za-z'\- ]/g, '').trim();
-    }
-
-    firstName = clean(firstName).replace(/[^A-Za-z'\-]/g, '');
-    lastName = clean(lastName).replace(/[^A-Za-z'\- ]/g, '').trim();
-
-    const dobRaw = firstCapture([
-      /\b(?:date\s*of\s*birth|dob|birthday)\b\s*[:\-]?\s*([A-Za-z0-9,\/-]{4,30})/i,
-      /\bbirthday\b\s*[:\-]?\s*([A-Za-z0-9,\/-]{4,30})/i,
-    ], flat) || after('Birthday');
-    const dobForInput = normalizeDateToInput(dobRaw);
-
-    const emailMatch = flat.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
+    // ---- Email ----
+    const emailMatch = t.match(/[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}/i);
     const email = emailMatch ? emailMatch[0] : '';
 
-    const phone = firstCapture([
-      /\b(?:phone|mobile|contact\s*number|telephone)\b\s*[:\-]?\s*([+\d][\d\s()+-]{6,24})/i,
-    ], flat).replace(/\s{2,}/g, ' ').trim();
+    // ---- Phone: first number after "Phone" (not "Emergency") ----
+    const phoneIdx = t.toLowerCase().indexOf('\\nphone ');
+    const phoneChunk = phoneIdx !== -1
+      ? t.slice(phoneIdx + 7, phoneIdx + 35)
+      : after('Phone +') || after('Phone ');
+    const phoneMatch2 = phoneChunk.match(/[+\\d][\\d\\s()+-]{6,18}/);
+    const phone = phoneMatch2 ? phoneMatch2[0].trim() : '';
 
-    const chiefComplaint = clean(
-      firstCapture([
-        /\b(?:chief\s*complaint|primary\s*concern|reason\s*for\s*visit|what\s*brings\s*you\s*in\s*today)\b\s*[:\-]?\s*([^\n]{3,220})/i,
-      ], flat) ||
-      after('brings you to see me today') ||
-      after('Reason for visit') ||
-      after('primary concern')
-    );
+    // ---- Chief complaint ----
+    const chiefComplaint = (() => {
+      const raw = after('brings you to see me today');
+      if (!raw) return after('Reason for visit');
+      // stop before "How did you hear"
+      const cut = raw.toLowerCase().indexOf('how did you hear');
+      return cut > 3 ? raw.slice(0, cut).trim() : raw;
+    })();
 
-    const occupation = clean(firstCapture([
-      /\b(?:occupation|job|employment|work)\b\s*[:\-]?\s*([^\n]{2,120})/i,
-    ], flat) || after('do for work'));
+    // ---- Lifestyle ----
+    const occupation    = after('do for work').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
+    const sleep         = after('well do you sleep').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
+    const stress        = after('stress levels').split(/\\s+(?:How |Are |Do |Have )/)[0].trim();
+    const exercise      = after('do you ex').split(/\\s+(?:Do |Are |Have |When )/)[0].trim();
+    const lastTreatment = after('last treatment').split(/\\s+(?:Are |Do |Have )/)[0].trim();
 
-    const sleep = clean(firstCapture([
-      /\b(?:sleep\s*quality|sleep)\b\s*[:\-]?\s*([^\n]{1,120})/i,
-    ], flat) || after('well do you sleep'));
-
-    const stress = clean(firstCapture([
-      /\b(?:stress\s*levels?|stress)\b\s*[:\-]?\s*([^\n]{1,120})/i,
-    ], flat) || after('stress levels'));
-
-    const exercise = clean(firstCapture([
-      /\b(?:exercise\s*frequency|exercise|activity\s*level)\b\s*[:\-]?\s*([^\n]{1,120})/i,
-    ], flat) || after('do you ex'));
-
-    const lastTreatment = clean(firstCapture([
-      /\b(?:last\s*treatment|previous\s*treatment|last\s*massage)\b\s*[:\-]?\s*([^\n]{1,120})/i,
-    ], flat) || after('last treatment'));
-
-    const no = /^\s*no\s*$/i;
-    const medsRaw = clean(firstCapture([
-      /\b(?:medications?|current\s*medications?)\b\s*[:\-]?\s*([^\n]{1,180})/i,
-    ], flat) || after('taking any medications'));
-
-    const allergyRaw = clean(firstCapture([
-      /\b(?:allerg(?:y|ies))\b\s*[:\-]?\s*([^\n]{1,180})/i,
-    ], flat) || after('any allergies'));
-
-    const injuryRaw = clean(firstCapture([
-      /\b(?:injur(?:y|ies)|surger(?:y|ies)|accidents?)\b\s*[:\-]?\s*([^\n]{1,220})/i,
-    ], flat) || after('accidents, injuries or surg'));
-
-    const condRaw = clean(firstCapture([
-      /\b(?:medical\s*conditions?|health\s*conditions?)\b\s*[:\-]?\s*([^\n]{1,220})/i,
-    ], flat) || after('medical conditions we need'));
-
-    const pregRaw = clean(firstCapture([
-      /\b(?:pregnan(?:t|cy)|breastfeeding)\b\s*[:\-]?\s*([^\n]{1,120})/i,
-    ], flat) || after('pregnant or breastfeeding'));
+    // ---- Yes/No fields (suppress "No") ----
+    const no = /^no$/i;
+    const medsRaw    = after('taking any medications').split(/\\s+(?:Do |Are |Have )/)[0].trim();
+    const allergyRaw = after('any allergies').split(/\\s+(?:Have |Are |Do )/)[0].trim();
+    const injuryRaw  = after('accidents, injuries or surg').split(/\\s+(?:Do |Are |Have )/)[0].trim();
+    const condRaw    = after('medical conditions we need').split(/\\s+(?:Have |Are |Do )/)[0].trim();
+    const pregRaw    = after('pregnant or breastfeeding').split(/\\s+/)[0].trim();
 
     return {
-      firstName,
-      lastName,
-      dobForInput,
-      email,
-      phone,
+      firstName, lastName, dobForInput, email, phone,
       chiefComplaint,
-      occupation,
-      sleep,
-      stress,
-      exercise,
-      lastTreatment,
-      medications: (!no.test(medsRaw) && medsRaw) ? medsRaw : '',
-      allergies: (!no.test(allergyRaw) && allergyRaw) ? allergyRaw : '',
-      injuries: (!no.test(injuryRaw) && injuryRaw) ? injuryRaw : '',
-      conditions: (!no.test(condRaw) && condRaw) ? condRaw : '',
-      pregnancy: (!no.test(pregRaw) && pregRaw) ? pregRaw : '',
+      occupation, sleep, stress, exercise, lastTreatment,
+      medications:  (!no.test(medsRaw)    && medsRaw)    ? medsRaw    : '',
+      allergies:    (!no.test(allergyRaw) && allergyRaw) ? allergyRaw : '',
+      injuries:     (!no.test(injuryRaw)  && injuryRaw)  ? injuryRaw  : '',
+      conditions:   (!no.test(condRaw)    && condRaw)    ? condRaw    : '',
+      pregnancy:    (!no.test(pregRaw)    && pregRaw)    ? pregRaw    : '',
     };
   }
 
@@ -3744,9 +3667,15 @@ THERAPIST NOTES:
   }
 
   function renderClientFile(client, sessions) {
+    const esc = (v) => escapeHtml(String(v ?? ''));
+    const escJsSingle = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+    const safeFullName = esc([client.firstName, client.lastName].filter(Boolean).join(' ') || '—');
+    const safeAccountNumber = esc(client.accountNumber || '');
+    const safeConnectAccount = escJsSingle(client.accountNumber || '');
+
     document.getElementById('clientFileTitle').innerHTML =
       '<i class="fas fa-user-circle" style="margin-right:8px;opacity:0.8;"></i>' +
-      [client.firstName, client.lastName].filter(Boolean).join(' ');
+      safeFullName;
     document.getElementById('clientFileSubtitle').textContent =
       client.accountNumber + ' · ' + (client.email || 'No email') + ' · ' + (sessions.length) + ' sessions';
 
@@ -3757,19 +3686,19 @@ THERAPIST NOTES:
       <!-- Account Details -->
       <div class="card-plain" style="margin-bottom:16px;">
         <div class="cp-head"><i class="fas fa-id-card"></i> Account Details
-          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">\${client.accountNumber}</span>
+          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">\${safeAccountNumber}</span>
         </div>
         <div class="cp-body">
           <div class="grid-2" style="gap:12px;">
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">\${[client.firstName,client.lastName].filter(Boolean).join(' ')||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">\${client.dob||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">\${client.email||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">\${client.phone||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">\${client.occupation||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">\${client.chiefComplaint||'—'}</div></div>
-            \${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + client.medications + '</div></div>' : ''}
-            \${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + client.allergies + '</div></div>' : ''}
-            \${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + client.medicalConditions + '</div></div>' : ''}
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">\${safeFullName}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.dob||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.email||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.phone||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.occupation||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.chiefComplaint||'—')}</div></div>
+            \${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + esc(client.medications) + '</div></div>' : ''}
+            \${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + esc(client.allergies) + '</div></div>' : ''}
+            \${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + esc(client.medicalConditions) + '</div></div>' : ''}
           </div>
           <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light);">
             Created: \${new Date(client.createdAt).toLocaleDateString('en-AU')} · 
@@ -3788,9 +3717,9 @@ THERAPIST NOTES:
             <details style="border-bottom:1px solid var(--border);">
               <summary style="padding:12px 20px;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--primary);list-style:none;display:flex;align-items:center;gap:8px;">
                 <i class="fas fa-file-alt" style="color:var(--accent);"></i>
-                Intake \${client.intakeForms.length - i}: \${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">\${f.source||''}</span>
+                Intake \${client.intakeForms.length - i}: \${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">\${esc(f.source||'')}</span>
               </summary>
-              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">\${Object.entries(f.data||{}).map(([k,v]) => k+': '+v).join('\\n')||'No structured data captured.'}</div>
+              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">\${Object.entries(f.data||{}).map(([k,v]) => esc(k)+': '+esc(v)).join('\\n')||'No structured data captured.'}</div>
             </details>
           \`).join('')}
         </div>
@@ -3818,7 +3747,7 @@ THERAPIST NOTES:
                     \${s.pdfDriveUrl ? '<i class="fab fa-google-drive" style="color:#38a169;margin-left:6px;font-size:0.75rem;" title="PDF saved to Drive"></i>' : ''}
                   </div>
                   <div style="font-size:0.72rem;color:var(--text-light);margin-top:2px;">
-                    \${s.duration} · \${s.musclesTreated?.length||0} muscles treated · \${s.chiefComplaint||''}
+                    \${esc(s.duration)} · \${s.musclesTreated?.length||0} muscles treated · \${esc(s.chiefComplaint||'')}
                   </div>
                 </div>
                 <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;font-size:0.75rem;"></i>
@@ -3835,7 +3764,7 @@ THERAPIST NOTES:
             <strong style="color:#276749;"><i class="fab fa-google-drive" style="margin-right:6px;"></i>Google Drive PDF Backup</strong>
             <div style="color:#2f855a;margin-top:3px;" id="driveLinkStatus">Checking connection…</div>
           </div>
-          <button onclick="connectDriveForClient('\${client.accountNumber}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
+          <button onclick="connectDriveForClient('\${safeConnectAccount}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
             <i class="fab fa-google-drive"></i> Connect Drive
           </button>
         </div>
@@ -3883,6 +3812,7 @@ THERAPIST NOTES:
   }
 
   function renderSessionView(s) {
+    const esc = (v) => escapeHtml(String(v ?? ''));
     document.getElementById('sessionViewSubtitle').textContent =
       new Date(s.sessionDate).toLocaleDateString('en-AU',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) +
       ' · ' + s.clientName + ' · ' + s.duration;
@@ -3891,18 +3821,18 @@ THERAPIST NOTES:
     document.getElementById('sessionViewBody').innerHTML = \`
       <!-- Client & session info -->
       <div style="display:flex;gap:20px;flex-wrap:wrap;background:#f7faff;padding:14px 16px;border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.82rem;">
-        <div><strong style="color:var(--primary);">\${s.clientName}</strong><div style="color:var(--text-light);">\${s.accountNumber}</div></div>
+        <div><strong style="color:var(--primary);">\${esc(s.clientName)}</strong><div style="color:var(--text-light);">\${esc(s.accountNumber)}</div></div>
         <div><strong>Date</strong><div style="color:var(--text-light);">\${new Date(s.sessionDate).toLocaleDateString('en-AU')}</div></div>
-        <div><strong>Duration</strong><div style="color:var(--text-light);">\${s.duration}</div></div>
+        <div><strong>Duration</strong><div style="color:var(--text-light);">\${esc(s.duration)}</div></div>
         <div><strong>Pain</strong><div style="color:var(--text-light);">\${s.painBefore||'—'}/10 → \${s.painAfter||'—'}/10</div></div>
-        \${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+s.therapistName+(s.therapistCredentials?' ('+s.therapistCredentials+')':'')+'</div></div>' : ''}
+        \${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+esc(s.therapistName)+(s.therapistCredentials?' ('+esc(s.therapistCredentials)+')':'')+'</div></div>' : ''}
       </div>
 
       <!-- Muscles -->
       \${(s.musclesTreated?.length || s.musclesToFollowUp?.length) ? \`
         <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">
-          \${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+m+'</span>').join('')}
-          \${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+m+'</span>').join('')}
+          \${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+esc(m)+'</span>').join('')}
+          \${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+esc(m)+'</span>').join('')}
         </div>
       \` : ''}
 
@@ -3919,7 +3849,7 @@ THERAPIST NOTES:
             <div style="width:4px;height:18px;background:\${sec.color};border-radius:2px;"></div>
             <strong style="font-size:0.82rem;color:var(--primary);">\${sec.label}</strong>
           </div>
-          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">\${soap[sec.key]}</div>
+          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">\${esc(soap[sec.key])}</div>
         </div>
       \`).join('')}
 
@@ -3927,7 +3857,7 @@ THERAPIST NOTES:
       \${s.pdfDriveUrl ? \`
         <div style="margin-top:16px;padding:12px 14px;background:#f0faf5;border:1px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.8rem;display:flex;align-items:center;gap:10px;">
           <i class="fab fa-google-drive" style="color:#38a169;font-size:1.1rem;"></i>
-          <div>PDF backed up to Google Drive — <a href="\${s.pdfDriveUrl}" target="_blank" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
+          <div>PDF backed up to Google Drive — <a href="\${esc(s.pdfDriveUrl)}" target="_blank" rel="noopener noreferrer" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
         </div>
       \` : ''}
 
@@ -3939,7 +3869,10 @@ THERAPIST NOTES:
   function connectDriveForClient(accountNumber) {
     const url = '/api/drive/auth?account=' + encodeURIComponent(accountNumber);
     const popup = window.open(url, 'google-drive-auth', 'width=500,height=620,top=100,left=200');
+    const expectedOrigin = window.location.origin;
     window.addEventListener('message', function handler(e) {
+      if (e.origin !== expectedOrigin) return;
+      if (popup && e.source !== popup) return;
       if (e.data?.type === 'DRIVE_AUTH_SUCCESS') {
         window.removeEventListener('message', handler);
         popup?.close();
