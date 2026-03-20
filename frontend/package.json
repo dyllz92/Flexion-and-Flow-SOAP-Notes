@@ -1,0 +1,6 @@
+{
+  "name": "soap-notes-frontend",
+  "scripts": {
+    "start": "echo 'Frontend served by Node.js backend on port 8001'"
+  }
+}
