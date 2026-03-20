@@ -4,6 +4,14 @@ import { ENV } from "../database/index.js";
 const ai = new Hono();
 
 /**
+ * GET /api/ai-status — Check if OpenAI API key is configured
+ */
+ai.get("/ai-status", (c) => {
+  const configured = !!ENV.OPENAI_API_KEY;
+  return c.json({ configured });
+});
+
+/**
  * Build SOAP prompt for OpenAI (now optional, if client sends full prompt)
  */
 function buildSOAPPrompt(
