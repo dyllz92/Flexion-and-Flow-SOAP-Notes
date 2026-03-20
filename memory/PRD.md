@@ -73,17 +73,29 @@ Treatment note system for therapists that links to a dashboard app. Features:
   - All state-changing API endpoints require X-CSRF-Token header
   - Frontend `apiFetch()` wrapper auto-includes CSRF token
   - Webhooks exempt from CSRF (external services)
-- [ ] Normalize database schema (remove JSON blobs) - deferred (requires migration)
-- [ ] Database migration system - deferred
+- [x] **Database migration system**
+  - Created `/src/database/migrations.ts` with versioned migrations
+  - Auto-runs pending migrations on startup
+  - Added searchable columns for clients (first_name, last_name, phone, session_count)
+  - Added searchable columns for sessions (client_name, therapist_name)
+  - Includes backfill functions for existing data
+- [x] **Rate limiting on public endpoints**
+  - Created `/src/middleware/rate-limit.ts` with SQLite persistence
+  - Standard: 100 req/min for general API
+  - AI endpoints: 20 req/min (expensive operations)
+  - Upload endpoints: 30 req/min
+  - Proper rate limit headers (X-RateLimit-*)
 
 ### P3 (Low)
 - [ ] Split app.ts monolith into components
 - [ ] Add caching headers for static assets
 - [ ] Pagination for client lists
 - [ ] Lazy load PDF.js
+- [ ] Full schema normalization (remove JSON blobs entirely)
 
 ## Next Tasks
-1. Add `ENCRYPTION_SECRET` env variable for production token encryption
-2. Implement database migration system for schema changes
-3. Consider normalizing JSON blob storage to proper columns (performance)
-4. Add rate limiting to public endpoints
+1. Set `ENCRYPTION_SECRET` env variable for production token encryption
+2. Run `backfillClientColumns()` and `backfillSessionColumns()` on existing databases
+3. Consider full schema normalization (remove JSON blobs entirely)
+4. Add caching headers for static assets
+5. Implement pagination for client lists (performance at scale)

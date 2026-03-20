@@ -10,6 +10,7 @@ import type {
   MetaRow,
 } from "../types/index.js";
 import { encrypt, safeDecrypt, ensureEncrypted } from "../utils/crypto.js";
+import { runMigrations } from "./migrations.js";
 
 /**
  * Environment configuration
@@ -48,33 +49,8 @@ function initializeDatabase(): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
-  // Create tables with proper schemas
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS clients (
-      account_number TEXT PRIMARY KEY,
-      id             TEXT UNIQUE NOT NULL,
-      data           TEXT NOT NULL,
-      email          TEXT,
-      created_at     TEXT NOT NULL,
-      updated_at     TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      session_id     TEXT PRIMARY KEY,
-      account_number TEXT NOT NULL,
-      session_date   TEXT NOT NULL,
-      data           TEXT NOT NULL,
-      saved_at       TEXT NOT NULL,
-      FOREIGN KEY (account_number) REFERENCES clients(account_number)
-    );
-    CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_number);
-
-    CREATE TABLE IF NOT EXISTS meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
+  // Run migrations (creates tables if needed)
+  runMigrations(db);
 
   return db;
 }
@@ -180,6 +156,7 @@ export function getClient(accountNumber: string): ClientRecord | null {
 /**
  * Save or update client record
  * Encrypts driveToken if present
+ * Also populates searchable columns for better query performance
  */
 export function saveClient(client: ClientRecord): void {
   // Create a copy for storage with encrypted driveToken
@@ -190,8 +167,11 @@ export function saveClient(client: ClientRecord): void {
   
   db.prepare(
     `
-    INSERT OR REPLACE INTO clients (account_number, id, data, email, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO clients (
+      account_number, id, data, email, created_at, updated_at,
+      first_name, last_name, phone, session_count, last_session_date
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     client.accountNumber,
@@ -200,17 +180,27 @@ export function saveClient(client: ClientRecord): void {
     client.email?.toLowerCase() || null,
     client.createdAt,
     client.updatedAt,
+    // Searchable columns
+    client.firstName || null,
+    client.lastName || null,
+    client.phone || null,
+    client.sessionCount || 0,
+    client.lastSessionDate || null,
   );
 }
 
 /**
  * Save or update session record
+ * Also populates searchable columns
  */
 export function saveSession(session: SessionRecord): void {
   db.prepare(
     `
-    INSERT OR REPLACE INTO sessions (session_id, account_number, session_date, data, saved_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO sessions (
+      session_id, account_number, session_date, data, saved_at,
+      client_name, therapist_name
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     session.sessionId,
@@ -218,6 +208,9 @@ export function saveSession(session: SessionRecord): void {
     session.sessionDate,
     JSON.stringify(session),
     session.savedAt,
+    // Searchable columns
+    session.clientName || null,
+    session.therapistName || null,
   );
 }
 

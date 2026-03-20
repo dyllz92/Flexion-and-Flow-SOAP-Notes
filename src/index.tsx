@@ -11,6 +11,8 @@ import driveRouter from "./routes/drive.js";
 
 // Import middleware
 import { csrfProtection, getCsrfToken } from "./middleware/csrf.js";
+import { standardRateLimiter, aiRateLimiter, uploadRateLimiter } from "./middleware/rate-limit.js";
+import { db } from "./database/index.js";
 
 // Import original renderApp function (keeping UI intact for now)
 import { renderApp } from "./components/app.js";
@@ -19,6 +21,14 @@ const app = new Hono();
 
 // Middleware
 app.use("/api/*", cors());
+
+// Rate limiting for API routes
+app.use("/api/*", standardRateLimiter(db));
+
+// Stricter rate limiting for expensive operations
+app.use("/api/generate-soap", aiRateLimiter(db));
+app.use("/api/drive/upload-pdf", uploadRateLimiter(db));
+app.use("/api/drive/sync-pdfs", uploadRateLimiter(db));
 
 // CSRF protection for API routes (excludes webhooks via middleware config)
 app.use("/api/*", csrfProtection);
