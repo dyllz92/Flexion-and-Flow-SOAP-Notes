@@ -2126,7 +2126,7 @@ export function renderApp(): string {
   }
 
   function escJsSingle(value) {
-    return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return String(value || '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
   }
 
   function updateMarkerNotes(dotId, notes) {
@@ -3348,10 +3348,10 @@ THERAPIST NOTES:
 
   function renderClientFile(client, sessions) {
     const esc = (v) => escapeHtml(String(v ?? ''));
-    const escJsSingle = (v) => String(v ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/\\r?\\n/g, ' ');
+    const escJs = (v) => String(v ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/\\n/g, ' ');
     const safeFullName = esc([client.firstName, client.lastName].filter(Boolean).join(' ') || '—');
     const safeAccountNumber = esc(client.accountNumber || '');
-    const safeConnectAccount = escJsSingle(client.accountNumber || '');
+    const safeConnectAccount = escJs(client.accountNumber || '');
 
     document.getElementById('clientFileTitle').innerHTML =
       '<i class="fas fa-user-circle" style="margin-right:8px;opacity:0.8;"></i>' +
