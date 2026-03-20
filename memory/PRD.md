@@ -107,8 +107,20 @@ Treatment note system for therapists that links to a dashboard app. Features:
   - Created `/scripts/db-maintenance.ts`
   - Commands: migrate, backfill, stats, cleanup
   - VACUUM and ANALYZE for optimization
-- [ ] Split app.ts monolith into components (future improvement)
-- [ ] Lazy load PDF.js (future improvement)
+- [x] **Lazy load PDF.js**
+  - PDF.js now loaded on-demand via `window.loadPdfJs()`
+  - Reduces initial page load
+- [x] **Begin app.ts modularization**
+  - Extracted CSS to `/public/static/styles/app.css` (463 lines)
+  - Created `/public/static/js/utils.js` (231 lines)
+  - Created `/public/static/js/api.js` (227 lines)
+  - Created `/public/static/js/pdf-loader.js` (65 lines)
+  - app.ts reduced from 4224 to 3808 lines (~10% reduction)
+
+### Future Improvements
+- [ ] Complete app.ts modularization (extract remaining JS)
+- [ ] Full schema normalization (remove JSON blobs entirely)
+- [ ] Add WebSocket for real-time updates
 
 ## Next Tasks
 1. Set `ENCRYPTION_SECRET` env variable for production
