@@ -498,6 +498,13 @@ export function renderApp(): string {
             <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Before Generating:</strong> Confirm the intake review above. Generate &amp; Save will create SOAP notes and save the updated session data to the client file.</p>
           </div>
 
+          <!-- Medical Shorthand Toggle -->
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
+            <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
+            <span>Use medical shorthand (applies to generation + PDF export)</span>
+          </label>
+          <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);margin-top:-8px;">Current style: Normal writing</p>
+
           <div style="display:flex;gap:10px;">
             <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
@@ -660,11 +667,6 @@ export function renderApp(): string {
             </div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:8px;">
-                <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
-                  <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
-                  <span>Use medical shorthand (applies to generation + PDF export)</span>
-                </label>
-                <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);">Current style: Normal writing</p>
                 <button onclick="exportPDF()" class="btn btn-primary btn-full">
                   <i class="fas fa-file-pdf"></i> Export as PDF
                 </button>
