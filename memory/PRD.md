@@ -110,17 +110,20 @@ Treatment note system for therapists that links to a dashboard app. Features:
 - [x] **Lazy load PDF.js**
   - PDF.js now loaded on-demand via `window.loadPdfJs()`
   - Reduces initial page load
-- [x] **Begin app.ts modularization**
+- [x] **App.ts modularization**
   - Extracted CSS to `/public/static/styles/app.css` (463 lines)
-  - Created `/public/static/js/utils.js` (231 lines)
-  - Created `/public/static/js/api.js` (227 lines)
-  - Created `/public/static/js/pdf-loader.js` (65 lines)
-  - app.ts reduced from 4224 to 3808 lines (~10% reduction)
+  - Created `/public/static/js/utils.js` - HTML escaping, time, DOM helpers (231 lines)
+  - Created `/public/static/js/api.js` - CSRF-protected API client (227 lines)
+  - Created `/public/static/js/pdf-loader.js` - Lazy PDF.js loader (65 lines)
+  - Created `/public/static/js/muscle-data.js` - Muscle map data & geometry (354 lines)
+  - **Total extracted: 1,340 lines**
+  - app.ts now at 3,808 lines (down from 4,224)
 
 ### Future Improvements
-- [ ] Complete app.ts modularization (extract remaining JS)
+- [ ] Continue extracting JS from app.ts (SOAP generation, rendering)
 - [ ] Full schema normalization (remove JSON blobs entirely)
 - [ ] Add WebSocket for real-time updates
+- [ ] Consider migrating to React/Vue components
 
 ## Next Tasks
 1. Set `ENCRYPTION_SECRET` env variable for production
