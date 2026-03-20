@@ -10,6 +10,13 @@ import {
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
 import { authRateLimit } from "../middleware/auth.js";
+import {
+  clientSchema,
+  clientUpdateSchema,
+  clientImportSchema,
+  validateInput,
+  ValidationError,
+} from "../validation/schemas.js";
 
 const clients = new Hono();
 
@@ -21,10 +28,17 @@ clients.use("/*", authRateLimit);
  * POST /api/clients — create or upsert client, returns accountNumber
  */
 clients.post("/", async (c) => {
-  const body = (await c.req.json()) as Partial<ClientRecord> & {
-    source?: string;
-    intakeData?: Record<string, string>;
-  };
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    // Use partial validation - allow partial client data for upsert
+    body = validateInput(clientSchema.partial(), rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
+  }
 
   if (!body.firstName && !body.lastName) {
     return c.json({ error: "Name required" }, 400);

@@ -1,9 +1,33 @@
 import { createMiddleware } from "hono/factory";
+import { timingSafeEqual } from "node:crypto";
 import { ENV } from "../database/index.js";
+
+/**
+ * Timing-safe string comparison to prevent timing attacks
+ */
+function secureCompare(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") {
+    return false;
+  }
+  
+  const aBuffer = Buffer.from(a);
+  const bBuffer = Buffer.from(b);
+  
+  // If lengths differ, still do comparison but return false
+  // This prevents length-based timing attacks
+  if (aBuffer.length !== bBuffer.length) {
+    // Compare against itself to maintain constant time
+    timingSafeEqual(aBuffer, aBuffer);
+    return false;
+  }
+  
+  return timingSafeEqual(aBuffer, bBuffer);
+}
 
 /**
  * Simple admin password authentication middleware for SOAP Notes
  * Checks X-Admin-Password header against ENV.ADMIN_PASSWORD
+ * Uses timing-safe comparison to prevent timing attacks
  */
 export const requireAuth = createMiddleware(async (c, next) => {
   const providedPassword = c.req.header("X-Admin-Password");
@@ -15,7 +39,8 @@ export const requireAuth = createMiddleware(async (c, next) => {
     );
   }
 
-  if (providedPassword !== ENV.ADMIN_PASSWORD) {
+  // Use timing-safe comparison to prevent timing attacks
+  if (!secureCompare(providedPassword, ENV.ADMIN_PASSWORD as string)) {
     return c.json({ error: "Authentication failed - invalid password" }, 401);
   }
 

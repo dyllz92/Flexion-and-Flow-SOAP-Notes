@@ -37,16 +37,30 @@ Treatment note system for therapists that links to a dashboard app. Features:
   - Applied `escapeHtml()` to all user-controlled innerHTML content
   - Applied `escJsSingle()` to onclick handler parameters
 
+### Mar 2026 - P1 Security Improvements
+- [x] **Input validation with Zod schemas**
+  - Created `/src/validation/schemas.ts` with comprehensive schemas
+  - Added validation to all API endpoints: clients, sessions, intake, AI
+  - Email, phone, date, and pain level validation
+  - Max length limits on all text fields
+- [x] **Timing-safe password comparison**
+  - Replaced plain string comparison with `crypto.timingSafeEqual`
+  - Prevents timing attacks on authentication
+- [x] **API request timeouts**
+  - Added 30s timeout to OpenAI API calls
+  - Added 30-60s timeouts to Google Drive operations
+  - Proper AbortError handling with user-friendly messages
+
 ## Prioritized Backlog
 
 ### P0 (Critical) - COMPLETED
 - [x] OpenAI key client-side exposure
 - [x] XSS in client rendering
 
-### P1 (High)
-- [ ] Input validation with Zod schemas
-- [ ] Timing-safe password comparison in auth
-- [ ] Request timeout for external API calls
+### P1 (High) - COMPLETED
+- [x] Input validation with Zod schemas
+- [x] Timing-safe password comparison in auth
+- [x] Request timeout for external API calls
 
 ### P2 (Medium)
 - [ ] Encrypt Google Drive tokens at rest
