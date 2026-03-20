@@ -37,8 +37,13 @@ function getCacheDuration(path: string): number {
     return CACHE_DURATIONS.vendor;
   }
   
-  // Images and fonts - standard cache
-  if (/\.(png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|eot)$/i.test(path)) {
+  // Sample files - standard cache
+  if (path.includes("/samples/")) {
+    return CACHE_DURATIONS.standard;
+  }
+  
+  // Images, fonts, and PDFs - standard cache
+  if (/\.(png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|eot|pdf)$/i.test(path)) {
     return CACHE_DURATIONS.standard;
   }
   
