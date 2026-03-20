@@ -86,16 +86,44 @@ Treatment note system for therapists that links to a dashboard app. Features:
   - Upload endpoints: 30 req/min
   - Proper rate limit headers (X-RateLimit-*)
 
-### P3 (Low)
-- [ ] Split app.ts monolith into components
-- [ ] Add caching headers for static assets
-- [ ] Pagination for client lists
-- [ ] Lazy load PDF.js
-- [ ] Full schema normalization (remove JSON blobs entirely)
+### P3 (Low) - COMPLETED
+- [x] **Static asset caching headers**
+  - Created `/src/middleware/cache.ts` with intelligent caching
+  - Vendor files: 1 week cache
+  - Images/fonts: 1 day cache
+  - Hashed assets: 1 year (immutable)
+  - ETag support for conditional requests
+- [x] **Security headers**
+  - X-Frame-Options: SAMEORIGIN (clickjacking protection)
+  - X-Content-Type-Options: nosniff
+  - Referrer-Policy: strict-origin-when-cross-origin
+  - CSP in report-only mode
+- [x] **Client list pagination**
+  - Page, limit, search, sort, order parameters
+  - Returns pagination metadata (total, totalPages, hasNext, hasPrev)
+  - Server-side search using indexed columns
+  - Max 200 items per page
+- [x] **Database maintenance CLI**
+  - Created `/scripts/db-maintenance.ts`
+  - Commands: migrate, backfill, stats, cleanup
+  - VACUUM and ANALYZE for optimization
+- [ ] Split app.ts monolith into components (future improvement)
+- [ ] Lazy load PDF.js (future improvement)
 
 ## Next Tasks
-1. Set `ENCRYPTION_SECRET` env variable for production token encryption
-2. Run `backfillClientColumns()` and `backfillSessionColumns()` on existing databases
-3. Consider full schema normalization (remove JSON blobs entirely)
-4. Add caching headers for static assets
-5. Implement pagination for client lists (performance at scale)
+1. Set `ENCRYPTION_SECRET` env variable for production
+2. Run `npx tsx scripts/db-maintenance.ts backfill` on existing databases
+3. Split app.ts monolith into smaller components (maintainability)
+4. Lazy load PDF.js library (performance)
+5. Full schema normalization - remove JSON blobs entirely (advanced)
+
+## Environment Variables Required
+```
+ADMIN_PASSWORD=<required>          # Admin authentication password
+OPENAI_API_KEY=<optional>          # For AI SOAP generation
+ENCRYPTION_SECRET=<recommended>    # For token encryption at rest
+GOOGLE_CLIENT_ID=<optional>        # Google Drive integration
+GOOGLE_CLIENT_SECRET=<optional>    # Google Drive integration
+GOOGLE_REFRESH_TOKEN=<optional>    # Google Drive integration
+DASHBOARD_WEBHOOK_URL=<optional>   # External dashboard webhook
+```

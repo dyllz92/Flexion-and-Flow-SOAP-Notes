@@ -131,16 +131,50 @@ clients.post("/", async (c) => {
 });
 
 /**
- * GET /api/clients — list all clients (summary)
+ * GET /api/clients — list all clients (summary) with pagination
+ * Query params:
+ *   - page: page number (default: 1)
+ *   - limit: items per page (default: 50, max: 200)
+ *   - search: search term for name/email
+ *   - sort: field to sort by (default: updated_at)
+ *   - order: asc or desc (default: desc)
  */
 clients.get("/", (c) => {
-  const rows = db
-    .prepare(
-      `
-    SELECT data FROM clients ORDER BY updated_at DESC LIMIT 500
-  `,
-    )
-    .all() as { data: string }[];
+  const page = Math.max(1, parseInt(c.req.query("page") || "1", 10));
+  const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") || "50", 10)));
+  const search = c.req.query("search")?.trim().toLowerCase() || "";
+  const sortField = c.req.query("sort") || "updated_at";
+  const sortOrder = c.req.query("order") === "asc" ? "ASC" : "DESC";
+  
+  const offset = (page - 1) * limit;
+  
+  // Validate sort field to prevent SQL injection
+  const allowedSortFields = ["updated_at", "created_at", "first_name", "last_name", "session_count", "last_session_date"];
+  const safeSortField = allowedSortFields.includes(sortField) ? sortField : "updated_at";
+  
+  let whereClause = "";
+  const params: any[] = [];
+  
+  if (search) {
+    whereClause = "WHERE (LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR LOWER(email) LIKE ?)";
+    const searchPattern = `%${search}%`;
+    params.push(searchPattern, searchPattern, searchPattern);
+  }
+  
+  // Get total count for pagination metadata
+  const countQuery = `SELECT COUNT(*) as total FROM clients ${whereClause}`;
+  const { total } = db.prepare(countQuery).get(...params) as { total: number };
+  
+  // Get paginated results using searchable columns where possible
+  const dataQuery = `
+    SELECT data FROM clients 
+    ${whereClause}
+    ORDER BY ${safeSortField} ${sortOrder}
+    LIMIT ? OFFSET ?
+  `;
+  params.push(limit, offset);
+  
+  const rows = db.prepare(dataQuery).all(...params) as { data: string }[];
 
   const clients = rows
     .map((r) => {
@@ -167,7 +201,19 @@ clients.get("/", (c) => {
     })
     .filter(Boolean);
 
-  return c.json({ clients });
+  const totalPages = Math.ceil(total / limit);
+  
+  return c.json({
+    clients,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
+  });
 });
 
 /**
