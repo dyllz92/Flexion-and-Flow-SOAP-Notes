@@ -62,11 +62,19 @@ Treatment note system for therapists that links to a dashboard app. Features:
 - [x] Timing-safe password comparison in auth
 - [x] Request timeout for external API calls
 
-### P2 (Medium)
-- [ ] Encrypt Google Drive tokens at rest
-- [ ] Normalize database schema (remove JSON blobs)
-- [ ] Add CSRF protection
-- [ ] Database migration system
+### P2 (Medium) - COMPLETED
+- [x] **Encrypt Google Drive tokens at rest**
+  - Created `/src/utils/crypto.ts` with AES-256-GCM encryption
+  - KV store auto-encrypts sensitive keys (drive tokens)
+  - Client driveToken field auto-encrypted on save
+  - `safeDecrypt` handles legacy unencrypted data migration
+- [x] **CSRF protection**
+  - Created `/src/middleware/csrf.ts` with double-submit cookie pattern
+  - All state-changing API endpoints require X-CSRF-Token header
+  - Frontend `apiFetch()` wrapper auto-includes CSRF token
+  - Webhooks exempt from CSRF (external services)
+- [ ] Normalize database schema (remove JSON blobs) - deferred (requires migration)
+- [ ] Database migration system - deferred
 
 ### P3 (Low)
 - [ ] Split app.ts monolith into components
@@ -75,6 +83,7 @@ Treatment note system for therapists that links to a dashboard app. Features:
 - [ ] Lazy load PDF.js
 
 ## Next Tasks
-1. Implement Zod validation for all client/session inputs
-2. Replace plain string password comparison with constant-time check
-3. Add timeout to OpenAI/Google API calls
+1. Add `ENCRYPTION_SECRET` env variable for production token encryption
+2. Implement database migration system for schema changes
+3. Consider normalizing JSON blob storage to proper columns (performance)
+4. Add rate limiting to public endpoints

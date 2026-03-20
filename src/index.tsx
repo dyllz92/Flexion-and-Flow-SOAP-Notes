@@ -9,6 +9,9 @@ import aiRouter from "./routes/ai.js";
 import intakeRouter from "./routes/intake.js";
 import driveRouter from "./routes/drive.js";
 
+// Import middleware
+import { csrfProtection, getCsrfToken } from "./middleware/csrf.js";
+
 // Import original renderApp function (keeping UI intact for now)
 import { renderApp } from "./components/app.js";
 
@@ -16,6 +19,12 @@ const app = new Hono();
 
 // Middleware
 app.use("/api/*", cors());
+
+// CSRF protection for API routes (excludes webhooks via middleware config)
+app.use("/api/*", csrfProtection);
+
+// CSRF token endpoint for SPA
+app.get("/api/csrf-token", (c) => getCsrfToken(c));
 
 // Serve static files from public/ directory
 app.use("/static/*", serveStatic({ root: "./public" }));

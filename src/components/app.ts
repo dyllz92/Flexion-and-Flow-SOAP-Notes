@@ -1225,6 +1225,40 @@ export function renderApp(): string {
 
   <script>
   // ============================================================
+  // CSRF Protection & API Helpers
+  // ============================================================
+  let _csrfToken = null;
+  
+  async function getCsrfToken() {
+    if (_csrfToken) return _csrfToken;
+    try {
+      const res = await fetch('/api/csrf-token');
+      const data = await res.json();
+      _csrfToken = data.csrfToken;
+      return _csrfToken;
+    } catch(e) {
+      console.warn('Could not fetch CSRF token:', e);
+      return null;
+    }
+  }
+  
+  // CSRF-protected fetch wrapper for POST/PUT/DELETE requests
+  async function apiFetch(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const headers = { ...options.headers };
+    
+    // Add CSRF token for state-changing requests
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      const token = await getCsrfToken();
+      if (token) {
+        headers['X-CSRF-Token'] = token;
+      }
+    }
+    
+    return fetch(url, { ...options, headers });
+  }
+
+  // ============================================================
   // CLIENT PROFILES (localStorage-based, synced via webhook)
   // ============================================================
   const CLIENT_PROFILES_KEY = 'flexion_soap_client_profiles';
@@ -1306,7 +1340,7 @@ export function renderApp(): string {
   // Save a single profile (upsert by id or email) - now posts to server
   async function upsertClientProfile(profile) {
     try {
-      const res = await fetch('/api/clients', {
+      const res = await apiFetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1346,7 +1380,7 @@ export function renderApp(): string {
     if (!confirm('Remove this client profile and all saved sessions?')) return;
 
     try {
-      const res = await fetch('/api/clients/' + encodeURIComponent(id), {
+      const res = await apiFetch('/api/clients/' + encodeURIComponent(id), {
         method: 'DELETE'
       });
       const data = await res.json().catch(() => ({}));
@@ -2445,6 +2479,9 @@ export function renderApp(): string {
 
     // Check API status (server-side key)
     checkAPIStatus();
+    
+    // Pre-fetch CSRF token for subsequent API calls
+    getCsrfToken();
 
     // Load recent Drive PDFs (deferred to ensure function is defined)
     setTimeout(() => { if (typeof loadDriveFiles === 'function') loadDriveFiles(); }, 10);
@@ -3043,7 +3080,7 @@ export function renderApp(): string {
     try {
       const prompt = buildPrompt(contextData, intakeData, state.useMedicalShorthand);
       
-      const response = await fetch('/api/generate-soap', {
+      const response = await apiFetch('/api/generate-soap', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3630,7 +3667,7 @@ THERAPIST NOTES:
     btn.disabled = true;
     label.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/clients/sync', { method: 'POST' });
+      const res = await apiFetch('/api/clients/sync', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         label.textContent = 'Synced ✓';
@@ -3965,7 +4002,7 @@ THERAPIST NOTES:
     if (btn) btn.disabled = true;
     if (label) label.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
     try {
-      const res = await fetch('/api/drive/sync-pdfs', { method: 'POST' });
+      const res = await apiFetch('/api/drive/sync-pdfs', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         alert('Sync failed: ' + (data.error || 'Unknown error'));
@@ -4002,7 +4039,7 @@ THERAPIST NOTES:
       });
 
       // 1. Create/upsert client record
-      const clientRes = await fetch('/api/clients', {
+      const clientRes = await apiFetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4026,7 +4063,7 @@ THERAPIST NOTES:
       if (!accountNumber) throw new Error('No account number returned');
 
       // 2. Save session
-      const sessRes = await fetch('/api/clients/' + accountNumber + '/sessions', {
+      const sessRes = await apiFetch('/api/clients/' + accountNumber + '/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4081,7 +4118,7 @@ THERAPIST NOTES:
 
       const filename = 'SOAP_' + accountNumber + '_' + sessionDate + '_' + clientName.replace(/\\s+/g,'_') + '.pdf';
 
-      const res = await fetch('/api/drive/upload-pdf', {
+      const res = await apiFetch('/api/drive/upload-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, accountNumber, filename, pdfBase64: base64 })

@@ -9,6 +9,7 @@ import type {
   SessionRow,
   MetaRow,
 } from "../types/index.js";
+import { encrypt, safeDecrypt, ensureEncrypted } from "../utils/crypto.js";
 
 /**
  * Environment configuration
@@ -81,21 +82,35 @@ function initializeDatabase(): Database.Database {
 // Initialize database instance
 export const db = initializeDatabase();
 
+/** Keys that should be encrypted at rest */
+const ENCRYPTED_KEYS = new Set([
+  "global_drive_refresh_token",
+]);
+
 /**
  * KV-compatible adapter over SQLite meta table
+ * Automatically encrypts/decrypts sensitive keys
  */
 export const kv: KVStore = {
   get(key: string): string | null {
     const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
       | MetaRow
       | undefined;
-    return row?.value ?? null;
+    if (!row?.value) return null;
+    
+    // Decrypt if this is a sensitive key
+    if (ENCRYPTED_KEYS.has(key)) {
+      return safeDecrypt(row.value);
+    }
+    return row.value;
   },
 
   put(key: string, value: string): void {
+    // Encrypt if this is a sensitive key
+    const storedValue = ENCRYPTED_KEYS.has(key) ? ensureEncrypted(value) : value;
     db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(
       key,
-      value,
+      storedValue,
     );
   },
 
@@ -104,7 +119,7 @@ export const kv: KVStore = {
   },
 };
 
-// Seed Google refresh token from env if not already stored
+// Seed Google refresh token from env if not already stored (will be encrypted)
 if (ENV.GOOGLE_REFRESH_TOKEN && !kv.get("global_drive_refresh_token")) {
   kv.put("global_drive_refresh_token", ENV.GOOGLE_REFRESH_TOKEN);
 }
@@ -142,6 +157,7 @@ export function findClientByEmail(email: string): ClientRecord | null {
 
 /**
  * Get client by account number
+ * Decrypts driveToken if present
  */
 export function getClient(accountNumber: string): ClientRecord | null {
   const row = db
@@ -149,7 +165,12 @@ export function getClient(accountNumber: string): ClientRecord | null {
     .get(accountNumber) as ClientRow | undefined;
   if (!row) return null;
   try {
-    return JSON.parse(row.data);
+    const client = JSON.parse(row.data) as ClientRecord;
+    // Decrypt driveToken if present
+    if (client.driveToken) {
+      client.driveToken = safeDecrypt(client.driveToken);
+    }
+    return client;
   } catch (error) {
     console.error("Failed to parse client data:", error);
     return null;
@@ -158,8 +179,15 @@ export function getClient(accountNumber: string): ClientRecord | null {
 
 /**
  * Save or update client record
+ * Encrypts driveToken if present
  */
 export function saveClient(client: ClientRecord): void {
+  // Create a copy for storage with encrypted driveToken
+  const clientToStore = { ...client };
+  if (clientToStore.driveToken) {
+    clientToStore.driveToken = ensureEncrypted(clientToStore.driveToken);
+  }
+  
   db.prepare(
     `
     INSERT OR REPLACE INTO clients (account_number, id, data, email, created_at, updated_at)
@@ -168,7 +196,7 @@ export function saveClient(client: ClientRecord): void {
   ).run(
     client.accountNumber,
     client.id,
-    JSON.stringify(client),
+    JSON.stringify(clientToStore),
     client.email?.toLowerCase() || null,
     client.createdAt,
     client.updatedAt,
