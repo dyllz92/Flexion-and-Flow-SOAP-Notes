@@ -197,23 +197,6 @@ export function renderApp(): string {
               <span>Extracting text from PDF…</span>
             </div>
 
-            <!-- Recent Drive PDFs -->
-            <div id="driveFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
-                  <i class="fab fa-google-drive" style="margin-right:6px;opacity:0.7;"></i>Recent Drive PDFs
-                </h3>
-                <button id="driveFilesRefreshBtn" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
-                  <i class="fas fa-sync-alt" id="driveFilesRefreshIcon"></i>
-                </button>
-              </div>
-              <div id="driveFilesList" style="max-height:200px;overflow-y:auto;">
-                <p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">
-                  Loading Drive files…
-                </p>
-              </div>
-            </div>
-
             <!-- Supabase Stored PDFs -->
             <div id="supabaseFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -2086,9 +2069,6 @@ export function renderApp(): string {
     // Pre-fetch CSRF token for subsequent API calls
     getCsrfToken();
 
-    // Load recent Drive PDFs (deferred to ensure function is defined)
-    setTimeout(() => { if (typeof loadDriveFiles === 'function') loadDriveFiles(); }, 10);
-
     // Load Supabase PDFs
     setTimeout(() => { if (typeof loadSupabaseFiles === 'function') loadSupabaseFiles(); }, 20);
 
@@ -2366,16 +2346,7 @@ export function renderApp(): string {
   }
 
   // Expose to window for button onclick handlers
-  window.loadDriveFiles = loadDriveFiles;
   window.selectDriveFile = selectDriveFile;
-  
-  // Wire up the refresh button using addEventListener
-  const refreshBtn = document.getElementById('driveFilesRefreshBtn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-      loadDriveFiles();
-    });
-  }
 
   // ============================================================
   // SUPABASE FILE PICKER
