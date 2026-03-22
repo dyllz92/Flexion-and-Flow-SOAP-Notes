@@ -565,7 +565,7 @@ export function renderApp(): string {
                   <span id="savedFileBadge" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;">
                     <i class="fas fa-folder-open" style="margin-right:4px;"></i><span></span>
                   </span>
-                  <a id="driveBadge" href="#" target="_blank" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;color:white;text-decoration:none;">
+                  <a id="driveBadge" href="#" target="_blank" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;color:white;text-decoration:none;" hidden>
                     <i class="fab fa-google-drive" style="margin-right:4px;"></i>View in Drive
                   </a>
                 </div>
@@ -3507,8 +3507,8 @@ THERAPIST NOTES:
         </div>
       </div>
 
-      <!-- Google Drive Connect -->
-      <div id="driveConnectSection" style="margin-top:16px;padding:14px 16px;background:#f0faf5;border:1.5px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.82rem;">
+      <!-- Google Drive Connect (hidden - backend only) -->
+      <div id="driveConnectSection" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div>
             <strong style="color:#276749;"><i class="fab fa-google-drive" style="margin-right:6px;"></i>Google Drive PDF Backup</strong>
