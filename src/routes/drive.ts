@@ -17,6 +17,11 @@ import {
   listDriveFiles,
   downloadDriveFile,
 } from "../services/google-drive.js";
+import {
+  uploadPdfToSupabase,
+  listSupabasePdfs,
+  getSupabasePdfUrl,
+} from "../services/supabase-storage.js";
 import { PDFParse } from "pdf-parse";
 import fs from "node:fs";
 import path from "node:path";
@@ -235,6 +240,14 @@ drive.post("/upload-pdf", async (c) => {
         saveSession(session);
       }
     }
+
+    // Also upload to Supabase Storage in the background
+    const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
+    uploadPdfToSupabase(body.filename, pdfBuffer)
+      .then((url) => {
+        if (url) console.log("Supabase PDF uploaded:", url);
+      })
+      .catch((err) => console.error("Supabase PDF upload error:", err));
 
     return c.json({
       success: true,
@@ -505,6 +518,46 @@ drive.get("/synced-data/:filename", (c) => {
   }
   const content = JSON.parse(fs.readFileSync(filePath, "utf-8"));
   return c.json(content);
+});
+
+/**
+ * GET /api/drive/supabase-files — List PDFs stored in Supabase Storage
+ */
+drive.get("/supabase-files", async (c) => {
+  try {
+    const files = await listSupabasePdfs();
+    return c.json({ files });
+  } catch (error) {
+    console.error("Supabase files list error:", error);
+    return c.json({ error: "Failed to list Supabase files", files: [] }, 500);
+  }
+});
+
+/**
+ * GET /api/drive/supabase-file-url/:filename — Get a signed URL for a Supabase PDF
+ */
+drive.get("/supabase-file-url/:filename", async (c) => {
+  const filename = c.req.param("filename");
+  if (
+    !filename ||
+    filename.includes("..") ||
+    filename.includes("/") ||
+    filename.includes("\\")
+  ) {
+    return c.json({ error: "Invalid filename" }, 400);
+  }
+  try {
+    const url = await getSupabasePdfUrl(filename);
+    if (!url)
+      return c.json(
+        { error: "File not found or Supabase not configured" },
+        404,
+      );
+    return c.json({ url });
+  } catch (error) {
+    console.error("Supabase file URL error:", error);
+    return c.json({ error: "Failed to get file URL" }, 500);
+  }
 });
 
 export default drive;

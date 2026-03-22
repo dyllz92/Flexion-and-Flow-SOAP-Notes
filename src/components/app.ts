@@ -1,7 +1,7 @@
 /**
  * Main App component - contains the full single page application
  * This is the main UI for the SOAP Notes Generator
- * 
+ *
  * Structure:
  * - CSS: /static/styles/app.css (extracted)
  * - JS Utils: /static/js/utils.js
@@ -210,6 +210,23 @@ export function renderApp(): string {
               <div id="driveFilesList" style="max-height:200px;overflow-y:auto;">
                 <p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">
                   Loading Drive files…
+                </p>
+              </div>
+            </div>
+
+            <!-- Supabase Stored PDFs -->
+            <div id="supabaseFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
+                  <i class="fas fa-database" style="margin-right:6px;opacity:0.7;"></i>Supabase PDFs
+                </h3>
+                <button id="supabaseFilesRefreshBtn" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh Supabase files">
+                  <i class="fas fa-sync-alt" id="supabaseFilesRefreshIcon"></i>
+                </button>
+              </div>
+              <div id="supabaseFilesList" style="max-height:200px;overflow-y:auto;">
+                <p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">
+                  Loading Supabase files…
                 </p>
               </div>
             </div>
@@ -2072,6 +2089,9 @@ export function renderApp(): string {
     // Load recent Drive PDFs (deferred to ensure function is defined)
     setTimeout(() => { if (typeof loadDriveFiles === 'function') loadDriveFiles(); }, 10);
 
+    // Load Supabase PDFs
+    setTimeout(() => { if (typeof loadSupabaseFiles === 'function') loadSupabaseFiles(); }, 20);
+
     // Check if client data was passed via URL (from intake form redirect)
     await checkUrlClientData();
 
@@ -2354,6 +2374,60 @@ export function renderApp(): string {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       loadDriveFiles();
+    });
+  }
+
+  // ============================================================
+  // SUPABASE FILE PICKER
+  // ============================================================
+  async function loadSupabaseFiles() {
+    const list = document.getElementById('supabaseFilesList');
+    const icon = document.getElementById('supabaseFilesRefreshIcon');
+    if (icon) icon.classList.add('fa-spin');
+    try {
+      const res = await fetch('/api/drive/supabase-files');
+      const data = await res.json();
+      if (!res.ok || !data.files || data.files.length === 0) {
+        if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No PDF files found in Supabase.</p>';
+        return;
+      }
+      if (list) {
+        list.innerHTML = data.files.map(function(f) {
+          const date = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+          const rawName = String(f.name || '');
+          const nameShort = rawName.length > 40 ? rawName.slice(0, 37) + '…' : rawName;
+          const safeNameShort = escapeHtml(nameShort);
+          const safeTitle = escapeHtml(rawName);
+          const safeUrl = escapeHtml(f.url || '');
+          return '<div class="supabase-file-row" data-file-name="' + encodeURIComponent(rawName) + '" data-file-url="' + safeUrl + '" '
+            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;">'
+            + '<i class="fas fa-file-pdf" style="color:#3b82f6;opacity:0.7;flex-shrink:0;"></i>'
+            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeTitle + '">' + safeNameShort + '</span>'
+            + '<a href="' + safeUrl + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);white-space:nowrap;text-decoration:none;" title="View PDF">'
+            + '<i class="fas fa-external-link-alt"></i></a>'
+            + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + date + '</span>'
+            + '</div>';
+        }).join('');
+
+        const rows = list.querySelectorAll('.supabase-file-row');
+        rows.forEach(function(row) {
+          row.addEventListener('mouseenter', function() { row.style.background = 'rgba(59,130,246,0.08)'; });
+          row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+        });
+      }
+    } catch (err) {
+      if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load Supabase files.</p>';
+    } finally {
+      if (icon) icon.classList.remove('fa-spin');
+    }
+  }
+
+  window.loadSupabaseFiles = loadSupabaseFiles;
+
+  const supabaseRefreshBtn = document.getElementById('supabaseFilesRefreshBtn');
+  if (supabaseRefreshBtn) {
+    supabaseRefreshBtn.addEventListener('click', () => {
+      loadSupabaseFiles();
     });
   }
 
