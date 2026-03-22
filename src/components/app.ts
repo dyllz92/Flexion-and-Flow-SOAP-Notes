@@ -201,7 +201,7 @@ export function renderApp(): string {
             <div id="supabaseFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                 <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
-                  <i class="fas fa-database" style="margin-right:6px;opacity:0.7;"></i>Supabase PDFs
+                  <i class="fas fa-clipboard-list" style="margin-right:6px;opacity:0.7;"></i>Recent Intake Forms
                 </h3>
                 <button id="supabaseFilesRefreshBtn" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh Supabase files">
                   <i class="fas fa-sync-alt" id="supabaseFilesRefreshIcon"></i>
@@ -209,7 +209,7 @@ export function renderApp(): string {
               </div>
               <div id="supabaseFilesList" style="max-height:200px;overflow-y:auto;">
                 <p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">
-                  Loading Supabase files…
+                  Loading intake forms…
                 </p>
               </div>
             </div>
@@ -2069,7 +2069,7 @@ export function renderApp(): string {
     // Pre-fetch CSRF token for subsequent API calls
     getCsrfToken();
 
-    // Load Supabase PDFs
+    // Load recent intake form PDFs
     setTimeout(() => { if (typeof loadSupabaseFiles === 'function') loadSupabaseFiles(); }, 20);
 
     // Check if client data was passed via URL (from intake form redirect)
@@ -2359,7 +2359,7 @@ export function renderApp(): string {
       const res = await fetch('/api/drive/supabase-files');
       const data = await res.json();
       if (!res.ok || !data.files || data.files.length === 0) {
-        if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No PDF files found in Supabase.</p>';
+        if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No intake form PDFs found.</p>';
         return;
       }
       if (list) {
@@ -2410,7 +2410,7 @@ export function renderApp(): string {
         });
       }
     } catch (err) {
-      if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load Supabase files.</p>';
+      if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load intake forms.</p>';
     } finally {
       if (icon) icon.classList.remove('fa-spin');
     }

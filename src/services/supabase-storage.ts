@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-const BUCKET = "soap-notes-pdfs";
+const UPLOAD_BUCKET = "soap-notes-pdfs";
+const INTAKE_BUCKET = "intake-form-pdfs";
 
 // Initialize Supabase client (lazy — only when env vars are set)
 function getSupabase() {
@@ -24,7 +25,7 @@ export async function uploadPdfToSupabase(
   }
 
   const { error } = await supabase.storage
-    .from(BUCKET)
+    .from(UPLOAD_BUCKET)
     .upload(filePath, pdfBuffer, {
       contentType: "application/pdf",
       upsert: true,
@@ -36,7 +37,7 @@ export async function uploadPdfToSupabase(
   }
 
   const { data: publicUrlData } = supabase.storage
-    .from(BUCKET)
+    .from(UPLOAD_BUCKET)
     .getPublicUrl(filePath);
   return publicUrlData?.publicUrl || null;
 }
@@ -50,7 +51,7 @@ export async function listSupabasePdfs(): Promise<
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase.storage.from(BUCKET).list("", {
+  const { data, error } = await supabase.storage.from(INTAKE_BUCKET).list("", {
     limit: 100,
     sortBy: { column: "created_at", order: "desc" },
   });
@@ -64,7 +65,7 @@ export async function listSupabasePdfs(): Promise<
     .filter((f) => f.name.endsWith(".pdf"))
     .map((f) => {
       const { data: urlData } = supabase.storage
-        .from(BUCKET)
+        .from(INTAKE_BUCKET)
         .getPublicUrl(f.name);
       return {
         name: f.name,
@@ -84,7 +85,7 @@ export async function getSupabasePdfUrl(
   if (!supabase) return null;
 
   const { data, error } = await supabase.storage
-    .from(BUCKET)
+    .from(INTAKE_BUCKET)
     .createSignedUrl(filePath, 3600);
 
   if (error) {
