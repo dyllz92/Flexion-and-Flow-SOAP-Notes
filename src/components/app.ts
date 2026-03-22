@@ -2399,12 +2399,12 @@ export function renderApp(): string {
           const safeNameShort = escapeHtml(nameShort);
           const safeTitle = escapeHtml(rawName);
           const safeUrl = escapeHtml(f.url || '');
-          return '<div class="supabase-file-row" data-file-name="' + encodeURIComponent(rawName) + '" data-file-url="' + safeUrl + '" '
+          return '<div class="supabase-file-row" data-file-name="' + encodeURIComponent(rawName) + '" '
             + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;">'
             + '<i class="fas fa-file-pdf" style="color:#3b82f6;opacity:0.7;flex-shrink:0;"></i>'
             + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeTitle + '">' + safeNameShort + '</span>'
-            + '<a href="' + safeUrl + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);white-space:nowrap;text-decoration:none;" title="View PDF">'
-            + '<i class="fas fa-external-link-alt"></i></a>'
+            + '<button class="supabase-open-btn btn btn-ghost btn-sm" data-filename="' + encodeURIComponent(rawName) + '" style="font-size:0.7rem;color:var(--accent);white-space:nowrap;border:none;background:none;cursor:pointer;padding:2px 6px;" title="View PDF">'
+            + '<i class="fas fa-external-link-alt"></i></button>'
             + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + date + '</span>'
             + '</div>';
         }).join('');
@@ -2413,6 +2413,29 @@ export function renderApp(): string {
         rows.forEach(function(row) {
           row.addEventListener('mouseenter', function() { row.style.background = 'rgba(59,130,246,0.08)'; });
           row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+        });
+
+        // Open PDFs via signed URL
+        list.querySelectorAll('.supabase-open-btn').forEach(function(btn) {
+          btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
+            const filename = decodeURIComponent(btn.getAttribute('data-filename') || '');
+            if (!filename) return;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            try {
+              const urlRes = await fetch('/api/drive/supabase-file-url/' + encodeURIComponent(filename));
+              const urlData = await urlRes.json();
+              if (urlData.url) {
+                window.open(urlData.url, '_blank');
+              } else {
+                alert('Could not get file URL');
+              }
+            } catch (err) {
+              alert('Error fetching file URL');
+            } finally {
+              btn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+            }
+          });
         });
       }
     } catch (err) {
