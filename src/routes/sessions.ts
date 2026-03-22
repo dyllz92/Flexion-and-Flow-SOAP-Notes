@@ -12,29 +12,39 @@ import {
 } from "../database/index.js";
 import { refreshGoogleToken, uploadToDrive } from "../services/google-drive.js";
 import { notifyDashboard } from "../services/webhook.js";
+import {
+  sessionSchema,
+  validateInput,
+  ValidationError,
+} from "../validation/schemas.js";
 
 const sessions = new Hono();
-
-type SessionSaveRequest = Omit<
-  SessionRecord,
-  "sessionId" | "accountNumber" | "savedAt"
-> & {
-  submissionId?: string;
-  sourceSubmissionId?: string;
-  taskId?: number | string;
-  noteUrl?: string;
-};
 
 /**
  * POST /api/clients/:accountNumber/sessions — save SOAP note
  */
 sessions.post("/clients/:accountNumber/sessions", async (c) => {
   const acct = c.req.param("accountNumber");
+  
+  // Validate account number format
+  if (!/^[A-Z]{2}-\d{6}-\d{4}$/.test(acct)) {
+    return c.json({ error: "Invalid account number format" }, 400);
+  }
+  
   const client = getClient(acct);
-
   if (!client) return c.json({ error: "Client not found" }, 404);
 
-  const body = (await c.req.json()) as SessionSaveRequest;
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    body = validateInput(sessionSchema, rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
+  }
+
   const sessionId = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -57,8 +67,8 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
     intakeSnapshot: body.intakeSnapshot || "",
     therapistName: body.therapistName || "",
     therapistCredentials: body.therapistCredentials || "",
-    painBefore: body.painBefore || "",
-    painAfter: body.painAfter || "",
+    painBefore: body.painBefore?.toString() || "",
+    painAfter: body.painAfter?.toString() || "",
     chiefComplaint: body.chiefComplaint || "",
     savedAt: now,
   };

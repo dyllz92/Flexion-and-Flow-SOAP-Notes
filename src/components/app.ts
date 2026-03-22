@@ -1,6 +1,12 @@
 /**
  * Main App component - contains the full single page application
  * This is the main UI for the SOAP Notes Generator
+ * 
+ * Structure:
+ * - CSS: /static/styles/app.css (extracted)
+ * - JS Utils: /static/js/utils.js
+ * - JS API: /static/js/api.js
+ * - PDF Loader: /static/js/pdf-loader.js (lazy loads PDF.js)
  */
 export function renderApp(): string {
   return `<!DOCTYPE html>
@@ -10,15 +16,33 @@ export function renderApp(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SOAP Notes — Flexion &amp; Flow</title>
   
+  <!-- Fonts & Icons -->
   <link rel="stylesheet" href="/static/vendor/fonts/montserrat.css"/>
   <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css"/>
+  
+  <!-- App Styles (external) -->
+  <link rel="stylesheet" href="/static/styles/app.css"/>
+  
+  <!-- jsPDF for PDF generation (always needed) -->
   <script src="/static/vendor/jspdf.umd.min.js"></script>
-  <script src="/static/vendor/pdf.min.js"></script>
+  
+  <!-- PDF.js loaded lazily when needed -->
+  <script>
+    // Lazy load PDF.js only when PDF viewing is needed
+    window.loadPdfJs = function() {
+      if (window.pdfjsLib) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/static/vendor/pdf.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+  </script>
+  
+  <!-- Inline critical styles (variables only) -->
   <style>
-    /* ═══════════════════════════════════════════════════════════
-       Flexion & Flow — SOAP Note Generator
-       Brand: Navy #1B3A6B | Sky #5BA3D9 | Light #EEF4FB
-       ═══════════════════════════════════════════════════════════ */
     :root {
       --primary:       #1b3a6b;
       --primary-light: #2c5fa3;
@@ -37,446 +61,6 @@ export function renderApp(): string {
       --shadow:        0 4px 24px rgba(27,58,107,0.10);
       --shadow-sm:     0 2px 8px rgba(27,58,107,0.08);
       --font:          "Montserrat", -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    /* ── Background wave ── */
-    .bg-wave {
-      position: fixed; inset: 0;
-      background: url("/bg-wave.png") center center / cover no-repeat;
-      opacity: 0.45; z-index: 0; pointer-events: none;
-    }
-
-    /* ── Header ── */
-    .site-header {
-      position: static;
-      z-index: 200;
-      background: white;
-      box-shadow: 0 2px 12px rgba(255,255,255,0);
-    }
-    .header-inner {
-      max-width: 960px; margin: 0 auto;
-      padding: 20px 24px 12px;
-      display: flex; align-items: center; justify-content: center;
-      background: white;
-      position: relative;
-    }
-    .header-logo { height: 72px; object-fit: contain; }
-    .header-actions {
-      position: absolute; right: 24px; top: 50%;
-      transform: translateY(-50%);
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    /* ── Step bar ── */
-    .step-bar {
-      background: white;
-      border-bottom: 1px solid var(--border);
-      position: sticky; top: 0; z-index: 100;
-    }
-    .step-bar-inner {
-      max-width: 960px; margin: 0 auto;
-      padding: 0 24px;
-      display: flex; align-items: center; gap: 0;
-      overflow-x: auto;
-    }
-    .step-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 14px 20px 14px 16px;
-      cursor: pointer;
-      white-space: nowrap;
-      border-bottom: 3px solid transparent;
-      transition: all 0.2s;
-      position: relative;
-    }
-    .step-item:hover { background: var(--bg); }
-    .step-item.active { border-bottom-color: var(--primary); }
-    .step-item.done { border-bottom-color: var(--success); }
-    .step-num {
-      width: 28px; height: 28px; border-radius: 50%;
-      background: #e2ebf7; color: var(--text-light);
-      font-size: 0.8rem; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: all 0.2s;
-    }
-    .step-item.active .step-num { background: var(--primary); color: white; }
-    .step-item.done .step-num { background: var(--success); color: white; }
-    .step-label { font-size: 0.82rem; font-weight: 600; color: var(--text-light); transition: color 0.2s; }
-    .step-item.active .step-label { color: var(--primary); }
-    .step-item.done .step-label { color: var(--success); }
-    .step-sep { width: 24px; height: 1px; background: var(--border); flex-shrink: 0; }
-
-    /* ── Page layout ── */
-    .page-content {
-      position: relative; z-index: 1;
-      max-width: 960px; margin: 0 auto;
-      padding: 32px 16px 60px;
-    }
-    .step-panel { display: none; }
-    .step-panel.active { display: block; }
-
-    /* ── Cards ── */
-    .card {
-      background: var(--bg-card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-    .card-header-bar {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-      padding: 20px 28px;
-      color: white;
-    }
-    .card-header-bar h2 { font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
-    .card-header-bar p { font-size: 0.78rem; opacity: 0.8; }
-    .card-body { padding: 24px 28px; }
-    .card-footer { padding: 16px 28px; border-top: 1px solid var(--border); background: #f7faff; }
-
-    .card-plain { background: var(--bg-card); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
-    .card-plain .cp-head {
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px;
-      font-size: 0.88rem; font-weight: 700; color: var(--primary);
-    }
-    .card-plain .cp-head i { color: var(--accent); font-size: 0.9rem; }
-    .card-plain .cp-body { padding: 18px 20px; }
-
-    /* ── Grid ── */
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-    .col-span-2 { grid-column: span 2; }
-    @media (max-width: 768px) {
-      .grid-2, .grid-3 { grid-template-columns: 1fr; }
-      .col-span-2 { grid-column: span 1; }
-    }
-
-    /* ── Form fields ── */
-    .field { margin-bottom: 16px; }
-    .field label {
-      display: block; font-size: 0.78rem; font-weight: 700;
-      color: var(--primary); margin-bottom: 6px; letter-spacing: 0.3px;
-    }
-    .field label .req { color: var(--accent); }
-    .field input, .field select, .field textarea {
-      width: 100%; padding: 10px 14px;
-      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
-      font-family: var(--font); font-size: 0.85rem; color: var(--text);
-      background: #fff; transition: border-color 0.2s, box-shadow 0.2s;
-      outline: none;
-    }
-    .field input:focus, .field select:focus, .field textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(91,163,217,0.15);
-    }
-    .field textarea { resize: vertical; min-height: 80px; }
-    .field-row { display: flex; gap: 14px; }
-    .field-row > * { flex: 1; min-width: 0; }
-    @media (max-width: 540px) { .field-row { flex-direction: column; } }
-    @media (max-width: 500px) { .hide-mobile { display: none; } }
-
-    /* ── Buttons ── */
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 10px 22px; border-radius: 50px;
-      font-family: var(--font); font-size: 0.85rem; font-weight: 700;
-      cursor: pointer; transition: all 0.2s; border: none; outline: none;
-      text-decoration: none;
-    }
-    .btn-primary { background: var(--primary); color: white; }
-    .btn-primary:hover { background: var(--primary-light); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(27,58,107,0.25); }
-    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-    .btn-accent { background: var(--accent); color: white; }
-    .btn-accent:hover { background: #4a8fc0; transform: translateY(-1px); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: white; }
-    .btn-ghost { background: transparent; color: var(--text-light); border: 1.5px solid var(--border); }
-    .btn-ghost:hover { background: var(--bg); color: var(--text); border-color: var(--primary); }
-    .btn-danger { background: var(--danger); color: white; }
-    .btn-danger:hover { background: #c53030; }
-    .btn-sm { padding: 8px 18px; font-size: 0.8rem; }
-    .btn-lg { padding: 13px 36px; font-size: 0.95rem; }
-    .btn-full { width: 100%; justify-content: center; border-radius: var(--radius-sm); }
-
-    /* ── Client Profile Button Variants ── */
-    .btn-profile-primary {
-      background: white; color: var(--primary);
-      border: 1.5px solid rgba(255,255,255,0.8);
-      border-radius: 24px; font-weight: 600;
-      box-shadow: 0 2px 8px rgba(27,58,107,0.15);
-    }
-    .btn-profile-primary:hover {
-      background: #f8fbff; color: var(--primary);
-      border-color: white; transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(27,58,107,0.25);
-    }
-    .btn-profile-secondary {
-      background: rgba(255,255,255,0.2); color: white;
-      border: 1.5px solid rgba(255,255,255,0.4);
-      border-radius: 24px; font-weight: 600;
-      backdrop-filter: blur(8px);
-    }
-    .btn-profile-secondary:hover {
-      background: rgba(255,255,255,0.3); color: white;
-      border-color: rgba(255,255,255,0.6);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-    }
-
-    /* ── Status badge ── */
-    .badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 12px; border-radius: 50px;
-      font-size: 0.72rem; font-weight: 700;
-    }
-    .badge-success { background: #e6f7ed; color: var(--success); }
-    .badge-accent { background: #e8f4fc; color: var(--accent); }
-    .badge-warning { background: var(--warning-bg); color: var(--warning-txt); }
-    .badge-primary { background: #e2ebf7; color: var(--primary); }
-
-    /* ── Integration client chips ── */
-    .client-chip {
-      display: inline-flex; align-items: center; gap: 10px;
-      padding: 10px 16px; border-radius: 16px;
-      border: 1.5px solid var(--border);
-      background: white; cursor: pointer;
-      transition: all 0.2s ease; font-size: 0.84rem;
-      box-shadow: 0 1px 3px rgba(27,58,107,0.06);
-    }
-    .client-chip:hover { 
-      border-color: var(--accent); 
-      background: #f8fbff;
-      transform: translateY(-1px);
-      box-shadow: 0 3px 12px rgba(27,58,107,0.12);
-    }
-    .client-chip .chip-avatar {
-      width: 32px; height: 32px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-      color: white; font-size: 0.72rem; font-weight: 800;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; box-shadow: 0 2px 4px rgba(27,58,107,0.15);
-    }
-    .client-chip .chip-content { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .client-chip .chip-name { 
-      font-weight: 600; color: var(--primary); 
-      font-size: 0.85rem; line-height: 1.2;
-    }
-    .client-chip .chip-ago { 
-      font-size: 0.72rem; color: var(--text-light); 
-      font-weight: 500; opacity: 0.8;
-    }
-
-    /* ── Drop zone ── */
-    .drop-zone {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius-sm);
-      padding: 32px 20px; text-align: center;
-      cursor: pointer; transition: all 0.2s;
-      background: #f7faff;
-    }
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: var(--accent); background: #e8f4fc;
-    }
-    .drop-zone .dz-icon {
-      width: 52px; height: 52px; border-radius: 50%;
-      background: #e2ebf7; margin: 0 auto 12px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .drop-zone .dz-icon i { color: var(--primary); font-size: 1.3rem; }
-    .drop-zone p { font-size: 0.85rem; color: var(--text); font-weight: 600; }
-    .drop-zone .dz-sub { font-size: 0.75rem; color: var(--text-light); margin-top: 4px; }
-
-    /* ── Muscle map ── */
-    .muscle-path { cursor: pointer; transition: all 0.2s ease; stroke-width: 0.5; }
-    .muscle-path:hover { opacity: 0.75; filter: brightness(0.85); }
-    .muscle-path.treated { fill: #38a169 !important; stroke: #276749 !important; stroke-width: 1.5 !important; }
-    .muscle-path.follow-up { fill: #d69e2e !important; stroke: #b7791f !important; stroke-width: 1.5 !important; }
-    .muscle-tooltip {
-      position: fixed;
-      background: rgba(27,58,107,0.95); color: white;
-      padding: 6px 12px; border-radius: 6px; font-size: 11px;
-      pointer-events: none; z-index: 9999; white-space: nowrap;
-      font-family: var(--font); font-weight: 600;
-      transform: translate(-50%, -130%);
-    }
-    .view-toggle {
-      display: flex; background: var(--bg); border-radius: var(--radius-sm);
-      padding: 3px; gap: 3px; border: 1px solid var(--border);
-    }
-    .view-toggle button {
-      padding: 6px 16px; border-radius: 6px; border: none;
-      font-family: var(--font); font-size: 0.78rem; font-weight: 600;
-      color: var(--text-light); cursor: pointer; transition: all 0.15s;
-      background: transparent;
-    }
-    .view-toggle button.active { background: var(--primary); color: white; }
-
-    /* ── Muscle legend dots ── */
-    .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
-
-    /* ── Technique checkboxes ── */
-    .technique-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm); cursor: pointer;
-      font-size: 0.8rem; font-weight: 500; color: var(--text);
-      transition: all 0.15s; background: #fff;
-    }
-    .technique-item:hover { border-color: var(--accent); background: #f0f8ff; }
-    .technique-item input { accent-color: var(--primary); width: 15px; height: 15px; flex-shrink: 0; }
-    .technique-item input:checked + span { color: var(--primary); font-weight: 600; }
-
-    /* ── SOAP sections ── */
-    .soap-block { border-left: 4px solid; padding-left: 14px; margin-bottom: 4px; }
-    .soap-s { border-color: #5ba3d9; }
-    .soap-o { border-color: #38a169; }
-    .soap-a { border-color: #d69e2e; }
-    .soap-p { border-color: #805ad5; }
-    .soap-n { border-color: #718096; }
-    .soap-letter {
-      width: 30px; height: 30px; border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.88rem; font-weight: 800; flex-shrink: 0;
-    }
-    .soap-letter-s { background: #e8f4fc; color: #5ba3d9; }
-    .soap-letter-o { background: #e6f7ed; color: #38a169; }
-    .soap-letter-a { background: #fef9e8; color: #d69e2e; }
-    .soap-letter-p { background: #f3eeff; color: #805ad5; }
-    .soap-letter-n { background: #f1f5f9; color: #718096; }
-    .soap-textarea {
-      width: 100%; background: transparent; border: none; outline: none;
-      font-family: var(--font); font-size: 0.85rem; color: var(--text);
-      line-height: 1.7; resize: none; padding: 0;
-    }
-
-    /* ── Summary panel ── */
-    .summary-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 7px 0; border-bottom: 1px solid var(--border);
-      font-size: 0.8rem;
-    }
-    .summary-row:last-child { border-bottom: none; }
-    .summary-row .sr-label { color: var(--text-light); font-weight: 500; }
-    .summary-row .sr-val { font-weight: 700; color: var(--primary); }
-
-    /* ── Muscle list chips (selected) ── */
-    .muscle-chip {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 10px; border-radius: 50px; font-size: 0.72rem; font-weight: 600;
-      margin: 2px 3px 2px 0;
-    }
-    .muscle-chip-treated { background: #e6f7ed; color: #276749; border: 1px solid #c6f6d5; }
-    .muscle-chip-followup { background: #fef9e8; color: #b7791f; border: 1px solid #fef08a; }
-
-    /* ── Shimmer ── */
-    .shimmer {
-      background: linear-gradient(90deg, #e2ebf7 25%, #d0dff0 50%, #e2ebf7 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.5s infinite;
-      border-radius: 6px;
-    }
-    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-
-    /* ── Toast ── */
-    #toast {
-      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
-      background: var(--primary); color: white;
-      padding: 10px 24px; border-radius: 50px;
-      font-family: var(--font); font-size: 0.82rem; font-weight: 600;
-      box-shadow: 0 4px 20px rgba(27,58,107,0.3);
-      z-index: 10000; opacity: 0; transition: all 0.3s; pointer-events: none;
-      white-space: nowrap;
-    }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    /* ── Info box ── */
-    .info-box {
-      padding: 14px 16px; border-radius: var(--radius-sm);
-      font-size: 0.8rem; line-height: 1.6;
-    }
-    .info-box-blue { background: #e8f4fc; border: 1px solid #bee3f8; color: #1a5276; }
-    .info-box-yellow { background: var(--warning-bg); border: 1px solid #fde68a; color: var(--warning-txt); }
-    .info-box-green { background: #e6f7ed; border: 1px solid #c6f6d5; color: #276749; }
-    .info-box p { margin: 0; }
-    .info-box strong { font-weight: 700; }
-
-    /* ── PDF upload status ── */
-    .pdf-status {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px; background: #e6f7ed;
-      border: 1px solid #c6f6d5; border-radius: var(--radius-sm);
-      font-size: 0.82rem; color: #276749; font-weight: 600;
-    }
-
-    /* ── Modal ── */
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(27,58,107,0.45);
-      backdrop-filter: blur(3px); z-index: 500;
-      display: flex; align-items: center; justify-content: center; padding: 16px;
-    }
-    .modal-backdrop.hidden, .modal-backdrop[style*="display:none"] { display: none !important; }
-    .modal-box {
-      background: white; border-radius: var(--radius);
-      box-shadow: 0 20px 60px rgba(27,58,107,0.25);
-      width: 100%; overflow: hidden;
-    }
-    .modal-header {
-      background: linear-gradient(135deg, var(--primary), var(--primary-light));
-      padding: 18px 24px; color: white;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .modal-header h3 { font-size: 0.95rem; font-weight: 700; }
-    .modal-header p { font-size: 0.75rem; opacity: 0.8; margin-top: 2px; }
-    .modal-close {
-      background: rgba(255,255,255,0.15); border: none; color: white;
-      width: 30px; height: 30px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 0.85rem; transition: background 0.15s;
-    }
-    .modal-close:hover { background: rgba(255,255,255,0.3); }
-    .modal-body { padding: 20px 24px; overflow-y: auto; max-height: 65vh; }
-    .modal-footer { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    /* ── Footer ── */
-    .site-footer {
-      position: relative; z-index: 1;
-      background: var(--primary);
-      color: rgba(255,255,255,0.75);
-      text-align: center;
-      padding: 16px 24px;
-      font-size: 0.78rem;
-    }
-    .site-footer a { color: rgba(255,255,255,0.75); text-decoration: none; }
-    .site-footer a:hover { color: white; }
-
-    /* ── Responsive ── */
-    @media (max-width: 760px) {
-      [style*="1fr 300px"],
-      [style*="1fr 280px"] {
-        grid-template-columns: 1fr !important;
-      }
-    }
-    @media (max-width: 620px) {
-      .page-content { padding: 16px 14px 48px; }
-      .card-body { padding: 16px 18px; }
-      .card-header-bar { padding: 16px 18px; }
-      .header-inner { padding: 16px 16px 10px; }
-      .header-logo { height: 52px; }
-      .header-actions { right: 16px; }
     }
   </style>
 </head>
@@ -898,24 +482,28 @@ export function renderApp(): string {
             </div>
           </div>
 
-          <!-- API Key -->
+          <!-- API Status -->
           <div class="card-plain">
-            <div class="cp-head"><i class="fas fa-key"></i> OpenAI API Key</div>
+            <div class="cp-head"><i class="fas fa-robot"></i> AI Configuration</div>
             <div class="cp-body">
-              <p style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">Required to generate AI-powered SOAP notes</p>
-              <input id="openaiKey" type="password" placeholder="sk-…"
-                style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.82rem;color:var(--text);outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
-                onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
-                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"
-                oninput="saveOpenAIKey(this.value)"/>
-              <p id="apiKeySavedIndicator" style="font-size:0.72rem;color:var(--success);margin-top:6px;display:none;"><i class="fas fa-check-circle" style="margin-right:4px;"></i>Key saved to browser</p>
-              <p style="font-size:0.72rem;color:var(--text-light);margin-top:6px;"><i class="fas fa-lock" style="margin-right:4px;"></i>Stored in your browser only — never sent to our servers</p>
+              <div id="apiStatusContainer">
+                <p style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">
+                  <i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>Checking AI service status...
+                </p>
+              </div>
             </div>
           </div>
 
           <div class="info-box info-box-yellow">
             <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Before Generating:</strong> Confirm the intake review above. Generate &amp; Save will create SOAP notes and save the updated session data to the client file.</p>
           </div>
+
+          <!-- Medical Shorthand Toggle -->
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
+            <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
+            <span>Use medical shorthand (applies to generation + PDF export)</span>
+          </label>
+          <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);margin-top:-8px;">Current style: Normal writing</p>
 
           <div style="display:flex;gap:10px;">
             <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
@@ -1079,11 +667,6 @@ export function renderApp(): string {
             </div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:8px;">
-                <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
-                  <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
-                  <span>Use medical shorthand (applies to generation + PDF export)</span>
-                </label>
-                <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);">Current style: Normal writing</p>
                 <button onclick="exportPDF()" class="btn btn-primary btn-full">
                   <i class="fas fa-file-pdf"></i> Export as PDF
                 </button>
@@ -1228,30 +811,86 @@ export function renderApp(): string {
 
   <script>
   // ============================================================
+  // CSRF Protection & API Helpers
+  // ============================================================
+  let _csrfToken = null;
+  
+  async function getCsrfToken() {
+    if (_csrfToken) return _csrfToken;
+    try {
+      const res = await fetch('/api/csrf-token');
+      const data = await res.json();
+      _csrfToken = data.csrfToken;
+      return _csrfToken;
+    } catch(e) {
+      console.warn('Could not fetch CSRF token:', e);
+      return null;
+    }
+  }
+  
+  // CSRF-protected fetch wrapper for POST/PUT/DELETE requests
+  async function apiFetch(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const headers = { ...options.headers };
+    
+    // Add CSRF token for state-changing requests
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      const token = await getCsrfToken();
+      if (token) {
+        headers['X-CSRF-Token'] = token;
+      }
+    }
+    
+    return fetch(url, { ...options, headers });
+  }
+
+  // ============================================================
   // CLIENT PROFILES (localStorage-based, synced via webhook)
   // ============================================================
   const CLIENT_PROFILES_KEY = 'flexion_soap_client_profiles';
   const WEBHOOK_CONFIG_KEY  = 'flexion_soap_webhook_config';
-  const OPENAI_KEY_STORAGE  = 'flexion_soap_openai_key';
 
-  // ── OpenAI API Key persistence ──
-  function saveOpenAIKey(value) {
-    try { localStorage.setItem(OPENAI_KEY_STORAGE, value); } catch(e) {}
-    const indicator = document.getElementById('apiKeySavedIndicator');
-    if (indicator) {
-      indicator.style.display = value ? 'block' : 'none';
-    }
-  }
-  function loadOpenAIKey() {
+  // ── API Status Check (server-side key) ──
+  async function checkAPIStatus() {
+    const container = document.getElementById('apiStatusContainer');
+    if (!container) return;
+    
     try {
-      const saved = localStorage.getItem(OPENAI_KEY_STORAGE) || '';
-      const el = document.getElementById('openaiKey');
-      if (el && saved) {
-        el.value = saved;
-        const indicator = document.getElementById('apiKeySavedIndicator');
-        if (indicator) indicator.style.display = 'block';
+      const response = await fetch('/api/ai-status');
+      const data = await response.json();
+      
+      if (data.configured) {
+        container.innerHTML = \`
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#e6f7ed;border:1px solid #c6f6d5;border-radius:var(--radius-sm);">
+            <i class="fas fa-check-circle" style="color:var(--success);font-size:1.1rem;"></i>
+            <div>
+              <div style="font-size:0.82rem;font-weight:600;color:#276749;">AI Service Ready</div>
+              <div style="font-size:0.72rem;color:#38a169;">OpenAI is configured and ready to generate SOAP notes</div>
+            </div>
+          </div>
+        \`;
+      } else {
+        container.innerHTML = \`
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--warning-bg);border:1px solid #fde68a;border-radius:var(--radius-sm);">
+            <i class="fas fa-exclamation-triangle" style="color:var(--warning-txt);font-size:1.1rem;"></i>
+            <div>
+              <div style="font-size:0.82rem;font-weight:600;color:var(--warning-txt);">AI Service Not Configured</div>
+              <div style="font-size:0.72rem;color:#92400e;">Contact administrator to set up OpenAI API key</div>
+            </div>
+          </div>
+        \`;
       }
-    } catch(e) {}
+    } catch(e) {
+      container.innerHTML = \`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-sm);">
+          <i class="fas fa-times-circle" style="color:var(--danger);font-size:1.1rem;"></i>
+          <div>
+            <div style="font-size:0.82rem;font-weight:600;color:var(--danger);">Connection Error</div>
+            <div style="font-size:0.72rem;color:#991b1b;">Could not check AI service status</div>
+          </div>
+        </div>
+      \`;
+    }
   }
 
   // Load client profiles from server database (replaces localStorage)
@@ -1287,7 +926,7 @@ export function renderApp(): string {
   // Save a single profile (upsert by id or email) - now posts to server
   async function upsertClientProfile(profile) {
     try {
-      const res = await fetch('/api/clients', {
+      const res = await apiFetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1327,7 +966,7 @@ export function renderApp(): string {
     if (!confirm('Remove this client profile and all saved sessions?')) return;
 
     try {
-      const res = await fetch('/api/clients/' + encodeURIComponent(id), {
+      const res = await apiFetch('/api/clients/' + encodeURIComponent(id), {
         method: 'DELETE'
       });
       const data = await res.json().catch(() => ({}));
@@ -1371,14 +1010,15 @@ export function renderApp(): string {
     // Show last 6 profiles as clickable chips
     const recent = profiles.slice(0, 6);
     container.innerHTML = recent.map(p => {
-      const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
-      const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
+      const name = escapeHtml([p.firstName, p.lastName].filter(Boolean).join(' '));
+      const initials = escapeHtml([(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase());
+      const safeId = escapeHtml(p.id);
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return '<button onclick="loadClientProfile(this.dataset.clientId)" data-client-id="' + p.id + '" class="client-chip">'
+      return '<button onclick="loadClientProfile(this.dataset.clientId)" data-client-id="' + safeId + '" class="client-chip">'
         + '<div class="chip-avatar">' + (initials || "?") + '</div>'
         + '<div class="chip-content">'
         + '<div class="chip-name">' + (name || "Unknown") + '</div>'
-        + (ago ? '<div class="chip-ago">' + ago + '</div>' : "")
+        + (ago ? '<div class="chip-ago">' + escapeHtml(ago) + '</div>' : "")
         + '</div>'
         + '</button>';
     }).join('');
@@ -2333,8 +1973,11 @@ export function renderApp(): string {
   // Show dot tooltip
   function showDotTooltip(event, number, muscleName, type, notes) {
     const tooltip = document.getElementById('muscleTooltip') || createTooltipElement();
-    const displayText = \`\${number}. \${muscleName}\\n\${type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ')}\${notes ? '\\n' + notes : ''}\`;
-    tooltip.innerHTML = displayText.replace(/\\n/g, '<br>');
+    const safeMuscleName = escapeHtml(muscleName);
+    const safeType = escapeHtml(type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' '));
+    const safeNotes = notes ? escapeHtml(notes) : '';
+    const displayText = \`\${number}. \${safeMuscleName}<br>\${safeType}\${safeNotes ? '<br>' + safeNotes : ''}\`;
+    tooltip.innerHTML = displayText;
     tooltip.classList.remove('hidden');
     tooltip.style.display = 'block';
     tooltip.style.left = (event.clientX + 10) + 'px';
@@ -2420,8 +2063,11 @@ export function renderApp(): string {
     // Load client profiles from server database
     await renderClientProfilesPreview();
 
-    // Load saved OpenAI API key
-    loadOpenAIKey();
+    // Check API status (server-side key)
+    checkAPIStatus();
+    
+    // Pre-fetch CSRF token for subsequent API calls
+    getCsrfToken();
 
     // Load recent Drive PDFs (deferred to ensure function is defined)
     setTimeout(() => { if (typeof loadDriveFiles === 'function') loadDriveFiles(); }, 10);
@@ -2482,7 +2128,7 @@ export function renderApp(): string {
   }
 
   function escJsSingle(value) {
-    return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return String(value || '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
   }
 
   function updateMarkerNotes(dotId, notes) {
@@ -2953,11 +2599,7 @@ export function renderApp(): string {
   // GENERATE SOAP NOTES
   // ============================================================
   async function generateSOAP() {
-    const apiKey = document.getElementById('openaiKey').value.trim();
-    if (!apiKey) {
-      alert('Please enter your OpenAI API key to generate SOAP notes.');
-      return;
-    }
+    // API key is now handled server-side - no client key needed
 
     goToStep(4);
     document.getElementById('soapLoading').style.display = 'block';
@@ -3024,7 +2666,7 @@ export function renderApp(): string {
     try {
       const prompt = buildPrompt(contextData, intakeData, state.useMedicalShorthand);
       
-      const response = await fetch('/api/generate-soap', {
+      const response = await apiFetch('/api/generate-soap', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3482,8 +3124,6 @@ THERAPIST NOTES:
   window.saveTensionDot = saveTensionDot;
   window.removeTensionDot = removeTensionDot;
   window.updateMarkerNotes = updateMarkerNotes;
-  window.saveOpenAIKey = saveOpenAIKey;
-  window.loadOpenAIKey = loadOpenAIKey;
   window.openClientBrowser = openClientBrowser;
   window.closeClientBrowser = closeClientBrowser;
   window.filterClients = filterClients;
@@ -3613,7 +3253,7 @@ THERAPIST NOTES:
     btn.disabled = true;
     label.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/clients/sync', { method: 'POST' });
+      const res = await apiFetch('/api/clients/sync', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         label.textContent = 'Synced ✓';
@@ -3642,21 +3282,25 @@ THERAPIST NOTES:
     }
 
     list.innerHTML = clients.map(c => {
-      const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Unknown';
-      const initials = [(c.firstName||'')[0],(c.lastName||'')[0]].filter(Boolean).join('').toUpperCase() || '?';
+      const name = escapeHtml([c.firstName, c.lastName].filter(Boolean).join(' ') || 'Unknown');
+      const initials = escapeHtml([(c.firstName||'')[0],(c.lastName||'')[0]].filter(Boolean).join('').toUpperCase() || '?');
       const lastSess = c.lastSessionDate ? new Date(c.lastSessionDate).toLocaleDateString('en-AU') : '—';
       const sessions = c.sessionCount || 0;
-      return \`<div onclick="openClientFile('\${c.accountNumber}')"
+      const safeAccountNumber = escJsSingle(c.accountNumber);
+      const safeEmail = escapeHtml(c.email || '');
+      const safePhone = escapeHtml(c.phone || '');
+      const contactInfo = [safeEmail, safePhone].filter(Boolean).join(' · ') || 'No contact details';
+      return \`<div onclick="openClientFile('\${safeAccountNumber}')"
         style="display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;transition:all 0.15s;background:white;"
         onmouseenter="this.style.borderColor='var(--accent)';this.style.background='#f0f8ff';"
         onmouseleave="this.style.borderColor='var(--border)';this.style.background='white';">
         <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;flex-shrink:0;">\${initials}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:700;color:var(--primary);font-size:0.9rem;">\${name}</div>
-          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">\${[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</div>
+          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">\${contactInfo}</div>
         </div>
         <div style="text-align:center;flex-shrink:0;">
-          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">\${c.accountNumber}</div>
+          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">\${escapeHtml(c.accountNumber)}</div>
           <div style="font-size:0.7rem;color:var(--text-light);margin-top:4px;">\${sessions} session\${sessions !== 1 ? 's' : ''} · Last: \${lastSess}</div>
         </div>
         <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;"></i>
@@ -3706,10 +3350,10 @@ THERAPIST NOTES:
 
   function renderClientFile(client, sessions) {
     const esc = (v) => escapeHtml(String(v ?? ''));
-    const escJsSingle = (v) => String(v ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/\\r?\\n/g, ' ');
+    const escJs = (v) => String(v ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/\\n/g, ' ');
     const safeFullName = esc([client.firstName, client.lastName].filter(Boolean).join(' ') || '—');
     const safeAccountNumber = esc(client.accountNumber || '');
-    const safeConnectAccount = escJsSingle(client.accountNumber || '');
+    const safeConnectAccount = escJs(client.accountNumber || '');
 
     document.getElementById('clientFileTitle').innerHTML =
       '<i class="fas fa-user-circle" style="margin-right:8px;opacity:0.8;"></i>' +
@@ -3944,7 +3588,7 @@ THERAPIST NOTES:
     if (btn) btn.disabled = true;
     if (label) label.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
     try {
-      const res = await fetch('/api/drive/sync-pdfs', { method: 'POST' });
+      const res = await apiFetch('/api/drive/sync-pdfs', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         alert('Sync failed: ' + (data.error || 'Unknown error'));
@@ -3981,7 +3625,7 @@ THERAPIST NOTES:
       });
 
       // 1. Create/upsert client record
-      const clientRes = await fetch('/api/clients', {
+      const clientRes = await apiFetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4005,7 +3649,7 @@ THERAPIST NOTES:
       if (!accountNumber) throw new Error('No account number returned');
 
       // 2. Save session
-      const sessRes = await fetch('/api/clients/' + accountNumber + '/sessions', {
+      const sessRes = await apiFetch('/api/clients/' + accountNumber + '/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4060,7 +3704,7 @@ THERAPIST NOTES:
 
       const filename = 'SOAP_' + accountNumber + '_' + sessionDate + '_' + clientName.replace(/\\s+/g,'_') + '.pdf';
 
-      const res = await fetch('/api/drive/upload-pdf', {
+      const res = await apiFetch('/api/drive/upload-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, accountNumber, filename, pdfBase64: base64 })
