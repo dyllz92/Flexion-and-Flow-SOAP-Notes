@@ -59,9 +59,7 @@ function initializeDatabase(): Database.Database {
 export const db = initializeDatabase();
 
 /** Keys that should be encrypted at rest */
-const ENCRYPTED_KEYS = new Set([
-  "global_drive_refresh_token",
-]);
+const ENCRYPTED_KEYS = new Set(["global_drive_refresh_token"]);
 
 /**
  * KV-compatible adapter over SQLite meta table
@@ -73,7 +71,7 @@ export const kv: KVStore = {
       | MetaRow
       | undefined;
     if (!row?.value) return null;
-    
+
     // Decrypt if this is a sensitive key
     if (ENCRYPTED_KEYS.has(key)) {
       return safeDecrypt(row.value);
@@ -83,7 +81,9 @@ export const kv: KVStore = {
 
   put(key: string, value: string): void {
     // Encrypt if this is a sensitive key
-    const storedValue = ENCRYPTED_KEYS.has(key) ? ensureEncrypted(value) : value;
+    const storedValue = ENCRYPTED_KEYS.has(key)
+      ? ensureEncrypted(value)
+      : value;
     db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(
       key,
       storedValue,
@@ -164,14 +164,15 @@ export function saveClient(client: ClientRecord): void {
   if (clientToStore.driveToken) {
     clientToStore.driveToken = ensureEncrypted(clientToStore.driveToken);
   }
-  
+
   db.prepare(
     `
     INSERT OR REPLACE INTO clients (
       account_number, id, data, email, created_at, updated_at,
-      first_name, last_name, phone, session_count, last_session_date
+      first_name, last_name, phone, session_count, last_session_date,
+      dashboard_client_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     client.accountNumber,
@@ -186,6 +187,7 @@ export function saveClient(client: ClientRecord): void {
     client.phone || null,
     client.sessionCount || 0,
     client.lastSessionDate || null,
+    client.dashboardClientId || null,
   );
 }
 

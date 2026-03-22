@@ -25,12 +25,12 @@ const sessions = new Hono();
  */
 sessions.post("/clients/:accountNumber/sessions", async (c) => {
   const acct = c.req.param("accountNumber");
-  
+
   // Validate account number format
   if (!/^[A-Z]{2}-\d{6}-\d{4}$/.test(acct)) {
     return c.json({ error: "Invalid account number format" }, 400);
   }
-  
+
   const client = getClient(acct);
   if (!client) return c.json({ error: "Client not found" }, 404);
 
@@ -114,7 +114,7 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
       .catch((error) => console.error("Drive upload error:", error));
   }
 
-  // Notify Dashboard about new session
+  // Notify Dashboard about new session (fire-and-forget, but store returned clientId)
   notifyDashboard("session_saved", {
     submissionId: body.submissionId || body.sourceSubmissionId || null,
     taskId: body.taskId || null,
@@ -125,7 +125,14 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
     sessionDate: session.sessionDate,
     completedAt: now,
     noteUrl: body.noteUrl || null,
-  });
+  })
+    .then((resp) => {
+      if (resp?.clientId && !client.dashboardClientId) {
+        client.dashboardClientId = resp.clientId;
+        saveClient(client);
+      }
+    })
+    .catch(() => {});
 
   return c.json({ success: true, sessionId, session });
 });

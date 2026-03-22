@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 
 /**
  * Database Migration System
- * 
+ *
  * Each migration has:
  * - version: unique identifier (timestamp-based recommended)
  * - name: human-readable description
@@ -76,12 +76,12 @@ export const migrations: Migration[] = [
       // These are nullable to support existing data
       const columns = [
         "first_name TEXT",
-        "last_name TEXT", 
+        "last_name TEXT",
         "phone TEXT",
         "session_count INTEGER DEFAULT 0",
         "last_session_date TEXT",
       ];
-      
+
       for (const col of columns) {
         const colName = col.split(" ")[0];
         try {
@@ -93,7 +93,7 @@ export const migrations: Migration[] = [
           }
         }
       }
-      
+
       // Create indexes for common searches
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(first_name, last_name);
@@ -106,11 +106,8 @@ export const migrations: Migration[] = [
     name: "add_session_searchable_columns",
     up: (db) => {
       // Add searchable columns for sessions
-      const columns = [
-        "client_name TEXT",
-        "therapist_name TEXT",
-      ];
-      
+      const columns = ["client_name TEXT", "therapist_name TEXT"];
+
       for (const col of columns) {
         const colName = col.split(" ")[0];
         try {
@@ -138,6 +135,22 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    name: "add_dashboard_client_id",
+    up: (db) => {
+      try {
+        db.exec("ALTER TABLE clients ADD COLUMN dashboard_client_id INTEGER");
+      } catch (e: any) {
+        if (!e.message.includes("duplicate column")) {
+          throw e;
+        }
+      }
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_clients_dashboard_id ON clients(dashboard_client_id)",
+      );
+    },
+  },
 ];
 
 /**
@@ -148,18 +161,18 @@ export function getCurrentVersion(db: Database.Database): number {
     // Check if migrations table exists
     const tableExists = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'",
       )
       .get();
-    
+
     if (!tableExists) {
       return 0;
     }
-    
+
     const row = db
       .prepare("SELECT MAX(version) as version FROM migrations")
       .get() as { version: number | null } | undefined;
-    
+
     return row?.version ?? 0;
   } catch {
     return 0;
@@ -171,22 +184,24 @@ export function getCurrentVersion(db: Database.Database): number {
  */
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getCurrentVersion(db);
-  const pendingMigrations = migrations.filter((m) => m.version > currentVersion);
-  
+  const pendingMigrations = migrations.filter(
+    (m) => m.version > currentVersion,
+  );
+
   if (pendingMigrations.length === 0) {
     return;
   }
-  
+
   console.log(`Running ${pendingMigrations.length} pending migration(s)...`);
-  
+
   for (const migration of pendingMigrations) {
     console.log(`  Applying migration ${migration.version}: ${migration.name}`);
-    
+
     try {
       // Run migration in a transaction
       db.transaction(() => {
         migration.up(db);
-        
+
         // Ensure migrations table exists before recording
         db.exec(`
           CREATE TABLE IF NOT EXISTS migrations (
@@ -195,20 +210,20 @@ export function runMigrations(db: Database.Database): void {
             applied_at TEXT NOT NULL
           );
         `);
-        
+
         // Record migration
         db.prepare(
-          "INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)"
+          "INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)",
         ).run(migration.version, migration.name, new Date().toISOString());
       })();
-      
+
       console.log(`  ✓ Migration ${migration.version} complete`);
     } catch (error) {
       console.error(`  ✗ Migration ${migration.version} failed:`, error);
       throw error;
     }
   }
-  
+
   console.log("All migrations complete.");
 }
 
@@ -217,17 +232,19 @@ export function runMigrations(db: Database.Database): void {
  * Run this after migration 3 to populate new columns
  */
 export function backfillClientColumns(db: Database.Database): void {
-  const clients = db.prepare("SELECT account_number, data FROM clients").all() as {
+  const clients = db
+    .prepare("SELECT account_number, data FROM clients")
+    .all() as {
     account_number: string;
     data: string;
   }[];
-  
+
   const updateStmt = db.prepare(`
     UPDATE clients 
     SET first_name = ?, last_name = ?, phone = ?, session_count = ?, last_session_date = ?
     WHERE account_number = ?
   `);
-  
+
   let updated = 0;
   for (const row of clients) {
     try {
@@ -238,14 +255,14 @@ export function backfillClientColumns(db: Database.Database): void {
         data.phone || null,
         data.sessionCount || 0,
         data.lastSessionDate || null,
-        row.account_number
+        row.account_number,
       );
       updated++;
     } catch (e) {
       console.warn(`Failed to backfill client ${row.account_number}:`, e);
     }
   }
-  
+
   console.log(`Backfilled ${updated} client records`);
 }
 
@@ -253,17 +270,19 @@ export function backfillClientColumns(db: Database.Database): void {
  * Backfill session searchable columns
  */
 export function backfillSessionColumns(db: Database.Database): void {
-  const sessions = db.prepare("SELECT session_id, data FROM sessions").all() as {
+  const sessions = db
+    .prepare("SELECT session_id, data FROM sessions")
+    .all() as {
     session_id: string;
     data: string;
   }[];
-  
+
   const updateStmt = db.prepare(`
     UPDATE sessions 
     SET client_name = ?, therapist_name = ?
     WHERE session_id = ?
   `);
-  
+
   let updated = 0;
   for (const row of sessions) {
     try {
@@ -271,13 +290,13 @@ export function backfillSessionColumns(db: Database.Database): void {
       updateStmt.run(
         data.clientName || null,
         data.therapistName || null,
-        row.session_id
+        row.session_id,
       );
       updated++;
     } catch (e) {
       console.warn(`Failed to backfill session ${row.session_id}:`, e);
     }
   }
-  
+
   console.log(`Backfilled ${updated} session records`);
 }
