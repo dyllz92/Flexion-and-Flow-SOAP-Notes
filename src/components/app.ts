@@ -394,6 +394,18 @@ export function renderApp(): string {
             Toggle Anterior / Posterior to select muscles on both sides. All selections are retained.
           </div>
 
+          <!-- Quick Select Common Areas -->
+          <div class="card-plain">
+            <div class="cp-head" style="cursor:pointer;user-select:none;" onclick="toggleQuickSelectPanel()">
+              <i class="fas fa-bolt"></i> Quick Select
+              <i id="quickSelectChevron" class="fas fa-chevron-down" style="margin-left:auto;font-size:0.7rem;transition:transform 0.2s;"></i>
+            </div>
+            <div id="quickSelectPanel" class="cp-body" style="display:none;padding-top:8px;">
+              <p style="font-size:0.72rem;color:var(--text-light);margin-bottom:10px;">Select common pain patterns to quickly add markers:</p>
+              <div id="quickSelectButtons" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+            </div>
+          </div>
+
           <div style="display:flex;gap:10px;">
             <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
@@ -1637,6 +1649,54 @@ export function renderApp(): string {
   const POSTERIOR_MUSCLES = MUSCLES.filter(m => m.view === 'posterior');
 
   // ============================================================
+  // QUICK SELECT PRESETS - Common Pain Patterns
+  // ============================================================
+  const QUICK_SELECT_PRESETS = [
+    {
+      id: 'upper_back_tension',
+      name: 'Upper Back Tension',
+      icon: 'fa-person-rays',
+      description: 'Neck, traps & shoulders',
+      muscles: ['upper_trap_l', 'upper_trap_r', 'levator_scap_l', 'levator_scap_r', 'rhomboids_l', 'rhomboids_r', 'scm_l', 'scm_r']
+    },
+    {
+      id: 'lower_back_pain',
+      name: 'Lower Back Pain',
+      icon: 'fa-user-injured',
+      description: 'QL, erectors & glutes',
+      muscles: ['erector_l', 'erector_r', 'ql_l', 'ql_r', 'glut_max_l', 'glut_max_r', 'glut_med_l', 'glut_med_r', 'piriformis_l', 'piriformis_r']
+    },
+    {
+      id: 'desk_worker',
+      name: 'Desk Worker',
+      icon: 'fa-computer',
+      description: 'Chest, neck & hip flexors',
+      muscles: ['pec_major_l', 'pec_major_r', 'scm_l', 'scm_r', 'upper_trap_l', 'upper_trap_r', 'iliopsoas_l', 'iliopsoas_r']
+    },
+    {
+      id: 'runner_legs',
+      name: 'Runner Recovery',
+      icon: 'fa-person-running',
+      description: 'Quads, hamstrings & calves',
+      muscles: ['quad_l', 'quad_r', 'biceps_fem_l', 'biceps_fem_r', 'semimem_l', 'semimem_r', 'gastroc_l', 'gastroc_r', 'soleus_l', 'soleus_r', 'tfl_l', 'tfl_r']
+    },
+    {
+      id: 'shoulder_complex',
+      name: 'Shoulder Issues',
+      icon: 'fa-hand-fist',
+      description: 'Rotator cuff & deltoids',
+      muscles: ['deltoid_ant_l', 'deltoid_ant_r', 'deltoid_post_l', 'deltoid_post_r', 'infraspinatus_l', 'infraspinatus_r', 'teres_l', 'teres_r']
+    },
+    {
+      id: 'full_back',
+      name: 'Full Back',
+      icon: 'fa-arrows-up-down',
+      description: 'Complete posterior chain',
+      muscles: ['upper_trap_l', 'upper_trap_r', 'rhomboids_l', 'rhomboids_r', 'lats_l', 'lats_r', 'erector_l', 'erector_r', 'ql_l', 'ql_r', 'infraspinatus_l', 'infraspinatus_r', 'teres_l', 'teres_r']
+    }
+  ];
+
+  // ============================================================
   // IMAGE-BASED MUSCLE MAP
   // ============================================================
   // Geometry helpers keep polygon rendering, hit-testing and dot placement
@@ -2007,6 +2067,132 @@ export function renderApp(): string {
       document.body.appendChild(tooltip);
     }
     return tooltip;
+  }
+
+  // ============================================================
+  // QUICK SELECT FUNCTIONS
+  // ============================================================
+  
+  function toggleQuickSelectPanel() {
+    const panel = document.getElementById('quickSelectPanel');
+    const chevron = document.getElementById('quickSelectChevron');
+    if (panel && chevron) {
+      const isHidden = panel.style.display === 'none';
+      panel.style.display = isHidden ? 'block' : 'none';
+      chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+      
+      // Render buttons on first open
+      if (isHidden) {
+        renderQuickSelectButtons();
+      }
+    }
+  }
+  
+  function renderQuickSelectButtons() {
+    const container = document.getElementById('quickSelectButtons');
+    if (!container) return;
+    
+    container.innerHTML = QUICK_SELECT_PRESETS.map(preset => {
+      const isActive = checkPresetActive(preset);
+      return \`
+        <button 
+          data-testid="quick-select-\${preset.id}"
+          onclick="applyQuickSelectPreset('\${preset.id}')"
+          class="btn \${isActive ? 'btn-primary' : 'btn-ghost'} btn-sm"
+          style="display:flex;flex-direction:column;align-items:center;padding:10px 8px;gap:4px;height:auto;text-align:center;\${isActive ? 'background:var(--accent);color:white;' : ''}"
+          title="\${preset.description}">
+          <i class="fas \${preset.icon}" style="font-size:1rem;"></i>
+          <span style="font-size:0.68rem;line-height:1.2;white-space:normal;">\${preset.name}</span>
+        </button>
+      \`;
+    }).join('');
+  }
+  
+  function checkPresetActive(preset) {
+    // Check if any muscles from this preset are already marked
+    return preset.muscles.some(muscleId => state.treatedMuscles.has(muscleId));
+  }
+  
+  function applyQuickSelectPreset(presetId) {
+    const preset = QUICK_SELECT_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    
+    // Check if preset is already active (has any muscles marked)
+    const isActive = checkPresetActive(preset);
+    
+    if (isActive) {
+      // Remove all muscles from this preset
+      preset.muscles.forEach(muscleId => {
+        // Remove all dots for this muscle
+        const dotsToRemove = state.tensionPoints.filter(dot => dot.muscleId === muscleId);
+        dotsToRemove.forEach(dot => {
+          const dotIndex = state.tensionPoints.findIndex(d => d.id === dot.id);
+          if (dotIndex !== -1) {
+            state.tensionPoints.splice(dotIndex, 1);
+          }
+        });
+        state.treatedMuscles.delete(muscleId);
+      });
+      
+      // Renumber remaining dots
+      state.tensionPoints.forEach((dot, index) => {
+        dot.number = index + 1;
+      });
+      
+      showCopyFeedback(\`Cleared \${preset.name} markers\`);
+    } else {
+      // Add markers for all muscles in preset
+      let addedCount = 0;
+      preset.muscles.forEach(muscleId => {
+        // Skip if already has a marker
+        if (state.treatedMuscles.has(muscleId)) return;
+        
+        const muscle = MUSCLES.find(m => m.id === muscleId);
+        if (!muscle) return;
+        
+        // Calculate centroid for marker placement
+        const vbH = getViewBoxHeight(state.currentGender);
+        const points = getPolygonPoints(muscle, state.currentGender, vbH);
+        const centroid = polygonCentroid(points);
+        
+        // Convert back to male coordinates for storage (will be scaled on render)
+        const storageX = muscle.view === state.currentView ? centroid.x : centroid.x;
+        const storageY = muscle.view === state.currentView ? centroid.y : centroid.y;
+        
+        // Get original centroid from muscle points (not gender-scaled)
+        const originalPoints = muscle.points.split(' ').map(pair => {
+          const nums = pair.split(',').map(Number);
+          return { x: nums[0], y: nums[1] };
+        });
+        const originalCentroid = polygonCentroid(originalPoints);
+        
+        // Create new tension point
+        const dotNumber = state.tensionPoints.length + 1;
+        const newDot = {
+          id: 'dot_' + Date.now() + '_' + muscleId,
+          number: dotNumber,
+          x: Math.round(originalCentroid.x),
+          y: Math.round(originalCentroid.y),
+          muscleId: muscleId,
+          muscleName: muscle.name,
+          type: 'pain-area',
+          notes: '',
+          timestamp: new Date().toISOString()
+        };
+        
+        state.tensionPoints.push(newDot);
+        state.treatedMuscles.add(muscleId);
+        addedCount++;
+      });
+      
+      showCopyFeedback(\`Added \${addedCount} markers for \${preset.name}\`);
+    }
+    
+    // Refresh display
+    renderMuscleMap();
+    updateMuscleLists();
+    updateSummaryPanel();
+    renderQuickSelectButtons();
   }
 
 
@@ -3195,6 +3381,9 @@ THERAPIST NOTES:
   window.saveTensionDot = saveTensionDot;
   window.removeTensionDot = removeTensionDot;
   window.updateMarkerNotes = updateMarkerNotes;
+  // Quick Select functions
+  window.toggleQuickSelectPanel = toggleQuickSelectPanel;
+  window.applyQuickSelectPreset = applyQuickSelectPreset;
   window.openClientBrowser = openClientBrowser;
   window.closeClientBrowser = closeClientBrowser;
   window.filterClients = filterClients;
