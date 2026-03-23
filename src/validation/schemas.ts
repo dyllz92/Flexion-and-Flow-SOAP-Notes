@@ -6,10 +6,7 @@ import { z } from "zod";
 
 // Sanitize string - trim and limit length
 const sanitizedString = (maxLength = 500) =>
-  z
-    .string()
-    .trim()
-    .max(maxLength, `Maximum ${maxLength} characters allowed`);
+  z.string().trim().max(maxLength, `Maximum ${maxLength} characters allowed`);
 
 // Optional sanitized string
 const optionalString = (maxLength = 500) =>
@@ -38,10 +35,7 @@ const phoneSchema = z
 const dateSchema = z
   .string()
   .trim()
-  .refine(
-    (val) => !val || !isNaN(Date.parse(val)),
-    "Invalid date format"
-  )
+  .refine((val) => !val || !isNaN(Date.parse(val)), "Invalid date format")
   .optional()
   .or(z.literal(""));
 
@@ -51,7 +45,7 @@ const painLevelSchema = z
   .transform((val) => (val === "" ? null : Number(val)))
   .refine(
     (val) => val === null || (val >= 0 && val <= 10),
-    "Pain level must be between 0 and 10"
+    "Pain level must be between 0 and 10",
   )
   .optional();
 
@@ -73,7 +67,7 @@ export const clientSchema = z.object({
   // Optional fields for intake webhook
   id: z.string().uuid().optional(),
   source: optionalString(100),
-  intakeData: z.record(z.string()).optional(),
+  intakeData: z.record(z.string(), z.string()).optional(),
   primaryConcern: optionalString(1000),
   painIntensity: painLevelSchema,
 });
@@ -142,7 +136,7 @@ export const drivePdfUploadSchema = z.object({
   accountNumber: sanitizedString(50),
   filename: sanitizedString(255).regex(
     /^[\w\-. ]+\.pdf$/i,
-    "Invalid PDF filename"
+    "Invalid PDF filename",
   ),
   pdfBase64: z
     .string()
@@ -184,20 +178,19 @@ export type IntakeWebhookInput = z.infer<typeof intakeWebhookSchema>;
  * Client import schema (for bulk imports)
  */
 export const clientImportSchema = z.object({
-  clients: z.array(clientUpdateSchema).max(1000, "Maximum 1000 clients per import"),
+  clients: z
+    .array(clientUpdateSchema)
+    .max(1000, "Maximum 1000 clients per import"),
 });
 
 /**
  * Validation helper - returns parsed data or throws formatted error
  */
-export function validateInput<T>(
-  schema: z.ZodSchema<T>,
-  data: unknown
-): T {
+export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown): T {
   const result = schema.safeParse(data);
   if (!result.success) {
-    const errors = result.error.errors
-      .map((e) => `${e.path.join(".")}: ${e.message}`)
+    const errors = result.error.issues
+      .map((issue: z.ZodIssue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("; ");
     throw new ValidationError(errors);
   }

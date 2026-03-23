@@ -57,13 +57,21 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
     musclesTreated: body.musclesTreated || [],
     musclesToFollowUp: body.musclesToFollowUp || [],
     techniques: body.techniques || [],
-    soapNote: body.soapNote || {
-      subjective: "",
-      objective: "",
-      assessment: "",
-      plan: "",
-      therapistNotes: "",
-    },
+    soapNote: body.soapNote
+      ? {
+          subjective: body.soapNote.subjective || "",
+          objective: body.soapNote.objective || "",
+          assessment: body.soapNote.assessment || "",
+          plan: body.soapNote.plan || "",
+          therapistNotes: body.soapNote.therapistNotes || "",
+        }
+      : {
+          subjective: "",
+          objective: "",
+          assessment: "",
+          plan: "",
+          therapistNotes: "",
+        },
     intakeSnapshot: body.intakeSnapshot || "",
     therapistName: body.therapistName || "",
     therapistCredentials: body.therapistCredentials || "",

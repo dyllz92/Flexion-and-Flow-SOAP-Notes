@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { ClientRecord } from "../types/index.js";
+import type { ClientRecord, IntakeSnapshot } from "../types/index.js";
 import {
   findClientByEmail,
   getClient,
@@ -17,6 +17,19 @@ import {
   validateInput,
   ValidationError,
 } from "../validation/schemas.js";
+
+/**
+ * Helper to safely convert unknown values to string records
+ */
+function convertToStringRecord(
+  data: Record<string, unknown>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    result[key] = String(value || "");
+  }
+  return result;
+}
 
 const clients = new Hono();
 
@@ -52,10 +65,10 @@ clients.post("/", async (c) => {
 
   if (existing) {
     // Update existing client with new intake data
-    const intakeEntry = {
+    const intakeEntry: IntakeSnapshot = {
       savedAt: now,
       source: body.source || "soap-generator",
-      data: body.intakeData || {},
+      data: convertToStringRecord(body.intakeData || {}),
     };
 
     existing.updatedAt = now;
@@ -112,7 +125,7 @@ clients.post("/", async (c) => {
       {
         savedAt: now,
         source: body.source || "soap-generator",
-        data: body.intakeData || {},
+        data: convertToStringRecord(body.intakeData || {}),
       },
     ],
     sessionCount: 0,
@@ -141,30 +154,43 @@ clients.post("/", async (c) => {
  */
 clients.get("/", (c) => {
   const page = Math.max(1, parseInt(c.req.query("page") || "1", 10));
-  const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") || "50", 10)));
+  const limit = Math.min(
+    200,
+    Math.max(1, parseInt(c.req.query("limit") || "50", 10)),
+  );
   const search = c.req.query("search")?.trim().toLowerCase() || "";
   const sortField = c.req.query("sort") || "updated_at";
   const sortOrder = c.req.query("order") === "asc" ? "ASC" : "DESC";
-  
+
   const offset = (page - 1) * limit;
-  
+
   // Validate sort field to prevent SQL injection
-  const allowedSortFields = ["updated_at", "created_at", "first_name", "last_name", "session_count", "last_session_date"];
-  const safeSortField = allowedSortFields.includes(sortField) ? sortField : "updated_at";
-  
+  const allowedSortFields = [
+    "updated_at",
+    "created_at",
+    "first_name",
+    "last_name",
+    "session_count",
+    "last_session_date",
+  ];
+  const safeSortField = allowedSortFields.includes(sortField)
+    ? sortField
+    : "updated_at";
+
   let whereClause = "";
   const params: any[] = [];
-  
+
   if (search) {
-    whereClause = "WHERE (LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR LOWER(email) LIKE ?)";
+    whereClause =
+      "WHERE (LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR LOWER(email) LIKE ?)";
     const searchPattern = `%${search}%`;
     params.push(searchPattern, searchPattern, searchPattern);
   }
-  
+
   // Get total count for pagination metadata
   const countQuery = `SELECT COUNT(*) as total FROM clients ${whereClause}`;
   const { total } = db.prepare(countQuery).get(...params) as { total: number };
-  
+
   // Get paginated results using searchable columns where possible
   const dataQuery = `
     SELECT data FROM clients 
@@ -173,7 +199,7 @@ clients.get("/", (c) => {
     LIMIT ? OFFSET ?
   `;
   params.push(limit, offset);
-  
+
   const rows = db.prepare(dataQuery).all(...params) as { data: string }[];
 
   const clients = rows
@@ -202,7 +228,7 @@ clients.get("/", (c) => {
     .filter(Boolean);
 
   const totalPages = Math.ceil(total / limit);
-  
+
   return c.json({
     clients,
     pagination: {
