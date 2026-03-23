@@ -87,10 +87,10 @@ export function renderApp(): string {
         <span id="statusBadge" class="badge badge-success" style="display:none">
           <i class="fas fa-check-circle"></i> Note Ready
         </span>
-        <button onclick="openClientAccounts()" class="btn btn-ghost btn-sm" title="Client Accounts">
+        <button onclick="openClientAccounts()" class="btn btn-ghost btn-sm" title="Client Accounts" data-testid="header-clients-btn">
           <i class="fas fa-users"></i> <span class="hide-mobile">Clients</span>
         </button>
-        <button onclick="resetAll()" class="btn btn-ghost btn-sm">
+        <button onclick="resetAll()" class="btn btn-ghost btn-sm" data-testid="header-new-session-btn">
           <i class="fas fa-rotate-right"></i> <span class="hide-mobile">New Session</span>
         </button>
       </div>
@@ -100,22 +100,22 @@ export function renderApp(): string {
   <!-- Step Bar -->
   <nav class="step-bar">
     <div class="step-bar-inner">
-      <div class="step-item active" id="stepItem1" onclick="goToStep(1)">
+      <div class="step-item active" id="stepItem1" onclick="goToStep(1)" data-testid="step-client-intake">
         <div class="step-num" id="stepNum1">1</div>
         <span class="step-label">Client Intake</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem2" onclick="goToStep(2)">
+      <div class="step-item" id="stepItem2" onclick="goToStep(2)" data-testid="step-muscle-map">
         <div class="step-num" id="stepNum2">2</div>
         <span class="step-label" id="stepLabel2">Muscle Map</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem3" onclick="goToStep(3)">
+      <div class="step-item" id="stepItem3" onclick="goToStep(3)" data-testid="step-session-notes">
         <div class="step-num" id="stepNum3">3</div>
         <span class="step-label" id="stepLabel3">Session Notes</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem4" onclick="goToStep(4)">
+      <div class="step-item" id="stepItem4" onclick="goToStep(4)" data-testid="step-soap-notes">
         <div class="step-num" id="stepNum4">4</div>
         <span class="step-label" id="stepLabel4">SOAP Notes</span>
       </div>
@@ -226,17 +226,17 @@ export function renderApp(): string {
             <div class="field-row">
               <div class="field">
                 <label>First Name <span class="req">*</span></label>
-                <input id="clientFirstName" type="text" placeholder="Jane" />
+                <input id="clientFirstName" type="text" placeholder="Jane" data-testid="input-first-name" />
               </div>
               <div class="field">
                 <label>Last Name <span class="req">*</span></label>
-                <input id="clientLastName" type="text" placeholder="Smith" />
+                <input id="clientLastName" type="text" placeholder="Smith" data-testid="input-last-name" />
               </div>
             </div>
             <div class="field-row">
               <div class="field">
                 <label>Email <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;">(used to link client file)</span></label>
-                <input id="clientEmail" type="email" placeholder="jane@example.com" oninput="updateSummaryPanel()" />
+                <input id="clientEmail" type="email" placeholder="jane@example.com" oninput="updateSummaryPanel()" data-testid="input-email" />
               </div>
               <div class="field">
                 <label>Date of Birth</label>
@@ -250,13 +250,13 @@ export function renderApp(): string {
               </div>
             <div class="field">
               <label>Chief Complaint / Reason for Visit</label>
-              <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches…" />
+              <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches…" data-testid="input-chief-complaint" />
               </div>
             </div>
             <div class="field-row">
               <div class="field">
                 <label>Pain Level (0–10)</label>
-                <input id="painLevel" type="number" min="0" max="10" placeholder="7" />
+                <input id="painLevel" type="number" min="0" max="10" placeholder="7" data-testid="input-pain-level" />
               </div>
               <div class="field">
                 <label>Session Duration</label>
@@ -318,16 +318,16 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <div class="view-toggle">
-                  <button id="btnMale" onclick="setGender('male')" class="active">
+                  <button id="btnMale" onclick="setGender('male')" class="active" data-testid="btn-male">
                     <i class="fas fa-mars" style="margin-right:4px;"></i>Male
                   </button>
-                  <button id="btnFemale" onclick="setGender('female')">
+                  <button id="btnFemale" onclick="setGender('female')" data-testid="btn-female">
                     <i class="fas fa-venus" style="margin-right:4px;"></i>Female
                   </button>
                 </div>
                 <div class="view-toggle">
-                  <button id="btnAnterior" onclick="setView('anterior')" class="active">Anterior</button>
-                  <button id="btnPosterior" onclick="setView('posterior')">Posterior</button>
+                  <button id="btnAnterior" onclick="setView('anterior')" class="active" data-testid="btn-anterior">Anterior</button>
+                  <button id="btnPosterior" onclick="setView('posterior')" data-testid="btn-posterior">Posterior</button>
                 </div>
               </div>
             </div>
@@ -340,7 +340,7 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-                  <input id="toggleMusclePolygons" type="checkbox" onchange="toggleMusclePolygons(this.checked)" />
+                  <input id="toggleMusclePolygons" type="checkbox" onchange="toggleMusclePolygons(this.checked)" data-testid="toggle-muscle-polygons" />
                   Show muscle polygons
                 </label>
               </div>
@@ -383,7 +383,7 @@ export function renderApp(): string {
                   <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Add a marker on the map, then describe each area here.</p>
                 </div>
               </div>
-              <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;">
+              <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;" data-testid="btn-clear-all-markers">
                 <i class="fas fa-times"></i> Clear All Markers
               </button>
             </div>
@@ -521,7 +521,7 @@ export function renderApp(): string {
             <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-generate-soap">
               <i class="fas fa-wand-magic-sparkles"></i> Generate &amp; Save
             </button>
           </div>
@@ -679,13 +679,13 @@ export function renderApp(): string {
             </div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:8px;">
-                <button onclick="exportPDF()" class="btn btn-primary btn-full">
+                <button onclick="exportPDF()" class="btn btn-primary btn-full" data-testid="btn-export-pdf">
                   <i class="fas fa-file-pdf"></i> Export as PDF
                 </button>
                 <button onclick="copyAllSOAP()" class="btn btn-outline btn-full">
                   <i class="fas fa-copy"></i> Copy All Text
                 </button>
-                <button onclick="regenerateSOAP()" class="btn btn-ghost btn-full">
+                <button onclick="regenerateSOAP()" class="btn btn-ghost btn-full" data-testid="btn-regenerate-soap">
                   <i class="fas fa-rotate"></i> Regenerate
                 </button>
               </div>
