@@ -407,10 +407,10 @@ export function renderApp(): string {
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+            <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;" data-testid="btn-step2-back">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="goToStep(3)" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <button onclick="goToStep(3)" class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-step2-next">
               Next <i class="fas fa-arrow-right"></i>
             </button>
           </div>
