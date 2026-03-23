@@ -70,8 +70,7 @@ export function renderApp(): string {
   <!-- Header -->
   <header class="site-header">
     <div class="header-inner">
-      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"
-           onerror="this.src=''; this.onerror=null; this.style.display='none'; document.getElementById('fallbackLogo').style.display='flex'"/>
+      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"/>
       <div id="fallbackLogo" style="display:none; flex-direction:column; align-items:center; gap:4px;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:40px;height:40px;border-radius:10px;background:var(--primary);display:flex;align-items:center;justify-content:center;">
@@ -87,10 +86,10 @@ export function renderApp(): string {
         <span id="statusBadge" class="badge badge-success" style="display:none">
           <i class="fas fa-check-circle"></i> Note Ready
         </span>
-        <button onclick="openClientAccounts()" class="btn btn-ghost btn-sm" title="Client Accounts">
+        <button id="openClientAccountsBtn" class="btn btn-ghost btn-sm" title="Client Accounts">
           <i class="fas fa-users"></i> <span class="hide-mobile">Clients</span>
         </button>
-        <button onclick="resetAll()" class="btn btn-ghost btn-sm">
+        <button id="resetAllBtn" class="btn btn-ghost btn-sm">
           <i class="fas fa-rotate-right"></i> <span class="hide-mobile">New Session</span>
         </button>
       </div>
@@ -100,22 +99,22 @@ export function renderApp(): string {
   <!-- Step Bar -->
   <nav class="step-bar">
     <div class="step-bar-inner">
-      <div class="step-item active" id="stepItem1" onclick="goToStep(1)">
+      <div class="step-item active" id="stepItem1" data-step="1">
         <div class="step-num" id="stepNum1">1</div>
         <span class="step-label">Client Intake</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem2" onclick="goToStep(2)">
+      <div class="step-item" id="stepItem2" data-step="2">
         <div class="step-num" id="stepNum2">2</div>
         <span class="step-label" id="stepLabel2">Muscle Map</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem3" onclick="goToStep(3)">
+      <div class="step-item" id="stepItem3" data-step="3">
         <div class="step-num" id="stepNum3">3</div>
         <span class="step-label" id="stepLabel3">Session Notes</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem4" onclick="goToStep(4)">
+      <div class="step-item" id="stepItem4" data-step="4">
         <div class="step-num" id="stepNum4">4</div>
         <span class="step-label" id="stepLabel4">SOAP Notes</span>
       </div>
@@ -143,10 +142,10 @@ export function renderApp(): string {
               </div>
             </div>
             <div style="display:flex;gap:10px;">
-              <button onclick="openClientBrowser()" class="btn btn-sm btn-profile-primary">
+              <button id="openClientBrowserBtn" class="btn btn-sm btn-profile-primary">
                 <i class="fas fa-search"></i> Browse Clients
               </button>
-              <button onclick="openWebhookConfig()" class="btn btn-sm btn-profile-secondary" title="Configure integration">
+              <button id="openWebhookConfigBtn" class="btn btn-sm btn-profile-secondary" title="Configure integration">
                 <i class="fas fa-link"></i> Setup
               </button>
             </div>
@@ -176,19 +175,16 @@ export function renderApp(): string {
             <p>Auto-extracts client information from the Flexion &amp; Flow intake PDF</p>
           </div>
           <div class="card-body">
-            <div id="dropZone" class="drop-zone"
-                 onclick="document.getElementById('pdfInput').click()"
-                 ondragover="handleDragOver(event)"
-                 ondrop="handleDrop(event)">
+            <div id="dropZone" class="drop-zone">
               <div class="dz-icon"><i class="fas fa-file-pdf"></i></div>
               <p>Drop PDF here or click to browse</p>
               <p class="dz-sub">Flexion &amp; Flow intake forms supported</p>
-              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none" onchange="handlePDFUpload(event)"/>
+              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none"/>
             </div>
             <div id="pdfStatus" style="display:none;margin-top:12px;" class="pdf-status">
               <i class="fas fa-check-circle" style="color:var(--success);font-size:1rem;"></i>
               <span id="pdfFileName"></span>
-              <button onclick="clearPDF()" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
+              <button id="clearPDFBtn" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
                 <i class="fas fa-times"></i>
               </button>
             </div>
@@ -236,7 +232,7 @@ export function renderApp(): string {
             <div class="field-row">
               <div class="field">
                 <label>Email <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;">(used to link client file)</span></label>
-                <input id="clientEmail" type="email" placeholder="jane@example.com" oninput="updateSummaryPanel()" />
+                <input id="clientEmail" type="email" placeholder="jane@example.com" />
               </div>
               <div class="field">
                 <label>Date of Birth</label>
@@ -288,12 +284,10 @@ export function renderApp(): string {
           <div class="card-body">
             <textarea id="intakeFormData" rows="5"
               placeholder="Intake form data will appear here after PDF upload, or type manually…&#10;&#10;Include: medical history, current conditions, allergies, medications, past injuries, client goals, etc."
-              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
-              onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
-              onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"></textarea>
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"></textarea>
           </div>
           <div class="card-footer" style="display:flex;justify-content:flex-end;">
-            <button onclick="goToStep(2)" class="btn btn-primary">
+            <button id="goToStep2Btn" class="btn btn-primary">
               Next: Select Muscles <i class="fas fa-arrow-right"></i>
             </button>
           </div>
@@ -318,16 +312,16 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <div class="view-toggle">
-                  <button id="btnMale" onclick="setGender('male')" class="active">
+                  <button id="btnMale" data-gender="male" class="active">
                     <i class="fas fa-mars" style="margin-right:4px;"></i>Male
                   </button>
-                  <button id="btnFemale" onclick="setGender('female')">
+                  <button id="btnFemale" data-gender="female">
                     <i class="fas fa-venus" style="margin-right:4px;"></i>Female
                   </button>
                 </div>
                 <div class="view-toggle">
-                  <button id="btnAnterior" onclick="setView('anterior')" class="active">Anterior</button>
-                  <button id="btnPosterior" onclick="setView('posterior')">Posterior</button>
+                  <button id="btnAnterior" data-view="anterior" class="active">Anterior</button>
+                  <button id="btnPosterior" data-view="posterior">Posterior</button>
                 </div>
               </div>
             </div>
@@ -340,7 +334,7 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-                  <input id="toggleMusclePolygons" type="checkbox" onchange="toggleMusclePolygons(this.checked)" />
+                  <input id="toggleMusclePolygons" type="checkbox" />
                   Show muscle polygons
                 </label>
               </div>
@@ -383,7 +377,7 @@ export function renderApp(): string {
                   <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Add a marker on the map, then describe each area here.</p>
                 </div>
               </div>
-              <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;">
+              <button id="clearAllMusclesBtn" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;">
                 <i class="fas fa-times"></i> Clear All Markers
               </button>
             </div>
@@ -395,10 +389,10 @@ export function renderApp(): string {
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+            <button id="goToStep1FromMapBtn" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="goToStep(3)" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <button id="goToStep3FromMapBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
               Next <i class="fas fa-arrow-right"></i>
             </button>
           </div>
@@ -500,16 +494,16 @@ export function renderApp(): string {
 
           <!-- Medical Shorthand Toggle -->
           <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
-            <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
+            <input id="medicalShorthandToggle" type="checkbox" style="accent-color:var(--primary);cursor:pointer;" />
             <span>Use medical shorthand (applies to generation + PDF export)</span>
           </label>
           <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);margin-top:-8px;">Current style: Normal writing</p>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+            <button id="goToStep2FromNotesBtn" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <button id="generateSOAPBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
               <i class="fas fa-wand-magic-sparkles"></i> Generate &amp; Save
             </button>
           </div>
@@ -578,7 +572,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-s">S</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Subjective</h3>
-                  <button onclick="copySection('S')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionSBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-s">
                   <textarea id="soapS" rows="4" class="soap-textarea"></textarea>
@@ -592,7 +586,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-o">O</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Objective</h3>
-                  <button onclick="copySection('O')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionOBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-o">
                   <textarea id="soapO" rows="5" class="soap-textarea"></textarea>
@@ -606,7 +600,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-a">A</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Assessment</h3>
-                  <button onclick="copySection('A')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionABtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-a">
                   <textarea id="soapA" rows="4" class="soap-textarea"></textarea>
@@ -620,7 +614,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-p">P</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Plan</h3>
-                  <button onclick="copySection('P')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionPBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-p">
                   <textarea id="soapP" rows="4" class="soap-textarea"></textarea>
@@ -634,7 +628,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-n">N</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Therapist Notes</h3>
-                  <button onclick="copySection('N')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionNBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-n">
                   <textarea id="soapN" rows="3" class="soap-textarea"></textarea>
@@ -688,8 +682,8 @@ export function renderApp(): string {
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(3)" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
-            <button onclick="resetAll()" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
+            <button id="goToStep3FromSOAPBtn" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
+            <button id="resetAllFromSOAPBtn" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
           </div>
 
         </div>
@@ -714,7 +708,7 @@ export function renderApp(): string {
           <h3><i class="fas fa-users" style="margin-right:8px;opacity:0.8;"></i>Client Profiles</h3>
           <p>Select a client to auto-fill their intake information</p>
         </div>
-        <button class="modal-close" onclick="closeClientBrowser()"><i class="fas fa-times"></i></button>
+        <button id="modalCloseClientBrowserBtn" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
         <div style="position:relative;">
@@ -729,7 +723,7 @@ export function renderApp(): string {
       <div id="clientList" class="modal-body" style="flex:1;"></div>
       <div class="modal-footer">
         <span id="clientCount" style="font-size:0.75rem;color:var(--text-light);"></span>
-        <button onclick="closeClientBrowser()" class="btn btn-ghost btn-sm">Close</button>
+        <button id="closeClientBrowserBtn" class="btn btn-ghost btn-sm">Close</button>
       </div>
     </div>
   </div>
@@ -744,7 +738,7 @@ export function renderApp(): string {
           <h3><i class="fas fa-link" style="margin-right:8px;opacity:0.8;"></i>Flexion &amp; Flow Integration Setup</h3>
           <p>Connect the intake form to this SOAP generator</p>
         </div>
-        <button class="modal-close" onclick="closeWebhookConfig()"><i class="fas fa-times"></i></button>
+        <button id="modalCloseWebhookBtn" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body">
         <div class="info-box info-box-blue" style="margin-bottom:18px;">
@@ -762,7 +756,7 @@ export function renderApp(): string {
           <div style="display:flex;gap:8px;">
             <input id="myWebhookUrl" type="text" readonly
               style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.78rem;background:#f7faff;color:var(--text);outline:none;"/>
-            <button onclick="copyWebhookUrl()" class="btn btn-ghost btn-sm" title="Copy URL">
+            <button id="copyWebhookUrlBtn" class="btn btn-ghost btn-sm" title="Copy URL">
               <i class="fas fa-copy"></i>
             </button>
           </div>
@@ -2091,6 +2085,271 @@ export function renderApp(): string {
     document.getElementById('sessionViewModal').addEventListener('click', function(e) {
       if (e.target === this) closeSessionView();
     });
+
+    // Header buttons
+    document.getElementById('openClientAccountsBtn').addEventListener('click', openClientAccounts);
+    document.getElementById('resetAllBtn').addEventListener('click', resetAll);
+
+    // Step navigation
+    document.querySelectorAll('.step-item').forEach(stepItem => {
+      stepItem.addEventListener('click', function() {
+        const step = parseInt(this.dataset.step);
+        goToStep(step);
+      });
+    });
+
+    // Client profile buttons
+    document.getElementById('openClientBrowserBtn').addEventListener('click', openClientBrowser);
+    document.getElementById('openWebhookConfigBtn').addEventListener('click', openWebhookConfig);
+
+    // PDF upload functionality
+    const dropZone = document.getElementById('dropZone');
+    const pdfInput = document.getElementById('pdfInput');
+    
+    dropZone.addEventListener('click', () => pdfInput.click());
+    dropZone.addEventListener('dragover', handleDragOver);
+    dropZone.addEventListener('drop', handleDrop);
+    pdfInput.addEventListener('change', handlePDFUpload);
+    
+    const clearPDFBtn = document.getElementById('clearPDFBtn');
+    if (clearPDFBtn) {
+      clearPDFBtn.addEventListener('click', clearPDF);
+    }
+
+    // Intake form textarea focus/blur styling
+    const intakeFormData = document.getElementById('intakeFormData');
+    if (intakeFormData) {
+      intakeFormData.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+        this.style.boxShadow = '0 0 0 3px rgba(91,163,217,0.15)';
+      });
+      intakeFormData.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.boxShadow = 'none';
+      });
+    }
+
+    // Navigation buttons
+    const goToStep2Btn = document.getElementById('goToStep2Btn');
+    if (goToStep2Btn) {
+      goToStep2Btn.addEventListener('click', () => goToStep(2));
+    }
+
+    // Gender and view toggles
+    document.getElementById('btnMale').addEventListener('click', function() {
+      setGender(this.dataset.gender);
+    });
+    document.getElementById('btnFemale').addEventListener('click', function() {
+      setGender(this.dataset.gender);
+    });
+    document.getElementById('btnAnterior').addEventListener('click', function() {
+      setView(this.dataset.view);
+    });
+    document.getElementById('btnPosterior').addEventListener('click', function() {
+      setView(this.dataset.view);
+    });
+
+    // Muscle polygons toggle
+    const toggleMusclePolygons = document.getElementById('toggleMusclePolygons');
+    if (toggleMusclePolygons) {
+      toggleMusclePolygons.addEventListener('change', function() {
+        toggleMusclePolygons(this.checked);
+      });
+    }
+
+    // Additional form elements with oninput handlers
+    const clientEmail = document.getElementById('clientEmail');
+    if (clientEmail) {
+      clientEmail.addEventListener('input', updateSummaryPanel);
+    }
+
+    // Step 2 (Muscle Map) buttons
+    const clearAllMusclesBtn = document.getElementById('clearAllMusclesBtn');
+    if (clearAllMusclesBtn) {
+      clearAllMusclesBtn.addEventListener('click', clearAllMuscles);
+    }
+
+    const goToStep1FromMapBtn = document.getElementById('goToStep1FromMapBtn');
+    if (goToStep1FromMapBtn) {
+      goToStep1FromMapBtn.addEventListener('click', () => goToStep(1));
+    }
+
+    const goToStep3FromMapBtn = document.getElementById('goToStep3FromMapBtn');
+    if (goToStep3FromMapBtn) {
+      goToStep3FromMapBtn.addEventListener('click', () => goToStep(3));
+    }
+
+    // Step 3 (Session Notes) form field focus/blur styling
+    const chiefComplaint = document.getElementById('chiefComplaint');
+    if (chiefComplaint) {
+      chiefComplaint.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+        this.style.boxShadow = '0 0 0 3px rgba(91,163,217,0.15)';
+      });
+      chiefComplaint.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.boxShadow = 'none';
+      });
+    }
+
+    // Jump navigation buttons
+    const jumpToChiefComplaintBtn = document.getElementById('jumpToChiefComplaintBtn');
+    if (jumpToChiefComplaintBtn) {
+      jumpToChiefComplaintBtn.addEventListener('click', () => jumpToField(1, 'chiefComplaint'));
+    }
+
+    const jumpToSessionSummaryBtn = document.getElementById('jumpToSessionSummaryBtn');
+    if (jumpToSessionSummaryBtn) {
+      jumpToSessionSummaryBtn.addEventListener('click', () => jumpToField(3, 'sessionSummary'));
+    }
+
+    // Medical shorthand toggle
+    const medicalShorthandToggle = document.getElementById('medicalShorthandToggle');
+    if (medicalShorthandToggle) {
+      medicalShorthandToggle.addEventListener('change', function() {
+        setMedicalShorthand(this.checked);
+      });
+    }
+
+    // Step 3 navigation buttons
+    const goToStep2FromNotesBtn = document.getElementById('goToStep2FromNotesBtn');
+    if (goToStep2FromNotesBtn) {
+      goToStep2FromNotesBtn.addEventListener('click', () => goToStep(2));
+    }
+
+    const generateSOAPBtn = document.getElementById('generateSOAPBtn');
+    if (generateSOAPBtn) {
+      generateSOAPBtn.addEventListener('click', generateSOAP);
+    }
+
+    // SOAP section copy buttons
+    const copySectionSBtn = document.getElementById('copySectionSBtn');
+    if (copySectionSBtn) {
+      copySectionSBtn.addEventListener('click', () => copySection('S'));
+    }
+
+    const copySectionOBtn = document.getElementById('copySectionOBtn');
+    if (copySectionOBtn) {
+      copySectionOBtn.addEventListener('click', () => copySection('O'));
+    }
+
+    const copySectionABtn = document.getElementById('copySectionABtn');
+    if (copySectionABtn) {
+      copySectionABtn.addEventListener('click', () => copySection('A'));
+    }
+
+    const copySectionPBtn = document.getElementById('copySectionPBtn');
+    if (copySectionPBtn) {
+      copySectionPBtn.addEventListener('click', () => copySection('P'));
+    }
+
+    const copySectionNBtn = document.getElementById('copySectionNBtn');
+    if (copySectionNBtn) {
+      copySectionNBtn.addEventListener('click', () => copySection('N'));
+    }
+
+    // Step 4 (SOAP) action buttons
+    const exportPDFBtn = document.getElementById('exportPDFBtn');
+    if (exportPDFBtn) {
+      exportPDFBtn.addEventListener('click', exportPDF);
+    }
+
+    const copyAllSOAPBtn = document.getElementById('copyAllSOAPBtn');
+    if (copyAllSOAPBtn) {
+      copyAllSOAPBtn.addEventListener('click', copyAllSOAP);
+    }
+
+    const regenerateSOAPBtn = document.getElementById('regenerateSOAPBtn');
+    if (regenerateSOAPBtn) {
+      regenerateSOAPBtn.addEventListener('click', regenerateSOAP);
+    }
+
+    // Step 4 navigation buttons
+    const goToStep3FromSOAPBtn = document.getElementById('goToStep3FromSOAPBtn');
+    if (goToStep3FromSOAPBtn) {
+      goToStep3FromSOAPBtn.addEventListener('click', () => goToStep(3));
+    }
+
+    const resetAllFromSOAPBtn = document.getElementById('resetAllFromSOAPBtn');
+    if (resetAllFromSOAPBtn) {
+      resetAllFromSOAPBtn.addEventListener('click', resetAll);
+    }
+
+    // Modal close buttons
+    const modalCloseClientBrowserBtn = document.getElementById('modalCloseClientBrowserBtn');
+    if (modalCloseClientBrowserBtn) {
+      modalCloseClientBrowserBtn.addEventListener('click', closeClientBrowser);
+    }
+
+    const closeClientBrowserBtn = document.getElementById('closeClientBrowserBtn');
+    if (closeClientBrowserBtn) {
+      closeClientBrowserBtn.addEventListener('click', closeClientBrowser);
+    }
+
+    const modalCloseWebhookBtn = document.getElementById('modalCloseWebhookBtn');
+    if (modalCloseWebhookBtn) {
+      modalCloseWebhookBtn.addEventListener('click', closeWebhookConfig);
+    }
+
+    // Client search functionality
+    const clientSearch = document.getElementById('clientSearch');
+    if (clientSearch) {
+      clientSearch.addEventListener('input', function() {
+        filterClients().catch(console.error);
+      });
+      clientSearch.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+      });
+      clientSearch.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+      });
+    }
+
+    // Webhook config buttons
+    const copyWebhookUrlBtn = document.getElementById('copyWebhookUrlBtn');
+    if (copyWebhookUrlBtn) {
+      copyWebhookUrlBtn.addEventListener('click', copyWebhookUrl);
+    }
+
+    const saveWebhookConfigBtn = document.getElementById('saveWebhookConfigBtn');
+    if (saveWebhookConfigBtn) {
+      saveWebhookConfigBtn.addEventListener('click', saveWebhookConfig);
+    }
+
+    const cancelWebhookConfigBtn = document.getElementById('cancelWebhookConfigBtn');
+    if (cancelWebhookConfigBtn) {
+      cancelWebhookConfigBtn.addEventListener('click', closeWebhookConfig);
+    }
+
+    // Manual client data textarea
+    const manualClientData = document.getElementById('manualClientData');
+    if (manualClientData) {
+      manualClientData.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+      });
+      manualClientData.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+      });
+    }
+
+    const importManualProfileBtn = document.getElementById('importManualProfileBtn');
+    if (importManualProfileBtn) {
+      importManualProfileBtn.addEventListener('click', importManualProfile);
+    }
+
+    // Logo error handling
+    const headerLogo = document.getElementById('headerLogo');
+    if (headerLogo) {
+      headerLogo.addEventListener('error', function() {
+        this.src = '';
+        this.onerror = null;
+        this.style.display = 'none';
+        const fallbackLogo = document.getElementById('fallbackLogo');
+        if (fallbackLogo) {
+          fallbackLogo.style.display = 'flex';
+        }
+      });
+    }
   });
 
   function renderTechniques() {
