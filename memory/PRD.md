@@ -1,144 +1,68 @@
-# SOAP Notes Generator - PRD
+# SOAP Notes - Muscle Map Feature PRD
 
 ## Original Problem Statement
-Treatment note system for therapists that links to a dashboard app. Features:
-- Client intake form integration
-- Body map for muscle selection/pain markers
-- Treatment type selection
-- AI-generated SOAP notes (with medical shorthand option)
-- PDF generation and Google Drive storage
-- Client profile management
+Review the muscle map feature and suggest improvements. User reported polygon alignment issues with muscles not lining up properly with the anatomical image. Added Quick Select Common Areas feature for faster muscle marking.
 
 ## Architecture
-- **Backend**: Hono.js + Better-SQLite3 + Node.js (TypeScript)
-- **Database**: SQLite with WAL mode (file-based)
-- **Frontend**: Server-rendered HTML with vanilla JavaScript
-- **Integrations**: OpenAI (SOAP generation), Google Drive (PDF storage)
+- **Frontend**: TypeScript/JavaScript with inline HTML rendering
+- **Backend**: Hono server (Node.js/TypeScript)
+- **Data**: Muscle polygons defined as coordinate strings in MUSCLES array
+- **Images**: Male (890x1024), Female (862x1024) anatomical diagrams
 
 ## User Personas
-1. **Therapist** - Primary user creating SOAP notes
-2. **Admin** - Manages client data and integrations
+1. **Massage Therapist** - Primary user marking client pain areas
+2. **Client** - Viewing their pain map during consultation
 
 ## Core Requirements (Static)
-- Client intake form data capture
-- Interactive body map for muscle/pain marking
-- AI-powered SOAP note generation
-- PDF export to Google Drive
-- Session history per client
+- Display anatomical body map (male/female, anterior/posterior)
+- Allow clicking to place pain markers
+- Identify muscles under click point
+- Support multiple markers per session
+- Toggle polygon visibility
+- Switch between views and genders
+- Quick select common pain patterns
 
 ## What's Been Implemented
-### Jan 2026 - Code Review & Security Fixes
-- [x] Comprehensive code review completed
-- [x] **P0 FIX**: Removed client-side OpenAI API key exposure
-  - API key now server-side only via `OPENAI_API_KEY` env var
-  - Added `/api/ai-status` endpoint for status checking
-  - Frontend shows status badge instead of key input
-- [x] **P0 FIX**: XSS vulnerabilities patched
-  - Applied `escapeHtml()` to all user-controlled innerHTML content
-  - Applied `escJsSingle()` to onclick handler parameters
+- [x] **2026-01-13**: Fixed polygon alignment - Y-coordinates corrected (shifted up ~12-15px)
+- [x] **2026-01-13**: Updated MUSCLES array in app.ts with corrected coordinates
+- [x] **2026-01-13**: Updated muscle-data.js with matching corrected coordinates
+- [x] **2026-01-13**: Tested all views (male/female, anterior/posterior)
+- [x] **2026-01-13**: Added Quick Select Common Areas feature with 6 presets:
+  - Upper Back Tension (8 muscles)
+  - Lower Back Pain (10 muscles)  
+  - Desk Worker (8 muscles)
+  - Runner Recovery (12 muscles)
+  - Shoulder Issues (8 muscles)
+  - Full Back (14 muscles)
+- [x] **2026-01-13**: Toggle functionality for presets (click to add, click again to remove)
 
-### Mar 2026 - P1 Security Improvements
-- [x] **Input validation with Zod schemas**
-  - Created `/src/validation/schemas.ts` with comprehensive schemas
-  - Added validation to all API endpoints: clients, sessions, intake, AI
-  - Email, phone, date, and pain level validation
-  - Max length limits on all text fields
-- [x] **Timing-safe password comparison**
-  - Replaced plain string comparison with `crypto.timingSafeEqual`
-  - Prevents timing attacks on authentication
-- [x] **API request timeouts**
-  - Added 30s timeout to OpenAI API calls
-  - Added 30-60s timeouts to Google Drive operations
-  - Proper AbortError handling with user-friendly messages
+## Known Issues Resolved
+1. Polygons were shifted down from actual muscle positions
+2. Pectoralis, Deltoid, Trapezius, Gluteus regions had significant misalignment
+3. Hit detection was inaccurate due to polygon offset
 
 ## Prioritized Backlog
 
-### P0 (Critical) - COMPLETED
-- [x] OpenAI key client-side exposure
-- [x] XSS in client rendering
+### P0 - Critical
+- None remaining
 
-### P1 (High) - COMPLETED
-- [x] Input validation with Zod schemas
-- [x] Timing-safe password comparison in auth
-- [x] Request timeout for external API calls
+### P1 - High Priority
+- [ ] Fine-tune female body scaling factors for improved alignment
+- [ ] Add zoom functionality for precise selection on mobile
 
-### P2 (Medium) - COMPLETED
-- [x] **Encrypt Google Drive tokens at rest**
-  - Created `/src/utils/crypto.ts` with AES-256-GCM encryption
-  - KV store auto-encrypts sensitive keys (drive tokens)
-  - Client driveToken field auto-encrypted on save
-  - `safeDecrypt` handles legacy unencrypted data migration
-- [x] **CSRF protection**
-  - Created `/src/middleware/csrf.ts` with double-submit cookie pattern
-  - All state-changing API endpoints require X-CSRF-Token header
-  - Frontend `apiFetch()` wrapper auto-includes CSRF token
-  - Webhooks exempt from CSRF (external services)
-- [x] **Database migration system**
-  - Created `/src/database/migrations.ts` with versioned migrations
-  - Auto-runs pending migrations on startup
-  - Added searchable columns for clients (first_name, last_name, phone, session_count)
-  - Added searchable columns for sessions (client_name, therapist_name)
-  - Includes backfill functions for existing data
-- [x] **Rate limiting on public endpoints**
-  - Created `/src/middleware/rate-limit.ts` with SQLite persistence
-  - Standard: 100 req/min for general API
-  - AI endpoints: 20 req/min (expensive operations)
-  - Upload endpoints: 30 req/min
-  - Proper rate limit headers (X-RateLimit-*)
+### P2 - Medium Priority
+- [ ] Custom preset creation (user-defined muscle groups)
+- [ ] Save/load preset configurations
+- [ ] Improve hover feedback without polygon toggle
 
-### P3 (Low) - COMPLETED
-- [x] **Static asset caching headers**
-  - Created `/src/middleware/cache.ts` with intelligent caching
-  - Vendor files: 1 week cache
-  - Images/fonts: 1 day cache
-  - Hashed assets: 1 year (immutable)
-  - ETag support for conditional requests
-- [x] **Security headers**
-  - X-Frame-Options: SAMEORIGIN (clickjacking protection)
-  - X-Content-Type-Options: nosniff
-  - Referrer-Policy: strict-origin-when-cross-origin
-  - CSP in report-only mode
-- [x] **Client list pagination**
-  - Page, limit, search, sort, order parameters
-  - Returns pagination metadata (total, totalPages, hasNext, hasPrev)
-  - Server-side search using indexed columns
-  - Max 200 items per page
-- [x] **Database maintenance CLI**
-  - Created `/scripts/db-maintenance.ts`
-  - Commands: migrate, backfill, stats, cleanup
-  - VACUUM and ANALYZE for optimization
-- [x] **Lazy load PDF.js**
-  - PDF.js now loaded on-demand via `window.loadPdfJs()`
-  - Reduces initial page load
-- [x] **App.ts modularization**
-  - Extracted CSS to `/public/static/styles/app.css` (463 lines)
-  - Created `/public/static/js/utils.js` - HTML escaping, time, DOM helpers (231 lines)
-  - Created `/public/static/js/api.js` - CSRF-protected API client (227 lines)
-  - Created `/public/static/js/pdf-loader.js` - Lazy PDF.js loader (65 lines)
-  - Created `/public/static/js/muscle-data.js` - Muscle map data & geometry (354 lines)
-  - **Total extracted: 1,340 lines**
-  - app.ts now at 3,808 lines (down from 4,224)
-
-### Future Improvements
-- [ ] Continue extracting JS from app.ts (SOAP generation, rendering)
-- [ ] Full schema normalization (remove JSON blobs entirely)
-- [ ] Add WebSocket for real-time updates
-- [ ] Consider migrating to React/Vue components
+### P3 - Nice to Have
+- [ ] ARIA accessibility labels for muscle regions
+- [ ] Drag-to-select multiple adjacent muscles
+- [ ] Animation for marker placement
+- [ ] Preset suggestions based on client history
 
 ## Next Tasks
-1. Set `ENCRYPTION_SECRET` env variable for production
-2. Run `npx tsx scripts/db-maintenance.ts backfill` on existing databases
-3. Split app.ts monolith into smaller components (maintainability)
-4. Lazy load PDF.js library (performance)
-5. Full schema normalization - remove JSON blobs entirely (advanced)
-
-## Environment Variables Required
-```
-ADMIN_PASSWORD=<required>          # Admin authentication password
-OPENAI_API_KEY=<optional>          # For AI SOAP generation
-ENCRYPTION_SECRET=<recommended>    # For token encryption at rest
-GOOGLE_CLIENT_ID=<optional>        # Google Drive integration
-GOOGLE_CLIENT_SECRET=<optional>    # Google Drive integration
-GOOGLE_REFRESH_TOKEN=<optional>    # Google Drive integration
-DASHBOARD_WEBHOOK_URL=<optional>   # External dashboard webhook
-```
+1. Monitor user feedback on alignment accuracy
+2. Consider adding visual guides/outlines for muscle boundaries
+3. Evaluate need for higher-resolution images on retina displays
+4. User testing for Quick Select UX refinement
