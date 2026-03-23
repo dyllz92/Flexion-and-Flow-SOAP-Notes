@@ -2948,185 +2948,420 @@ THERAPIST NOTES:
   }
 
   // ============================================================
-  // PDF EXPORT
+  // PDF EXPORT UTILITIES
   // ============================================================
-  function generatePdfDocument(outputType = 'save') { // 'save' or 'base64'
+  
+  // Enhanced PDF configuration for professional output
+  const PDF_CONFIG = {
+    pageWidth: 210,
+    marginTop: 20,
+    marginSide: 20,
+    lineHeight: 4.5,
+    sectionSpacing: 8,
+    colors: {
+      primary: [124, 58, 237],     // Violet brand color
+      secondary: [99, 102, 241],   // Indigo accent
+      dark: [15, 23, 42],          // Primary text
+      medium: [71, 85, 105],       // Secondary text
+      light: [248, 250, 252],      // Background
+      success: [16, 185, 129],     // Green
+      warning: [245, 158, 11],     // Amber
+      info: [59, 130, 246],        // Blue
+      accent: [139, 92, 246],      // Purple
+      neutral: [107, 114, 128]     // Gray
+    },
+    fonts: {
+      title: { size: 18, style: 'bold' },
+      subtitle: { size: 12, style: 'bold' },
+      heading: { size: 11, style: 'bold' },
+      body: { size: 9.5, style: 'normal' },
+      small: { size: 8, style: 'normal' },
+      tiny: { size: 7, style: 'normal' }
+    }
+  };
+
+  // Utility function to create consistent PDF instance
+  function createPDFInstance() {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ 
+      orientation: 'portrait', 
+      unit: 'mm', 
+      format: 'a4',
+      putOnlyUsedFonts: true,
+      precision: 2
+    });
     
-    const pageW = 210, margin = 18, contentW = pageW - margin * 2;
-    let y = 20;
+    // Enable text justification and better spacing
+    doc.setLineHeightFactor(1.2);
+    return doc;
+  }
 
-    // Colors
-    const violet = [124, 58, 237];
-    const dark = [15, 23, 42];
-    const mid = [71, 85, 105];
-    const light = [248, 250, 252];
+  // Enhanced text wrapping with better line breaks
+  function wrapTextWithSpacing(doc, text, maxWidth, fontSize = 9.5) {
+    if (!text || !text.trim()) return [];
+    
+    doc.setFontSize(fontSize);
+    
+    // Split into paragraphs first
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+    const allLines = [];
+    
+    paragraphs.forEach((paragraph, index) => {
+      const cleanPara = paragraph.replace(/\s+/g, ' ').trim();
+      const lines = doc.splitTextToSize(cleanPara, maxWidth);
+      allLines.push(...lines);
+      
+      // Add paragraph spacing (except for last paragraph)
+      if (index < paragraphs.length - 1) {
+        allLines.push(''); // Empty line for paragraph break
+      }
+    });
+    
+    return allLines;
+  }
 
-    // Header
-    doc.setFillColor(...violet);
-    doc.rect(0, 0, pageW, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
+  // Professional header with branding
+  function renderPDFHeader(doc, pageNumber = 1) {
+    const { pageWidth, marginSide, colors } = PDF_CONFIG;
+    const contentWidth = pageWidth - (marginSide * 2);
+    
+    if (pageNumber === 1) {
+      // Main header with full branding
+      doc.setFillColor(...colors.primary);
+      doc.rect(0, 0, pageWidth, 32, 'F');
+      
+      // Title
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(PDF_CONFIG.fonts.title.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOAP NOTE — MASSAGE THERAPY', marginSide, 16);
+      
+      // Subtitle with practice name
+      doc.setFontSize(PDF_CONFIG.fonts.small.size);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Flexion & Flow Massage Therapy', marginSide, 25);
+      
+      return 40; // Return Y position after header
+    } else {
+      // Continuation page header
+      doc.setFillColor(...colors.medium);
+      doc.rect(0, 0, pageWidth, 20, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(PDF_CONFIG.fonts.body.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOAP Note (Continued)', marginSide, 12);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.text('Page ' + pageNumber, pageWidth - marginSide - 20, 12);
+      
+      return 28; // Return Y position after header
+    }
+  }
+
+  function generatePdfDocument(outputType = 'save') { // 'save' or 'base64'
+    const doc = createPDFInstance();
+    const { pageWidth, marginSide, colors, fonts } = PDF_CONFIG;
+    const contentWidth = pageWidth - (marginSide * 2);
+    let currentPage = 1;
+    let y = renderPDFHeader(doc, currentPage);
+
+    // Professional client information panel
+    y += 5;
+
+    // Enhanced client information panel
+    const clientData = {
+      name: document.getElementById('soapClientName')?.textContent || 'Client',
+      date: document.getElementById('sessionDate')?.value || '',
+      duration: document.getElementById('sessionDuration')?.value || '',
+      complaint: document.getElementById('chiefComplaint')?.value || '',
+      painBefore: document.getElementById('painLevel')?.value || '',
+      painAfter: document.getElementById('postPainLevel')?.value || '',
+      therapist: document.getElementById('therapistName')?.value || '',
+      credentials: document.getElementById('therapistCredentials')?.value || '',
+      accountNumber: state.lastAccountNumber || ''
+    };
+
+    // Client info panel with enhanced styling
+    const panelHeight = 30;
+    doc.setFillColor(...colors.light);
+    doc.rect(marginSide, y, contentWidth, panelHeight, 'F');
+    doc.setDrawColor(...colors.medium);
+    doc.setLineWidth(0.5);
+    doc.rect(marginSide, y, contentWidth, panelHeight, 'S');
+    
+    // Client name (prominent)
+    doc.setTextColor(...colors.dark);
+    doc.setFontSize(fonts.subtitle.size);
     doc.setFont('helvetica', 'bold');
-    doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
-    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-    doc.setFont('helvetica', 'normal');
-    doc.text('Generated by SOAP Note Generator', margin, 22);
-    y = 38;
-
-    // Client info row
-    const client = document.getElementById('soapClientName').textContent;
-    const dateText = document.getElementById('sessionDate').value || '';
-    const duration = document.getElementById('sessionDuration').value || '';
-    const chiefComplaint = document.getElementById('chiefComplaint').value || '';
-    const painBefore = document.getElementById('painLevel').value;
-    const painAfter = document.getElementById('postPainLevel').value;
-    const therapist = document.getElementById('therapistName').value || '';
-    const acct = state.lastAccountNumber || '';
-    const creds = document.getElementById('therapistCredentials').value || '';
-
-    doc.setFillColor(...light);
-    doc.rect(margin, y, contentW, 22, 'F');
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(margin, y, contentW, 22, 'S');
+    doc.text(clientData.name, marginSide + 4, y + 8);
     
-    doc.setTextColor(...dark);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(client || 'Client', margin + 3, y + 7);
-    
-    doc.setFontSize(8);
+    // Session details (two columns)
+    doc.setFontSize(fonts.small.size);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...mid);
-    doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
-    doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
-    if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
-    if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
-    if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
-    if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
-    y += 28;
+    doc.setTextColor(...colors.medium);
+    
+    // Left column
+    const leftCol = marginSide + 4;
+    doc.text('Date: ' + (clientData.date || '—'), leftCol, y + 15);
+    doc.text('Duration: ' + (clientData.duration || '—'), leftCol, y + 20);
+    if (clientData.accountNumber) {
+      doc.text('Account: ' + clientData.accountNumber, leftCol, y + 25);
+    }
+    
+    // Center column  
+    const centerCol = marginSide + 70;
+    if (clientData.complaint) {
+      const ccLines = wrapTextWithSpacing(doc, 'Chief Complaint: ' + clientData.complaint, 60, fonts.small.size);
+      doc.text(ccLines[0] || '', centerCol, y + 15);
+      if (ccLines[1]) doc.text(ccLines[1], centerCol, y + 20);
+    }
+    
+    // Right column - Pain scores
+    const rightCol = marginSide + 130;
+    if (clientData.painBefore) {
+      doc.text('Pain Before: ' + clientData.painBefore + '/10', rightCol, y + 15);
+    }
+    if (clientData.painAfter) {
+      doc.text('Pain After: ' + clientData.painAfter + '/10', rightCol, y + 20);
+    }
+    
+    y += panelHeight + 8;
 
-    // SOAP Sections
-    const sections = [
-      { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
-      { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
-      { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
-      { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
-      { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
+    // Enhanced SOAP Sections with better typography
+    const soapSections = [
+      { label: 'S — Subjective', id: 'soapS', color: colors.info, description: 'Patient\'s reported symptoms and concerns' },
+      { label: 'O — Objective', id: 'soapO', color: colors.success, description: 'Observable findings and measurements' },
+      { label: 'A — Assessment', id: 'soapA', color: colors.warning, description: 'Professional evaluation and analysis' },
+      { label: 'P — Plan', id: 'soapP', color: colors.accent, description: 'Treatment plan and recommendations' },
+      { label: 'N — Therapist Notes', id: 'soapN', color: colors.neutral, description: 'Additional observations and notes' },
     ];
 
-    for (const section of sections) {
-      const rawText = document.getElementById(section.id).value;
-      const text = applyWritingStyle(rawText);
-      if (!text) continue;
+    for (const section of soapSections) {
+      const rawText = document.getElementById(section.id)?.value || '';
+      const processedText = applyWritingStyle(rawText);
+      
+      if (!processedText.trim()) continue;
 
-      // Check if we need a new page
-      if (y > 250) {
+      // Smart page break management
+      if (y > 240) {
         doc.addPage();
-        y = 20;
+        currentPage++;
+        y = renderPDFHeader(doc, currentPage);
+      }
+
+      // Enhanced section header with color bar and description
+      doc.setFillColor(...section.color);
+      doc.rect(marginSide, y, 6, 10, 'F');
+      
+      doc.setTextColor(...colors.dark);
+      doc.setFontSize(fonts.heading.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text(section.label, marginSide + 10, y + 7);
+      
+      // Optional: Add subtle description
+      doc.setFontSize(fonts.tiny.size);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(...colors.medium);
+      doc.text(section.description, marginSide + 10, y + 11);
+      
+      y += 16;
+
+      // Section content with improved formatting
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(fonts.body.size);
+      doc.setTextColor(...colors.dark);
+      
+      const textLines = wrapTextWithSpacing(doc, processedText, contentWidth - 8, fonts.body.size);
+      
+      for (const line of textLines) {
+        if (y > 265) { // Leave more space for footer
+          doc.addPage();
+          currentPage++;
+          y = renderPDFHeader(doc, currentPage);
+        }
+        
+        if (line.trim()) { // Skip empty lines from paragraph breaks
+          doc.text(line, marginSide + 4, y);
+        }
+        y += line.trim() ? PDF_CONFIG.lineHeight : PDF_CONFIG.lineHeight * 0.8; // Smaller spacing for paragraph breaks
+      }
+      
+      y += PDF_CONFIG.sectionSpacing;
+    }
+
+    // Enhanced Treatment Areas & Tension Points section
+    const treatmentData = {
+      muscles: [],
+      tensionPoints: [],
+      techniques: []
+    };
+    
+    // Organize tension points by muscle
+    const muscleGroups = new Map();
+    state.tensionPoints.forEach(point => {
+      if (!muscleGroups.has(point.muscleId)) {
+        muscleGroups.set(point.muscleId, []);
+        treatmentData.muscles.push(point.muscleName);
+      }
+      muscleGroups.get(point.muscleId).push(point);
+      
+      const pointDetail = {
+        number: point.number,
+        muscle: point.muscleName,
+        type: point.type,
+        notes: point.notes || ''
+      };
+      treatmentData.tensionPoints.push(pointDetail);
+    });
+
+    // Add treatment areas section if there's data
+    if (treatmentData.muscles.length > 0 || treatmentData.tensionPoints.length > 0) {
+      // Page break check
+      if (y > 230) {
+        doc.addPage();
+        currentPage++;
+        y = renderPDFHeader(doc, currentPage);
       }
 
       // Section header
-      doc.setFillColor(...section.color);
-      doc.rect(margin, y, 4, 8, 'F');
-      doc.setTextColor(...dark);
-      doc.setFontSize(10);
+      doc.setFillColor(...colors.secondary);
+      doc.rect(marginSide, y, 6, 10, 'F');
+      doc.setTextColor(...colors.dark);
+      doc.setFontSize(fonts.heading.size);
       doc.setFont('helvetica', 'bold');
-      doc.text(section.label, margin + 7, y + 5.5);
-      y += 11;
+      doc.text('Treatment Areas & Clinical Findings', marginSide + 10, y + 7);
+      y += 16;
 
-      // Section content
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(...mid);
-      const lines = doc.splitTextToSize(text, contentW - 5);
-      
-      for (const line of lines) {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
-        doc.text(line, margin + 3, y);
-        y += 5;
-      }
-      y += 5;
-    }
-
-    // Muscles section - Tension Points
-    const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
-    const treatedMuscles = [];
-    const tensionPointDetails = [];
-    
-    // Create muscle summary from tension points
-    const muscleGroups = new Map();
-    state.tensionPoints.forEach(dot => {
-      if (!muscleGroups.has(dot.muscleId)) {
-        muscleGroups.set(dot.muscleId, []);
-        treatedMuscles.push(dot.muscleName);
-      }
-      muscleGroups.get(dot.muscleId).push(dot);
-      tensionPointDetails.push(dot.number + '. ' + dot.muscleName + ': ' + dot.type + (dot.notes ? ' - ' + dot.notes : ''));
-    });
-
-    if (treatedMuscles.length || tensionPointDetails.length) {
-      if (y > 240) { doc.addPage(); y = 20; }
-      doc.setFillColor(107, 114, 128);
-      doc.rect(margin, y, 4, 8, 'F');
-      doc.setTextColor(...dark);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Treatment Areas & Tension Points', margin + 7, y + 5.5);
-      y += 11;
-
-      if (treatedMuscles.length) {
-        doc.setFontSize(8);
+      // Treated muscles summary
+      if (treatmentData.muscles.length > 0) {
+        doc.setFontSize(fonts.body.size);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(16, 185, 129);
-        doc.text('Treated:', margin + 3, y);
-        y += 4.5;
+        doc.setTextColor(...colors.success);
+        doc.text('◆ Treated Areas:', marginSide + 4, y);
+        y += 6;
+        
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(treatedMuscles.join(', '), contentW - 10);
-        lines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
-        y += 2;
+        doc.setTextColor(...colors.dark);
+        const muscleText = treatmentData.muscles.join(', ');
+        const muscleLines = wrapTextWithSpacing(doc, muscleText, contentWidth - 12, fonts.body.size);
+        muscleLines.forEach(line => {
+          if (line.trim()) {
+            doc.text(line, marginSide + 8, y);
+            y += PDF_CONFIG.lineHeight;
+          }
+        });
+        y += 4;
       }
       
-      // Add detailed tension points
-      if (tensionPointDetails.length) {
-        doc.setFontSize(8);
+      // Detailed tension points 
+      if (treatmentData.tensionPoints.length > 0) {
+        doc.setFontSize(fonts.body.size);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(239, 68, 68);
-        doc.text('Tension Points:', margin + 3, y);
-        y += 4.5;
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...mid);
-        tensionPointDetails.forEach(detail => {
-          const detailLines = doc.splitTextToSize(detail, contentW - 10);
-          detailLines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
+        doc.setTextColor([220, 38, 127]); // Rose color for tension points
+        doc.text('◆ Tension Points & Clinical Notes:', marginSide + 4, y);
+        y += 6;
+        
+        // Group and display tension points
+        treatmentData.tensionPoints.forEach((point, index) => {
+          if (y > 265) {
+            doc.addPage();
+            currentPage++;
+            y = renderPDFHeader(doc, currentPage);
+          }
+          
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...colors.dark);
+          doc.setFontSize(fonts.small.size);
+          
+          const pointText = point.number + '. ' + point.muscle + ': ' + point.type;
+          doc.text(pointText, marginSide + 8, y);
+          y += 4;
+          
+          if (point.notes) {
+            doc.setTextColor(...colors.medium);
+            doc.setFont('helvetica', 'italic');
+            const noteLines = wrapTextWithSpacing(doc, 'Notes: ' + point.notes, contentWidth - 16, fonts.tiny.size);
+            noteLines.forEach(noteLine => {
+              if (noteLine.trim()) {
+                doc.text(noteLine, marginSide + 12, y);
+                y += 3.5;
+              }
+            });
+          }
+          y += 2;
         });
       }
-      y += 5;
+      
+      y += PDF_CONFIG.sectionSpacing;
     }
 
-    // Footer / signature
-    if (y > 255) { doc.addPage(); y = 20; }
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, y + 5, margin + contentW, y + 5);
+    // Professional footer with signature area
+    if (y > 240) {
+      doc.addPage();
+      currentPage++;
+      y = renderPDFHeader(doc, currentPage);
+    }
+
+    // Signature section
     y += 10;
-    doc.setTextColor(...mid);
-    doc.setFontSize(8);
-    if (therapist || creds) {
-      doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y);
-      y += 5;
-    }
-    doc.setFontSize(7);
-    doc.setTextColor(180, 180, 180);
-    doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
+    doc.setDrawColor(...colors.medium);
+    doc.setLineWidth(0.5);
+    doc.line(marginSide, y, marginSide + contentWidth, y);
+    y += 8;
 
-    // Save
-    const filename = 'SOAP_Note_' + (client || 'Client').replace(/\\s+/g, '_') + '_' + (dateText || 'date') + '.pdf';
-    doc.save(filename);
+    // Therapist information
+    doc.setTextColor(...colors.dark);
+    doc.setFontSize(fonts.body.size);
+    doc.setFont('helvetica', 'bold');
+    
+    if (clientData.therapist || clientData.credentials) {
+      const therapistInfo = [clientData.therapist, clientData.credentials].filter(Boolean).join(', ');
+      doc.text('Therapist:', marginSide, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(therapistInfo, marginSide + 25, y);
+      y += 6;
+    }
+    
+    // Signature line
+    doc.setTextColor(...colors.medium);
+    doc.setFontSize(fonts.small.size);
+    doc.text('Signature:', marginSide, y);
+    doc.setDrawColor(...colors.medium);
+    doc.line(marginSide + 25, y, marginSide + 100, y);
+    
+    doc.text('Date:', marginSide + 110, y);
+    doc.line(marginSide + 125, y, marginSide + contentWidth, y);
+    y += 8;
+    
+    // Practice information
+    doc.setTextColor(...colors.medium);
+    doc.setFontSize(fonts.tiny.size);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Flexion & Flow Massage Therapy', marginSide, y);
+    
+    // Generation timestamp
+    const timestamp = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    doc.setTextColor(180, 180, 180);
+    doc.text('Generated: ' + timestamp, marginSide + contentWidth - 80, y);
+
+    // Return based on output type
+    if (outputType === 'base64') {
+      return doc.output('datauristring').split(',')[1];
+    } else {
+      // Enhanced filename with better formatting
+      const safeName = (clientData.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+      const safeDate = (clientData.date || '').replace(/[^0-9]/g, '') || 'date';
+      const filename = 'SOAP_Note_' + safeName + '_' + safeDate + '.pdf';
+      doc.save(filename);
+    }
   }
 
   // ============================================================
@@ -3788,85 +4023,11 @@ THERAPIST NOTES:
     }
   }
 
-  // ─── Generate PDF and return base64 string ───────────────────────────────
+  // ─── Generate PDF and return base64 string ────────────────────────────────
   function generatePDFBase64() {
     try {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageW = 210, margin = 18, contentW = pageW - margin * 2;
-      let y = 20;
-      const violet = [124, 58, 237], dark = [15, 23, 42], mid = [71, 85, 105], light = [248, 250, 252];
-
-      doc.setFillColor(...violet);
-      doc.rect(0, 0, pageW, 30, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
-      doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
-      doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-      doc.text('Generated by SOAP Note Generator · Flexion & Flow', margin, 22);
-      y = 38;
-
-      const client = document.getElementById('soapClientName')?.textContent || '';
-      const dateText = document.getElementById('sessionDate')?.value || '';
-      const duration = document.getElementById('sessionDuration')?.value || '';
-      const chiefComplaint = document.getElementById('chiefComplaint')?.value || '';
-      const painBefore = document.getElementById('painLevel')?.value || '';
-      const painAfter = document.getElementById('postPainLevel')?.value || '';
-      const therapist = document.getElementById('therapistName')?.value || '';
-      const creds = document.getElementById('therapistCredentials')?.value || '';
-      const acct = state.lastAccountNumber || '';
-
-      doc.setFillColor(...light);
-      doc.rect(margin, y, contentW, 26, 'F');
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(margin, y, contentW, 26, 'S');
-      doc.setTextColor(...dark); doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-      doc.text(client || 'Client', margin + 3, y + 7);
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...mid);
-      doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
-      doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
-      if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
-      if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
-      if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
-      if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
-      y += 32;
-
-      const sections = [
-        { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
-        { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
-        { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
-        { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
-        { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
-      ];
-      for (const sec of sections) {
-        const rawText = document.getElementById(sec.id)?.value;
-        const text = applyWritingStyle(rawText);
-        if (!text) continue;
-        if (y > 250) { doc.addPage(); y = 20; }
-        doc.setFillColor(...sec.color);
-        doc.rect(margin, y, 4, 8, 'F');
-        doc.setTextColor(...dark); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
-        doc.text(sec.label, margin + 7, y + 5.5);
-        y += 11;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(text, contentW - 5);
-        for (const line of lines) {
-          if (y > 270) { doc.addPage(); y = 20; }
-          doc.text(line, margin + 3, y); y += 5;
-        }
-        y += 5;
-      }
-
-      if (y > 255) { doc.addPage(); y = 20; }
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y + 5, margin + contentW, y + 5);
-      y += 10;
-      doc.setTextColor(...mid); doc.setFontSize(8);
-      if (therapist || creds) { doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y); y += 5; }
-      doc.setFontSize(7); doc.setTextColor(180, 180, 180);
-      doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
-
-      return doc.output('datauristring').split(',')[1]; // base64 only
+      // Use the same enhanced PDF generation with base64 output
+      return generatePdfDocument('base64');
     } catch(e) {
       console.warn('PDF base64 generation failed:', e);
       return null;
