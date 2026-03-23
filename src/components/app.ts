@@ -70,8 +70,7 @@ export function renderApp(): string {
   <!-- Header -->
   <header class="site-header">
     <div class="header-inner">
-      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"
-           onerror="this.src=''; this.onerror=null; this.style.display='none'; document.getElementById('fallbackLogo').style.display='flex'"/>
+      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"/>
       <div id="fallbackLogo" style="display:none; flex-direction:column; align-items:center; gap:4px;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:40px;height:40px;border-radius:10px;background:var(--primary);display:flex;align-items:center;justify-content:center;">
@@ -87,10 +86,10 @@ export function renderApp(): string {
         <span id="statusBadge" class="badge badge-success" style="display:none">
           <i class="fas fa-check-circle"></i> Note Ready
         </span>
-        <button onclick="openClientAccounts()" class="btn btn-ghost btn-sm" title="Client Accounts" data-testid="header-clients-btn">
+        <button id="openClientAccountsBtn" class="btn btn-ghost btn-sm" title="Client Accounts">
           <i class="fas fa-users"></i> <span class="hide-mobile">Clients</span>
         </button>
-        <button onclick="resetAll()" class="btn btn-ghost btn-sm" data-testid="header-new-session-btn">
+        <button id="resetAllBtn" class="btn btn-ghost btn-sm">
           <i class="fas fa-rotate-right"></i> <span class="hide-mobile">New Session</span>
         </button>
       </div>
@@ -143,10 +142,10 @@ export function renderApp(): string {
               </div>
             </div>
             <div style="display:flex;gap:10px;">
-              <button onclick="openClientBrowser()" class="btn btn-sm btn-profile-primary">
+              <button id="openClientBrowserBtn" class="btn btn-sm btn-profile-primary">
                 <i class="fas fa-search"></i> Browse Clients
               </button>
-              <button onclick="openWebhookConfig()" class="btn btn-sm btn-profile-secondary" title="Configure integration">
+              <button id="openWebhookConfigBtn" class="btn btn-sm btn-profile-secondary" title="Configure integration">
                 <i class="fas fa-link"></i> Setup
               </button>
             </div>
@@ -176,19 +175,16 @@ export function renderApp(): string {
             <p>Auto-extracts client information from the Flexion &amp; Flow intake PDF</p>
           </div>
           <div class="card-body">
-            <div id="dropZone" class="drop-zone"
-                 onclick="document.getElementById('pdfInput').click()"
-                 ondragover="handleDragOver(event)"
-                 ondrop="handleDrop(event)">
+            <div id="dropZone" class="drop-zone">
               <div class="dz-icon"><i class="fas fa-file-pdf"></i></div>
               <p>Drop PDF here or click to browse</p>
               <p class="dz-sub">Flexion &amp; Flow intake forms supported</p>
-              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none" onchange="handlePDFUpload(event)"/>
+              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none"/>
             </div>
             <div id="pdfStatus" style="display:none;margin-top:12px;" class="pdf-status">
               <i class="fas fa-check-circle" style="color:var(--success);font-size:1rem;"></i>
               <span id="pdfFileName"></span>
-              <button onclick="clearPDF()" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
+              <button id="clearPDFBtn" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
                 <i class="fas fa-times"></i>
               </button>
             </div>
@@ -288,12 +284,10 @@ export function renderApp(): string {
           <div class="card-body">
             <textarea id="intakeFormData" rows="5"
               placeholder="Intake form data will appear here after PDF upload, or type manually…&#10;&#10;Include: medical history, current conditions, allergies, medications, past injuries, client goals, etc."
-              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
-              onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
-              onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"></textarea>
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"></textarea>
           </div>
           <div class="card-footer" style="display:flex;justify-content:flex-end;">
-            <button onclick="goToStep(2)" class="btn btn-primary">
+            <button id="goToStep2Btn" class="btn btn-primary">
               Next: Select Muscles <i class="fas fa-arrow-right"></i>
             </button>
           </div>
@@ -512,13 +506,13 @@ export function renderApp(): string {
 
           <!-- Medical Shorthand Toggle -->
           <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
-            <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
+            <input id="medicalShorthandToggle" type="checkbox" style="accent-color:var(--primary);cursor:pointer;" />
             <span>Use medical shorthand (applies to generation + PDF export)</span>
           </label>
           <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);margin-top:-8px;">Current style: Normal writing</p>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+            <button id="goToStep2FromNotesBtn" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
             </button>
             <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-generate-soap">
@@ -590,7 +584,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-s">S</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Subjective</h3>
-                  <button onclick="copySection('S')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionSBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-s">
                   <textarea id="soapS" rows="4" class="soap-textarea"></textarea>
@@ -604,7 +598,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-o">O</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Objective</h3>
-                  <button onclick="copySection('O')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionOBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-o">
                   <textarea id="soapO" rows="5" class="soap-textarea"></textarea>
@@ -618,7 +612,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-a">A</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Assessment</h3>
-                  <button onclick="copySection('A')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionABtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-a">
                   <textarea id="soapA" rows="4" class="soap-textarea"></textarea>
@@ -632,7 +626,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-p">P</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Plan</h3>
-                  <button onclick="copySection('P')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionPBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-p">
                   <textarea id="soapP" rows="4" class="soap-textarea"></textarea>
@@ -646,7 +640,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-n">N</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Therapist Notes</h3>
-                  <button onclick="copySection('N')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionNBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-n">
                   <textarea id="soapN" rows="3" class="soap-textarea"></textarea>
@@ -700,8 +694,8 @@ export function renderApp(): string {
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(3)" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
-            <button onclick="resetAll()" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
+            <button id="goToStep3FromSOAPBtn" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
+            <button id="resetAllFromSOAPBtn" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
           </div>
 
         </div>
@@ -726,7 +720,7 @@ export function renderApp(): string {
           <h3><i class="fas fa-users" style="margin-right:8px;opacity:0.8;"></i>Client Profiles</h3>
           <p>Select a client to auto-fill their intake information</p>
         </div>
-        <button class="modal-close" onclick="closeClientBrowser()"><i class="fas fa-times"></i></button>
+        <button id="modalCloseClientBrowserBtn" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
         <div style="position:relative;">
@@ -741,7 +735,7 @@ export function renderApp(): string {
       <div id="clientList" class="modal-body" style="flex:1;"></div>
       <div class="modal-footer">
         <span id="clientCount" style="font-size:0.75rem;color:var(--text-light);"></span>
-        <button onclick="closeClientBrowser()" class="btn btn-ghost btn-sm">Close</button>
+        <button id="closeClientBrowserBtn" class="btn btn-ghost btn-sm">Close</button>
       </div>
     </div>
   </div>
@@ -756,7 +750,7 @@ export function renderApp(): string {
           <h3><i class="fas fa-link" style="margin-right:8px;opacity:0.8;"></i>Flexion &amp; Flow Integration Setup</h3>
           <p>Connect the intake form to this SOAP generator</p>
         </div>
-        <button class="modal-close" onclick="closeWebhookConfig()"><i class="fas fa-times"></i></button>
+        <button id="modalCloseWebhookBtn" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body">
         <div class="info-box info-box-blue" style="margin-bottom:18px;">
@@ -774,7 +768,7 @@ export function renderApp(): string {
           <div style="display:flex;gap:8px;">
             <input id="myWebhookUrl" type="text" readonly
               style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.78rem;background:#f7faff;color:var(--text);outline:none;"/>
-            <button onclick="copyWebhookUrl()" class="btn btn-ghost btn-sm" title="Copy URL">
+            <button id="copyWebhookUrlBtn" class="btn btn-ghost btn-sm" title="Copy URL">
               <i class="fas fa-copy"></i>
             </button>
           </div>
@@ -2280,6 +2274,271 @@ export function renderApp(): string {
     document.getElementById('sessionViewModal').addEventListener('click', function(e) {
       if (e.target === this) closeSessionView();
     });
+
+    // Header buttons
+    document.getElementById('openClientAccountsBtn').addEventListener('click', openClientAccounts);
+    document.getElementById('resetAllBtn').addEventListener('click', resetAll);
+
+    // Step navigation
+    document.querySelectorAll('.step-item').forEach(stepItem => {
+      stepItem.addEventListener('click', function() {
+        const step = parseInt(this.dataset.step);
+        goToStep(step);
+      });
+    });
+
+    // Client profile buttons
+    document.getElementById('openClientBrowserBtn').addEventListener('click', openClientBrowser);
+    document.getElementById('openWebhookConfigBtn').addEventListener('click', openWebhookConfig);
+
+    // PDF upload functionality
+    const dropZone = document.getElementById('dropZone');
+    const pdfInput = document.getElementById('pdfInput');
+    
+    dropZone.addEventListener('click', () => pdfInput.click());
+    dropZone.addEventListener('dragover', handleDragOver);
+    dropZone.addEventListener('drop', handleDrop);
+    pdfInput.addEventListener('change', handlePDFUpload);
+    
+    const clearPDFBtn = document.getElementById('clearPDFBtn');
+    if (clearPDFBtn) {
+      clearPDFBtn.addEventListener('click', clearPDF);
+    }
+
+    // Intake form textarea focus/blur styling
+    const intakeFormData = document.getElementById('intakeFormData');
+    if (intakeFormData) {
+      intakeFormData.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+        this.style.boxShadow = '0 0 0 3px rgba(91,163,217,0.15)';
+      });
+      intakeFormData.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.boxShadow = 'none';
+      });
+    }
+
+    // Navigation buttons
+    const goToStep2Btn = document.getElementById('goToStep2Btn');
+    if (goToStep2Btn) {
+      goToStep2Btn.addEventListener('click', () => goToStep(2));
+    }
+
+    // Gender and view toggles
+    document.getElementById('btnMale').addEventListener('click', function() {
+      setGender(this.dataset.gender);
+    });
+    document.getElementById('btnFemale').addEventListener('click', function() {
+      setGender(this.dataset.gender);
+    });
+    document.getElementById('btnAnterior').addEventListener('click', function() {
+      setView(this.dataset.view);
+    });
+    document.getElementById('btnPosterior').addEventListener('click', function() {
+      setView(this.dataset.view);
+    });
+
+    // Muscle polygons toggle
+    const toggleMusclePolygons = document.getElementById('toggleMusclePolygons');
+    if (toggleMusclePolygons) {
+      toggleMusclePolygons.addEventListener('change', function() {
+        toggleMusclePolygons(this.checked);
+      });
+    }
+
+    // Additional form elements with oninput handlers
+    const clientEmail = document.getElementById('clientEmail');
+    if (clientEmail) {
+      clientEmail.addEventListener('input', updateSummaryPanel);
+    }
+
+    // Step 2 (Muscle Map) buttons
+    const clearAllMusclesBtn = document.getElementById('clearAllMusclesBtn');
+    if (clearAllMusclesBtn) {
+      clearAllMusclesBtn.addEventListener('click', clearAllMuscles);
+    }
+
+    const goToStep1FromMapBtn = document.getElementById('goToStep1FromMapBtn');
+    if (goToStep1FromMapBtn) {
+      goToStep1FromMapBtn.addEventListener('click', () => goToStep(1));
+    }
+
+    const goToStep3FromMapBtn = document.getElementById('goToStep3FromMapBtn');
+    if (goToStep3FromMapBtn) {
+      goToStep3FromMapBtn.addEventListener('click', () => goToStep(3));
+    }
+
+    // Step 3 (Session Notes) form field focus/blur styling
+    const chiefComplaint = document.getElementById('chiefComplaint');
+    if (chiefComplaint) {
+      chiefComplaint.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+        this.style.boxShadow = '0 0 0 3px rgba(91,163,217,0.15)';
+      });
+      chiefComplaint.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.boxShadow = 'none';
+      });
+    }
+
+    // Jump navigation buttons
+    const jumpToChiefComplaintBtn = document.getElementById('jumpToChiefComplaintBtn');
+    if (jumpToChiefComplaintBtn) {
+      jumpToChiefComplaintBtn.addEventListener('click', () => jumpToField(1, 'chiefComplaint'));
+    }
+
+    const jumpToSessionSummaryBtn = document.getElementById('jumpToSessionSummaryBtn');
+    if (jumpToSessionSummaryBtn) {
+      jumpToSessionSummaryBtn.addEventListener('click', () => jumpToField(3, 'sessionSummary'));
+    }
+
+    // Medical shorthand toggle
+    const medicalShorthandToggle = document.getElementById('medicalShorthandToggle');
+    if (medicalShorthandToggle) {
+      medicalShorthandToggle.addEventListener('change', function() {
+        setMedicalShorthand(this.checked);
+      });
+    }
+
+    // Step 3 navigation buttons
+    const goToStep2FromNotesBtn = document.getElementById('goToStep2FromNotesBtn');
+    if (goToStep2FromNotesBtn) {
+      goToStep2FromNotesBtn.addEventListener('click', () => goToStep(2));
+    }
+
+    const generateSOAPBtn = document.getElementById('generateSOAPBtn');
+    if (generateSOAPBtn) {
+      generateSOAPBtn.addEventListener('click', generateSOAP);
+    }
+
+    // SOAP section copy buttons
+    const copySectionSBtn = document.getElementById('copySectionSBtn');
+    if (copySectionSBtn) {
+      copySectionSBtn.addEventListener('click', () => copySection('S'));
+    }
+
+    const copySectionOBtn = document.getElementById('copySectionOBtn');
+    if (copySectionOBtn) {
+      copySectionOBtn.addEventListener('click', () => copySection('O'));
+    }
+
+    const copySectionABtn = document.getElementById('copySectionABtn');
+    if (copySectionABtn) {
+      copySectionABtn.addEventListener('click', () => copySection('A'));
+    }
+
+    const copySectionPBtn = document.getElementById('copySectionPBtn');
+    if (copySectionPBtn) {
+      copySectionPBtn.addEventListener('click', () => copySection('P'));
+    }
+
+    const copySectionNBtn = document.getElementById('copySectionNBtn');
+    if (copySectionNBtn) {
+      copySectionNBtn.addEventListener('click', () => copySection('N'));
+    }
+
+    // Step 4 (SOAP) action buttons
+    const exportPDFBtn = document.getElementById('exportPDFBtn');
+    if (exportPDFBtn) {
+      exportPDFBtn.addEventListener('click', exportPDF);
+    }
+
+    const copyAllSOAPBtn = document.getElementById('copyAllSOAPBtn');
+    if (copyAllSOAPBtn) {
+      copyAllSOAPBtn.addEventListener('click', copyAllSOAP);
+    }
+
+    const regenerateSOAPBtn = document.getElementById('regenerateSOAPBtn');
+    if (regenerateSOAPBtn) {
+      regenerateSOAPBtn.addEventListener('click', regenerateSOAP);
+    }
+
+    // Step 4 navigation buttons
+    const goToStep3FromSOAPBtn = document.getElementById('goToStep3FromSOAPBtn');
+    if (goToStep3FromSOAPBtn) {
+      goToStep3FromSOAPBtn.addEventListener('click', () => goToStep(3));
+    }
+
+    const resetAllFromSOAPBtn = document.getElementById('resetAllFromSOAPBtn');
+    if (resetAllFromSOAPBtn) {
+      resetAllFromSOAPBtn.addEventListener('click', resetAll);
+    }
+
+    // Modal close buttons
+    const modalCloseClientBrowserBtn = document.getElementById('modalCloseClientBrowserBtn');
+    if (modalCloseClientBrowserBtn) {
+      modalCloseClientBrowserBtn.addEventListener('click', closeClientBrowser);
+    }
+
+    const closeClientBrowserBtn = document.getElementById('closeClientBrowserBtn');
+    if (closeClientBrowserBtn) {
+      closeClientBrowserBtn.addEventListener('click', closeClientBrowser);
+    }
+
+    const modalCloseWebhookBtn = document.getElementById('modalCloseWebhookBtn');
+    if (modalCloseWebhookBtn) {
+      modalCloseWebhookBtn.addEventListener('click', closeWebhookConfig);
+    }
+
+    // Client search functionality
+    const clientSearch = document.getElementById('clientSearch');
+    if (clientSearch) {
+      clientSearch.addEventListener('input', function() {
+        filterClients().catch(console.error);
+      });
+      clientSearch.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+      });
+      clientSearch.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+      });
+    }
+
+    // Webhook config buttons
+    const copyWebhookUrlBtn = document.getElementById('copyWebhookUrlBtn');
+    if (copyWebhookUrlBtn) {
+      copyWebhookUrlBtn.addEventListener('click', copyWebhookUrl);
+    }
+
+    const saveWebhookConfigBtn = document.getElementById('saveWebhookConfigBtn');
+    if (saveWebhookConfigBtn) {
+      saveWebhookConfigBtn.addEventListener('click', saveWebhookConfig);
+    }
+
+    const cancelWebhookConfigBtn = document.getElementById('cancelWebhookConfigBtn');
+    if (cancelWebhookConfigBtn) {
+      cancelWebhookConfigBtn.addEventListener('click', closeWebhookConfig);
+    }
+
+    // Manual client data textarea
+    const manualClientData = document.getElementById('manualClientData');
+    if (manualClientData) {
+      manualClientData.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+      });
+      manualClientData.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+      });
+    }
+
+    const importManualProfileBtn = document.getElementById('importManualProfileBtn');
+    if (importManualProfileBtn) {
+      importManualProfileBtn.addEventListener('click', importManualProfile);
+    }
+
+    // Logo error handling
+    const headerLogo = document.getElementById('headerLogo');
+    if (headerLogo) {
+      headerLogo.addEventListener('error', function() {
+        this.src = '';
+        this.onerror = null;
+        this.style.display = 'none';
+        const fallbackLogo = document.getElementById('fallbackLogo');
+        if (fallbackLogo) {
+          fallbackLogo.style.display = 'flex';
+        }
+      });
+    }
   });
 
   function renderTechniques() {
@@ -3137,185 +3396,420 @@ THERAPIST NOTES:
   }
 
   // ============================================================
-  // PDF EXPORT
+  // PDF EXPORT UTILITIES
   // ============================================================
-  function generatePdfDocument(outputType = 'save') { // 'save' or 'base64'
+  
+  // Enhanced PDF configuration for professional output
+  const PDF_CONFIG = {
+    pageWidth: 210,
+    marginTop: 20,
+    marginSide: 20,
+    lineHeight: 4.5,
+    sectionSpacing: 8,
+    colors: {
+      primary: [124, 58, 237],     // Violet brand color
+      secondary: [99, 102, 241],   // Indigo accent
+      dark: [15, 23, 42],          // Primary text
+      medium: [71, 85, 105],       // Secondary text
+      light: [248, 250, 252],      // Background
+      success: [16, 185, 129],     // Green
+      warning: [245, 158, 11],     // Amber
+      info: [59, 130, 246],        // Blue
+      accent: [139, 92, 246],      // Purple
+      neutral: [107, 114, 128]     // Gray
+    },
+    fonts: {
+      title: { size: 18, style: 'bold' },
+      subtitle: { size: 12, style: 'bold' },
+      heading: { size: 11, style: 'bold' },
+      body: { size: 9.5, style: 'normal' },
+      small: { size: 8, style: 'normal' },
+      tiny: { size: 7, style: 'normal' }
+    }
+  };
+
+  // Utility function to create consistent PDF instance
+  function createPDFInstance() {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ 
+      orientation: 'portrait', 
+      unit: 'mm', 
+      format: 'a4',
+      putOnlyUsedFonts: true,
+      precision: 2
+    });
     
-    const pageW = 210, margin = 18, contentW = pageW - margin * 2;
-    let y = 20;
+    // Enable text justification and better spacing
+    doc.setLineHeightFactor(1.2);
+    return doc;
+  }
 
-    // Colors
-    const violet = [124, 58, 237];
-    const dark = [15, 23, 42];
-    const mid = [71, 85, 105];
-    const light = [248, 250, 252];
+  // Enhanced text wrapping with better line breaks
+  function wrapTextWithSpacing(doc, text, maxWidth, fontSize = 9.5) {
+    if (!text || !text.trim()) return [];
+    
+    doc.setFontSize(fontSize);
+    
+    // Split into paragraphs first
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+    const allLines = [];
+    
+    paragraphs.forEach((paragraph, index) => {
+      const cleanPara = paragraph.replace(/\s+/g, ' ').trim();
+      const lines = doc.splitTextToSize(cleanPara, maxWidth);
+      allLines.push(...lines);
+      
+      // Add paragraph spacing (except for last paragraph)
+      if (index < paragraphs.length - 1) {
+        allLines.push(''); // Empty line for paragraph break
+      }
+    });
+    
+    return allLines;
+  }
 
-    // Header
-    doc.setFillColor(...violet);
-    doc.rect(0, 0, pageW, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
+  // Professional header with branding
+  function renderPDFHeader(doc, pageNumber = 1) {
+    const { pageWidth, marginSide, colors } = PDF_CONFIG;
+    const contentWidth = pageWidth - (marginSide * 2);
+    
+    if (pageNumber === 1) {
+      // Main header with full branding
+      doc.setFillColor(...colors.primary);
+      doc.rect(0, 0, pageWidth, 32, 'F');
+      
+      // Title
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(PDF_CONFIG.fonts.title.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOAP NOTE — MASSAGE THERAPY', marginSide, 16);
+      
+      // Subtitle with practice name
+      doc.setFontSize(PDF_CONFIG.fonts.small.size);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Flexion & Flow Massage Therapy', marginSide, 25);
+      
+      return 40; // Return Y position after header
+    } else {
+      // Continuation page header
+      doc.setFillColor(...colors.medium);
+      doc.rect(0, 0, pageWidth, 20, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(PDF_CONFIG.fonts.body.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOAP Note (Continued)', marginSide, 12);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.text('Page ' + pageNumber, pageWidth - marginSide - 20, 12);
+      
+      return 28; // Return Y position after header
+    }
+  }
+
+  function generatePdfDocument(outputType = 'save') { // 'save' or 'base64'
+    const doc = createPDFInstance();
+    const { pageWidth, marginSide, colors, fonts } = PDF_CONFIG;
+    const contentWidth = pageWidth - (marginSide * 2);
+    let currentPage = 1;
+    let y = renderPDFHeader(doc, currentPage);
+
+    // Professional client information panel
+    y += 5;
+
+    // Enhanced client information panel
+    const clientData = {
+      name: document.getElementById('soapClientName')?.textContent || 'Client',
+      date: document.getElementById('sessionDate')?.value || '',
+      duration: document.getElementById('sessionDuration')?.value || '',
+      complaint: document.getElementById('chiefComplaint')?.value || '',
+      painBefore: document.getElementById('painLevel')?.value || '',
+      painAfter: document.getElementById('postPainLevel')?.value || '',
+      therapist: document.getElementById('therapistName')?.value || '',
+      credentials: document.getElementById('therapistCredentials')?.value || '',
+      accountNumber: state.lastAccountNumber || ''
+    };
+
+    // Client info panel with enhanced styling
+    const panelHeight = 30;
+    doc.setFillColor(...colors.light);
+    doc.rect(marginSide, y, contentWidth, panelHeight, 'F');
+    doc.setDrawColor(...colors.medium);
+    doc.setLineWidth(0.5);
+    doc.rect(marginSide, y, contentWidth, panelHeight, 'S');
+    
+    // Client name (prominent)
+    doc.setTextColor(...colors.dark);
+    doc.setFontSize(fonts.subtitle.size);
     doc.setFont('helvetica', 'bold');
-    doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
-    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-    doc.setFont('helvetica', 'normal');
-    doc.text('Generated by SOAP Note Generator', margin, 22);
-    y = 38;
-
-    // Client info row
-    const client = document.getElementById('soapClientName').textContent;
-    const dateText = document.getElementById('sessionDate').value || '';
-    const duration = document.getElementById('sessionDuration').value || '';
-    const chiefComplaint = document.getElementById('chiefComplaint').value || '';
-    const painBefore = document.getElementById('painLevel').value;
-    const painAfter = document.getElementById('postPainLevel').value;
-    const therapist = document.getElementById('therapistName').value || '';
-    const acct = state.lastAccountNumber || '';
-    const creds = document.getElementById('therapistCredentials').value || '';
-
-    doc.setFillColor(...light);
-    doc.rect(margin, y, contentW, 22, 'F');
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(margin, y, contentW, 22, 'S');
+    doc.text(clientData.name, marginSide + 4, y + 8);
     
-    doc.setTextColor(...dark);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(client || 'Client', margin + 3, y + 7);
-    
-    doc.setFontSize(8);
+    // Session details (two columns)
+    doc.setFontSize(fonts.small.size);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...mid);
-    doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
-    doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
-    if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
-    if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
-    if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
-    if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
-    y += 28;
+    doc.setTextColor(...colors.medium);
+    
+    // Left column
+    const leftCol = marginSide + 4;
+    doc.text('Date: ' + (clientData.date || '—'), leftCol, y + 15);
+    doc.text('Duration: ' + (clientData.duration || '—'), leftCol, y + 20);
+    if (clientData.accountNumber) {
+      doc.text('Account: ' + clientData.accountNumber, leftCol, y + 25);
+    }
+    
+    // Center column  
+    const centerCol = marginSide + 70;
+    if (clientData.complaint) {
+      const ccLines = wrapTextWithSpacing(doc, 'Chief Complaint: ' + clientData.complaint, 60, fonts.small.size);
+      doc.text(ccLines[0] || '', centerCol, y + 15);
+      if (ccLines[1]) doc.text(ccLines[1], centerCol, y + 20);
+    }
+    
+    // Right column - Pain scores
+    const rightCol = marginSide + 130;
+    if (clientData.painBefore) {
+      doc.text('Pain Before: ' + clientData.painBefore + '/10', rightCol, y + 15);
+    }
+    if (clientData.painAfter) {
+      doc.text('Pain After: ' + clientData.painAfter + '/10', rightCol, y + 20);
+    }
+    
+    y += panelHeight + 8;
 
-    // SOAP Sections
-    const sections = [
-      { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
-      { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
-      { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
-      { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
-      { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
+    // Enhanced SOAP Sections with better typography
+    const soapSections = [
+      { label: 'S — Subjective', id: 'soapS', color: colors.info, description: 'Patient\'s reported symptoms and concerns' },
+      { label: 'O — Objective', id: 'soapO', color: colors.success, description: 'Observable findings and measurements' },
+      { label: 'A — Assessment', id: 'soapA', color: colors.warning, description: 'Professional evaluation and analysis' },
+      { label: 'P — Plan', id: 'soapP', color: colors.accent, description: 'Treatment plan and recommendations' },
+      { label: 'N — Therapist Notes', id: 'soapN', color: colors.neutral, description: 'Additional observations and notes' },
     ];
 
-    for (const section of sections) {
-      const rawText = document.getElementById(section.id).value;
-      const text = applyWritingStyle(rawText);
-      if (!text) continue;
+    for (const section of soapSections) {
+      const rawText = document.getElementById(section.id)?.value || '';
+      const processedText = applyWritingStyle(rawText);
+      
+      if (!processedText.trim()) continue;
 
-      // Check if we need a new page
-      if (y > 250) {
+      // Smart page break management
+      if (y > 240) {
         doc.addPage();
-        y = 20;
+        currentPage++;
+        y = renderPDFHeader(doc, currentPage);
+      }
+
+      // Enhanced section header with color bar and description
+      doc.setFillColor(...section.color);
+      doc.rect(marginSide, y, 6, 10, 'F');
+      
+      doc.setTextColor(...colors.dark);
+      doc.setFontSize(fonts.heading.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text(section.label, marginSide + 10, y + 7);
+      
+      // Optional: Add subtle description
+      doc.setFontSize(fonts.tiny.size);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(...colors.medium);
+      doc.text(section.description, marginSide + 10, y + 11);
+      
+      y += 16;
+
+      // Section content with improved formatting
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(fonts.body.size);
+      doc.setTextColor(...colors.dark);
+      
+      const textLines = wrapTextWithSpacing(doc, processedText, contentWidth - 8, fonts.body.size);
+      
+      for (const line of textLines) {
+        if (y > 265) { // Leave more space for footer
+          doc.addPage();
+          currentPage++;
+          y = renderPDFHeader(doc, currentPage);
+        }
+        
+        if (line.trim()) { // Skip empty lines from paragraph breaks
+          doc.text(line, marginSide + 4, y);
+        }
+        y += line.trim() ? PDF_CONFIG.lineHeight : PDF_CONFIG.lineHeight * 0.8; // Smaller spacing for paragraph breaks
+      }
+      
+      y += PDF_CONFIG.sectionSpacing;
+    }
+
+    // Enhanced Treatment Areas & Tension Points section
+    const treatmentData = {
+      muscles: [],
+      tensionPoints: [],
+      techniques: []
+    };
+    
+    // Organize tension points by muscle
+    const muscleGroups = new Map();
+    state.tensionPoints.forEach(point => {
+      if (!muscleGroups.has(point.muscleId)) {
+        muscleGroups.set(point.muscleId, []);
+        treatmentData.muscles.push(point.muscleName);
+      }
+      muscleGroups.get(point.muscleId).push(point);
+      
+      const pointDetail = {
+        number: point.number,
+        muscle: point.muscleName,
+        type: point.type,
+        notes: point.notes || ''
+      };
+      treatmentData.tensionPoints.push(pointDetail);
+    });
+
+    // Add treatment areas section if there's data
+    if (treatmentData.muscles.length > 0 || treatmentData.tensionPoints.length > 0) {
+      // Page break check
+      if (y > 230) {
+        doc.addPage();
+        currentPage++;
+        y = renderPDFHeader(doc, currentPage);
       }
 
       // Section header
-      doc.setFillColor(...section.color);
-      doc.rect(margin, y, 4, 8, 'F');
-      doc.setTextColor(...dark);
-      doc.setFontSize(10);
+      doc.setFillColor(...colors.secondary);
+      doc.rect(marginSide, y, 6, 10, 'F');
+      doc.setTextColor(...colors.dark);
+      doc.setFontSize(fonts.heading.size);
       doc.setFont('helvetica', 'bold');
-      doc.text(section.label, margin + 7, y + 5.5);
-      y += 11;
+      doc.text('Treatment Areas & Clinical Findings', marginSide + 10, y + 7);
+      y += 16;
 
-      // Section content
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(...mid);
-      const lines = doc.splitTextToSize(text, contentW - 5);
-      
-      for (const line of lines) {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
-        doc.text(line, margin + 3, y);
-        y += 5;
-      }
-      y += 5;
-    }
-
-    // Muscles section - Tension Points
-    const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
-    const treatedMuscles = [];
-    const tensionPointDetails = [];
-    
-    // Create muscle summary from tension points
-    const muscleGroups = new Map();
-    state.tensionPoints.forEach(dot => {
-      if (!muscleGroups.has(dot.muscleId)) {
-        muscleGroups.set(dot.muscleId, []);
-        treatedMuscles.push(dot.muscleName);
-      }
-      muscleGroups.get(dot.muscleId).push(dot);
-      tensionPointDetails.push(dot.number + '. ' + dot.muscleName + ': ' + dot.type + (dot.notes ? ' - ' + dot.notes : ''));
-    });
-
-    if (treatedMuscles.length || tensionPointDetails.length) {
-      if (y > 240) { doc.addPage(); y = 20; }
-      doc.setFillColor(107, 114, 128);
-      doc.rect(margin, y, 4, 8, 'F');
-      doc.setTextColor(...dark);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Treatment Areas & Tension Points', margin + 7, y + 5.5);
-      y += 11;
-
-      if (treatedMuscles.length) {
-        doc.setFontSize(8);
+      // Treated muscles summary
+      if (treatmentData.muscles.length > 0) {
+        doc.setFontSize(fonts.body.size);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(16, 185, 129);
-        doc.text('Treated:', margin + 3, y);
-        y += 4.5;
+        doc.setTextColor(...colors.success);
+        doc.text('◆ Treated Areas:', marginSide + 4, y);
+        y += 6;
+        
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(treatedMuscles.join(', '), contentW - 10);
-        lines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
-        y += 2;
+        doc.setTextColor(...colors.dark);
+        const muscleText = treatmentData.muscles.join(', ');
+        const muscleLines = wrapTextWithSpacing(doc, muscleText, contentWidth - 12, fonts.body.size);
+        muscleLines.forEach(line => {
+          if (line.trim()) {
+            doc.text(line, marginSide + 8, y);
+            y += PDF_CONFIG.lineHeight;
+          }
+        });
+        y += 4;
       }
       
-      // Add detailed tension points
-      if (tensionPointDetails.length) {
-        doc.setFontSize(8);
+      // Detailed tension points 
+      if (treatmentData.tensionPoints.length > 0) {
+        doc.setFontSize(fonts.body.size);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(239, 68, 68);
-        doc.text('Tension Points:', margin + 3, y);
-        y += 4.5;
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...mid);
-        tensionPointDetails.forEach(detail => {
-          const detailLines = doc.splitTextToSize(detail, contentW - 10);
-          detailLines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
+        doc.setTextColor([220, 38, 127]); // Rose color for tension points
+        doc.text('◆ Tension Points & Clinical Notes:', marginSide + 4, y);
+        y += 6;
+        
+        // Group and display tension points
+        treatmentData.tensionPoints.forEach((point, index) => {
+          if (y > 265) {
+            doc.addPage();
+            currentPage++;
+            y = renderPDFHeader(doc, currentPage);
+          }
+          
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...colors.dark);
+          doc.setFontSize(fonts.small.size);
+          
+          const pointText = point.number + '. ' + point.muscle + ': ' + point.type;
+          doc.text(pointText, marginSide + 8, y);
+          y += 4;
+          
+          if (point.notes) {
+            doc.setTextColor(...colors.medium);
+            doc.setFont('helvetica', 'italic');
+            const noteLines = wrapTextWithSpacing(doc, 'Notes: ' + point.notes, contentWidth - 16, fonts.tiny.size);
+            noteLines.forEach(noteLine => {
+              if (noteLine.trim()) {
+                doc.text(noteLine, marginSide + 12, y);
+                y += 3.5;
+              }
+            });
+          }
+          y += 2;
         });
       }
-      y += 5;
+      
+      y += PDF_CONFIG.sectionSpacing;
     }
 
-    // Footer / signature
-    if (y > 255) { doc.addPage(); y = 20; }
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, y + 5, margin + contentW, y + 5);
+    // Professional footer with signature area
+    if (y > 240) {
+      doc.addPage();
+      currentPage++;
+      y = renderPDFHeader(doc, currentPage);
+    }
+
+    // Signature section
     y += 10;
-    doc.setTextColor(...mid);
-    doc.setFontSize(8);
-    if (therapist || creds) {
-      doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y);
-      y += 5;
-    }
-    doc.setFontSize(7);
-    doc.setTextColor(180, 180, 180);
-    doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
+    doc.setDrawColor(...colors.medium);
+    doc.setLineWidth(0.5);
+    doc.line(marginSide, y, marginSide + contentWidth, y);
+    y += 8;
 
-    // Save
-    const filename = 'SOAP_Note_' + (client || 'Client').replace(/\\s+/g, '_') + '_' + (dateText || 'date') + '.pdf';
-    doc.save(filename);
+    // Therapist information
+    doc.setTextColor(...colors.dark);
+    doc.setFontSize(fonts.body.size);
+    doc.setFont('helvetica', 'bold');
+    
+    if (clientData.therapist || clientData.credentials) {
+      const therapistInfo = [clientData.therapist, clientData.credentials].filter(Boolean).join(', ');
+      doc.text('Therapist:', marginSide, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(therapistInfo, marginSide + 25, y);
+      y += 6;
+    }
+    
+    // Signature line
+    doc.setTextColor(...colors.medium);
+    doc.setFontSize(fonts.small.size);
+    doc.text('Signature:', marginSide, y);
+    doc.setDrawColor(...colors.medium);
+    doc.line(marginSide + 25, y, marginSide + 100, y);
+    
+    doc.text('Date:', marginSide + 110, y);
+    doc.line(marginSide + 125, y, marginSide + contentWidth, y);
+    y += 8;
+    
+    // Practice information
+    doc.setTextColor(...colors.medium);
+    doc.setFontSize(fonts.tiny.size);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Flexion & Flow Massage Therapy', marginSide, y);
+    
+    // Generation timestamp
+    const timestamp = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    doc.setTextColor(180, 180, 180);
+    doc.text('Generated: ' + timestamp, marginSide + contentWidth - 80, y);
+
+    // Return based on output type
+    if (outputType === 'base64') {
+      return doc.output('datauristring').split(',')[1];
+    } else {
+      // Enhanced filename with better formatting
+      const safeName = (clientData.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+      const safeDate = (clientData.date || '').replace(/[^0-9]/g, '') || 'date';
+      const filename = 'SOAP_Note_' + safeName + '_' + safeDate + '.pdf';
+      doc.save(filename);
+    }
   }
 
   // ============================================================
@@ -3980,85 +4474,11 @@ THERAPIST NOTES:
     }
   }
 
-  // ─── Generate PDF and return base64 string ───────────────────────────────
+  // ─── Generate PDF and return base64 string ────────────────────────────────
   function generatePDFBase64() {
     try {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageW = 210, margin = 18, contentW = pageW - margin * 2;
-      let y = 20;
-      const violet = [124, 58, 237], dark = [15, 23, 42], mid = [71, 85, 105], light = [248, 250, 252];
-
-      doc.setFillColor(...violet);
-      doc.rect(0, 0, pageW, 30, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
-      doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
-      doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-      doc.text('Generated by SOAP Note Generator · Flexion & Flow', margin, 22);
-      y = 38;
-
-      const client = document.getElementById('soapClientName')?.textContent || '';
-      const dateText = document.getElementById('sessionDate')?.value || '';
-      const duration = document.getElementById('sessionDuration')?.value || '';
-      const chiefComplaint = document.getElementById('chiefComplaint')?.value || '';
-      const painBefore = document.getElementById('painLevel')?.value || '';
-      const painAfter = document.getElementById('postPainLevel')?.value || '';
-      const therapist = document.getElementById('therapistName')?.value || '';
-      const creds = document.getElementById('therapistCredentials')?.value || '';
-      const acct = state.lastAccountNumber || '';
-
-      doc.setFillColor(...light);
-      doc.rect(margin, y, contentW, 26, 'F');
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(margin, y, contentW, 26, 'S');
-      doc.setTextColor(...dark); doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-      doc.text(client || 'Client', margin + 3, y + 7);
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...mid);
-      doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
-      doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
-      if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
-      if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
-      if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
-      if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
-      y += 32;
-
-      const sections = [
-        { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
-        { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
-        { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
-        { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
-        { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
-      ];
-      for (const sec of sections) {
-        const rawText = document.getElementById(sec.id)?.value;
-        const text = applyWritingStyle(rawText);
-        if (!text) continue;
-        if (y > 250) { doc.addPage(); y = 20; }
-        doc.setFillColor(...sec.color);
-        doc.rect(margin, y, 4, 8, 'F');
-        doc.setTextColor(...dark); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
-        doc.text(sec.label, margin + 7, y + 5.5);
-        y += 11;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(text, contentW - 5);
-        for (const line of lines) {
-          if (y > 270) { doc.addPage(); y = 20; }
-          doc.text(line, margin + 3, y); y += 5;
-        }
-        y += 5;
-      }
-
-      if (y > 255) { doc.addPage(); y = 20; }
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y + 5, margin + contentW, y + 5);
-      y += 10;
-      doc.setTextColor(...mid); doc.setFontSize(8);
-      if (therapist || creds) { doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y); y += 5; }
-      doc.setFontSize(7); doc.setTextColor(180, 180, 180);
-      doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
-
-      return doc.output('datauristring').split(',')[1]; // base64 only
+      // Use the same enhanced PDF generation with base64 output
+      return generatePdfDocument('base64');
     } catch(e) {
       console.warn('PDF base64 generation failed:', e);
       return null;
