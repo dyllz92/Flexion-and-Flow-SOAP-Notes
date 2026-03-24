@@ -24,6 +24,11 @@ import { renderApp } from "./components/app.js";
 
 const app = new Hono();
 
+// Public health endpoint for Railway/container health checks
+app.get("/healthz", (c) => {
+  return c.json({ ok: true, service: "soap-note-generator" });
+});
+
 // Security headers for all responses
 app.use("*", securityHeaders);
 
