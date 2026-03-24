@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { createMiddleware } from "hono/factory";
 
 // Import our modular routes
 import clientsRouter from "./routes/clients.js";
@@ -11,9 +12,23 @@ import driveRouter from "./routes/drive.js";
 
 // Import middleware
 import { csrfProtection, getCsrfToken } from "./middleware/csrf.js";
-import { standardRateLimiter, aiRateLimiter, uploadRateLimiter } from "./middleware/rate-limit.js";
+import {
+  standardRateLimiter,
+  aiRateLimiter,
+  uploadRateLimiter,
+} from "./middleware/rate-limit.js";
 import { cacheControl, securityHeaders } from "./middleware/cache.js";
 import { db } from "./database/index.js";
+
+// Request size limiting middleware
+const requestSizeLimit = createMiddleware(async (c, next) => {
+  const contentLength = c.req.header("content-length");
+  if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
+    // 10MB limit
+    return c.json({ error: "Request too large. Maximum size is 10MB." }, 413);
+  }
+  await next();
+});
 
 // Import original renderApp function (keeping UI intact for now)
 import { renderApp } from "./components/app.js";
@@ -25,6 +40,9 @@ app.use("*", securityHeaders);
 
 // Middleware
 app.use("/api/*", cors());
+
+// Request size limiting for API routes
+app.use("/api/*", requestSizeLimit);
 
 // Rate limiting for API routes
 app.use("/api/*", standardRateLimiter(db));

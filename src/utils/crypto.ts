@@ -24,15 +24,21 @@ function deriveKey(secret: string, salt: Buffer): Buffer {
 }
 
 /**
- * Get encryption secret from environment or generate a warning
+ * Get encryption secret from environment or exit in production
  */
 function getEncryptionSecret(): string {
   const secret = process.env.ENCRYPTION_SECRET || process.env.SESSION_SECRET;
   if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "CRITICAL: ENCRYPTION_SECRET environment variable required in production!",
+      );
+      process.exit(1);
+    }
     console.warn(
       "WARNING: No ENCRYPTION_SECRET set. Using fallback - tokens will not be portable across restarts!",
     );
-    // Use a deterministic fallback based on data directory for development
+    // Use a deterministic fallback based on data directory for development only
     return `fallback-dev-secret-${process.env.DATA_DIR || "default"}`;
   }
   return secret;

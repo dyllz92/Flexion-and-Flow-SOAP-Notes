@@ -1,9 +1,11 @@
 import { Hono } from "hono";
+import { timingSafeEqual } from "node:crypto";
 import type { ClientRecord } from "../types/index.js";
 import {
   findClientByEmail,
   saveClient,
   generateAccountNumber,
+  ENV,
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
 import {
@@ -11,14 +13,58 @@ import {
   validateInput,
   ValidationError,
 } from "../validation/schemas.js";
+import { logSecurityEvent, AUDIT_EVENTS } from "../utils/audit.js";
 
 const intake = new Hono();
 
 /**
  * POST /api/intake-webhook — receives structured client data from Flexion & Flow intake form.
  * Persists client to SQLite (upsert by email), forwards to Dashboard, and returns the profile.
+ *
+ * SECURITY: Validates webhook secret to prevent unauthorized data injection
  */
 intake.post("/intake-webhook", async (c) => {
+  const userIP =
+    c.req.header("cf-connecting-ip") ||
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown";
+
+  // Validate webhook secret for security
+  const secret = process.env.WEBHOOK_SECRET_INTAKE || ENV.SESSION_SECRET;
+  const providedSecret = c.req.header("X-Webhook-Secret");
+
+  if (!secret) {
+    console.error("WEBHOOK_SECRET_INTAKE not configured");
+    await logSecurityEvent("critical", AUDIT_EVENTS.ENCRYPTION_KEY_MISSING, {
+      context: "intake_webhook_secret",
+    });
+    return c.json({ error: "Webhook not configured" }, 500);
+  }
+
+  if (!providedSecret) {
+    await logSecurityEvent(
+      "warn",
+      AUDIT_EVENTS.INTAKE_WEBHOOK_UNAUTHORIZED,
+      {
+        reason: "missing_secret",
+      },
+      { userIP },
+    );
+    return c.json({ error: "Missing webhook secret" }, 401);
+  }
+
+  // Timing-safe comparison to prevent timing attacks
+  if (!timingSafeEqual(Buffer.from(secret), Buffer.from(providedSecret))) {
+    await logSecurityEvent(
+      "warn",
+      AUDIT_EVENTS.INTAKE_WEBHOOK_UNAUTHORIZED,
+      {
+        reason: "invalid_secret",
+      },
+      { userIP },
+    );
+    return c.json({ error: "Invalid webhook secret" }, 401);
+  }
   try {
     const rawBody = await c.req.json();
 
@@ -45,11 +91,11 @@ intake.post("/intake-webhook", async (c) => {
     const chiefComplaint = body.primaryConcern || body.chiefComplaint || "";
     const medications = Array.isArray(body.medications)
       ? body.medications.join(", ")
-      : (body.medications || "");
+      : body.medications || "";
     const allergies = body.allergies || "";
     const medicalConditions = Array.isArray(body.medicalConditions)
       ? body.medicalConditions.join(", ")
-      : (body.medicalConditions || "");
+      : body.medicalConditions || "";
     const areasToAvoid = body.areasToAvoid || "";
 
     const intakeSnapshot = {

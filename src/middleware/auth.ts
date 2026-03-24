@@ -1,6 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import { timingSafeEqual } from "node:crypto";
 import { ENV } from "../database/index.js";
+import { logSecurityEvent, AUDIT_EVENTS } from "../utils/audit.js";
 
 /**
  * Timing-safe string comparison to prevent timing attacks
@@ -9,10 +10,10 @@ function secureCompare(a: string, b: string): boolean {
   if (typeof a !== "string" || typeof b !== "string") {
     return false;
   }
-  
+
   const aBuffer = Buffer.from(a);
   const bBuffer = Buffer.from(b);
-  
+
   // If lengths differ, still do comparison but return false
   // This prevents length-based timing attacks
   if (aBuffer.length !== bBuffer.length) {
@@ -20,32 +21,11 @@ function secureCompare(a: string, b: string): boolean {
     timingSafeEqual(aBuffer, aBuffer);
     return false;
   }
-  
+
   return timingSafeEqual(aBuffer, bBuffer);
 }
 
-/**
- * Simple admin password authentication middleware for SOAP Notes
- * Checks X-Admin-Password header against ENV.ADMIN_PASSWORD
- * Uses timing-safe comparison to prevent timing attacks
- */
-export const requireAuth = createMiddleware(async (c, next) => {
-  const providedPassword = c.req.header("X-Admin-Password");
-
-  if (!providedPassword) {
-    return c.json(
-      { error: "Authentication required - missing X-Admin-Password header" },
-      401,
-    );
-  }
-
-  // Use timing-safe comparison to prevent timing attacks
-  if (!secureCompare(providedPassword, ENV.ADMIN_PASSWORD as string)) {
-    return c.json({ error: "Authentication failed - invalid password" }, 401);
-  }
-
-  await next();
-});
+// requireAuth middleware is now defined below after the helper functions
 
 /**
  * Rate limiting middleware for authentication attempts
@@ -53,12 +33,53 @@ export const requireAuth = createMiddleware(async (c, next) => {
  */
 const authAttempts = new Map<string, { count: number; resetTime: number }>();
 
-export const authRateLimit = createMiddleware(async (c, next) => {
-  const clientIP =
+/**
+ * Get client IP for rate limiting
+ */
+function getClientIP(c: any): string {
+  return (
     c.req.header("cf-connecting-ip") ||
-    c.req.header("x-forwarded-for") ||
-    "unknown";
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown"
+  );
+}
 
+/**
+ * Record a failed authentication attempt
+ */
+function recordFailedAttempt(clientIP: string): void {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+
+  const current = authAttempts.get(clientIP) || {
+    count: 0,
+    resetTime: now + windowMs,
+  };
+
+  // Reset if window expired
+  if (now > current.resetTime) {
+    authAttempts.set(clientIP, { count: 1, resetTime: now + windowMs });
+  } else {
+    authAttempts.set(clientIP, {
+      count: current.count + 1,
+      resetTime: current.resetTime,
+    });
+  }
+
+  // Log failed attempt
+  logSecurityEvent(
+    "warn",
+    AUDIT_EVENTS.AUTH_FAILED,
+    {
+      attemptCount: current.count + 1,
+      windowResetTime: new Date(current.resetTime).toISOString(),
+    },
+    { userIP: clientIP },
+  );
+}
+
+export const authRateLimit = createMiddleware(async (c, next) => {
+  const clientIP = getClientIP(c);
   const now = Date.now();
   const windowMs = 15 * 60 * 1000; // 15 minutes
   const maxAttempts = 5;
@@ -70,6 +91,16 @@ export const authRateLimit = createMiddleware(async (c, next) => {
       // Reset the counter
       authAttempts.set(clientIP, { count: 0, resetTime: now + windowMs });
     } else if (attempts.count >= maxAttempts) {
+      await logSecurityEvent(
+        "warn",
+        AUDIT_EVENTS.AUTH_BLOCKED,
+        {
+          attemptCount: attempts.count,
+          retryAfter: Math.ceil((attempts.resetTime - now) / 1000),
+        },
+        { userIP: clientIP },
+      );
+
       return c.json(
         {
           error: "Too many authentication attempts - try again later",
@@ -82,19 +113,27 @@ export const authRateLimit = createMiddleware(async (c, next) => {
     authAttempts.set(clientIP, { count: 0, resetTime: now + windowMs });
   }
 
-  // Track failed attempts (only for auth endpoints)
-  const isAuthEndpoint =
-    c.req.path.includes("/admin") || c.req.path.includes("/auth");
+  await next();
+});
 
-  if (isAuthEndpoint) {
-    const current = authAttempts.get(clientIP) || {
-      count: 0,
-      resetTime: now + windowMs,
-    };
-    authAttempts.set(clientIP, {
-      count: current.count + 1,
-      resetTime: current.resetTime,
-    });
+/**
+ * Enhanced auth middleware that properly tracks only failed attempts
+ */
+export const requireAuth = createMiddleware(async (c, next) => {
+  const providedPassword = c.req.header("X-Admin-Password");
+
+  if (!providedPassword) {
+    recordFailedAttempt(getClientIP(c));
+    return c.json(
+      { error: "Authentication required - missing X-Admin-Password header" },
+      401,
+    );
+  }
+
+  // Use timing-safe comparison to prevent timing attacks
+  if (!secureCompare(providedPassword, ENV.ADMIN_PASSWORD as string)) {
+    recordFailedAttempt(getClientIP(c));
+    return c.json({ error: "Authentication failed - invalid password" }, 401);
   }
 
   await next();

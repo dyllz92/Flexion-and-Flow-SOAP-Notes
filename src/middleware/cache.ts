@@ -2,7 +2,7 @@ import { createMiddleware } from "hono/factory";
 
 /**
  * Cache Control Middleware for Static Assets
- * 
+ *
  * Sets appropriate cache headers based on file type:
  * - Immutable assets (hashed): 1 year
  * - Vendor libraries: 1 week
@@ -31,27 +31,27 @@ function getCacheDuration(path: string): number {
   if (/\.[a-f0-9]{8,}\.(js|css|woff2?|ttf|eot)$/i.test(path)) {
     return CACHE_DURATIONS.immutable;
   }
-  
+
   // Vendor directory - long cache
   if (path.includes("/vendor/")) {
     return CACHE_DURATIONS.vendor;
   }
-  
+
   // Sample files - standard cache
   if (path.includes("/samples/")) {
     return CACHE_DURATIONS.standard;
   }
-  
+
   // Images, fonts, and PDFs - standard cache
   if (/\.(png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|eot|pdf)$/i.test(path)) {
     return CACHE_DURATIONS.standard;
   }
-  
+
   // CSS and JS - shorter cache
   if (/\.(css|js)$/i.test(path)) {
     return CACHE_DURATIONS.short;
   }
-  
+
   // Default - no cache
   return CACHE_DURATIONS.none;
 }
@@ -61,21 +61,21 @@ function getCacheDuration(path: string): number {
  */
 export const cacheControl = createMiddleware(async (c, next) => {
   await next();
-  
+
   // Only apply to successful responses
   if (c.res.status !== 200) return;
-  
+
   const path = c.req.path;
   const duration = getCacheDuration(path);
-  
+
   if (duration > 0) {
     const isImmutable = duration === CACHE_DURATIONS.immutable;
     const cacheValue = isImmutable
       ? `public, max-age=${duration}, immutable`
       : `public, max-age=${duration}`;
-    
+
     c.header("Cache-Control", cacheValue);
-    
+
     // Add ETag for conditional requests
     const etag = generateETag(path, c.res.headers.get("content-length") || "0");
     c.header("ETag", etag);
@@ -98,23 +98,22 @@ function generateETag(path: string, size: string): string {
  */
 export const securityHeaders = createMiddleware(async (c, next) => {
   await next();
-  
+
   // Prevent clickjacking
   c.header("X-Frame-Options", "SAMEORIGIN");
-  
+
   // Prevent MIME type sniffing
   c.header("X-Content-Type-Options", "nosniff");
-  
+
   // XSS protection (legacy browsers)
   c.header("X-XSS-Protection", "1; mode=block");
-  
+
   // Referrer policy
   c.header("Referrer-Policy", "strict-origin-when-cross-origin");
-  
-  // Content Security Policy (adjust as needed)
-  // Note: Using report-only initially to avoid breaking functionality
+
+  // Content Security Policy (enforced)
   c.header(
-    "Content-Security-Policy-Report-Only",
+    "Content-Security-Policy",
     [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com",
@@ -122,6 +121,6 @@ export const securityHeaders = createMiddleware(async (c, next) => {
       "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com",
       "img-src 'self' data: blob: https:",
       "connect-src 'self' https://api.openai.com https://www.googleapis.com https://oauth2.googleapis.com",
-    ].join("; ")
+    ].join("; "),
   );
 });

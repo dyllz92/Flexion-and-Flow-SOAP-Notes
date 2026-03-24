@@ -38,7 +38,9 @@ export const ENV = {
   DASHBOARD_WEBHOOK_URL: process.env.DASHBOARD_WEBHOOK_URL || "",
   SESSION_SECRET: process.env.SESSION_SECRET || "",
   WEBHOOK_SECRET_SOAP: process.env.WEBHOOK_SECRET_SOAP || "",
+  WEBHOOK_SECRET_INTAKE: process.env.WEBHOOK_SECRET_INTAKE || "",
   INTAKE_FORM_URL: process.env.INTAKE_FORM_URL || "",
+  ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET || "",
 };
 
 /**
