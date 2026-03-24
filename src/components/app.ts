@@ -862,6 +862,18 @@ export function renderApp(): string {
     return typeof url === 'string' && url.startsWith('/api/') && !isPublicApiUrl(url);
   }
 
+  async function publicApiFetch(url, options = {}) {
+    return fetch(url, options);
+  }
+
+  async function verifyAdminPassword(password) {
+    return publicApiFetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'X-Admin-Password': password, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+  }
+
   function showLoginOverlay(message) {
     const overlay = document.getElementById('loginOverlay');
     if (overlay) overlay.style.display = 'flex';
@@ -882,11 +894,7 @@ export function renderApp(): string {
       const pw = document.getElementById('loginPassword').value;
       if (!pw) return;
       try {
-        const res = await fetch('/api/auth/verify', {
-          method: 'POST',
-          headers: { 'X-Admin-Password': pw, 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        });
+        const res = await verifyAdminPassword(pw);
         if (res.ok) {
           sessionStorage.setItem(AUTH_KEY, pw);
           const errEl = document.getElementById('loginError');
@@ -906,11 +914,7 @@ export function renderApp(): string {
     // Auto-verify if we have a stored password
     const stored = getStoredPassword();
     if (stored) {
-      fetch('/api/auth/verify', {
-        method: 'POST',
-        headers: { 'X-Admin-Password': stored, 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      }).then(r => {
+      verifyAdminPassword(stored).then(r => {
         if (r.ok) {
           hideLoginOverlay();
           return;
@@ -929,7 +933,7 @@ export function renderApp(): string {
   async function getCsrfToken() {
     if (_csrfToken) return _csrfToken;
     try {
-      const res = await fetch('/api/csrf-token');
+      const res = await publicApiFetch('/api/csrf-token');
       const data = await res.json();
       _csrfToken = data.csrfToken;
       return _csrfToken;
@@ -948,6 +952,12 @@ export function renderApp(): string {
     const pw = getStoredPassword();
     if (pw) {
       headers['X-Admin-Password'] = pw;
+    } else if (isProtectedApiUrl(url)) {
+      showLoginOverlay('Sign in to continue');
+      return new Response(JSON.stringify({ error: 'Authentication required' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
     
     // Add CSRF token for state-changing requests
@@ -2382,38 +2392,6 @@ export function renderApp(): string {
     
     // Render techniques
     renderTechniques();
-
-    const originalFetch = window.fetch;
-    window.fetch = async (url, options) => {
-      const requestUrl = typeof url === 'string' ? url : url instanceof Request ? url.url : '';
-      const normalizedOptions = options ? { ...options } : {};
-      const headers = { ...(normalizedOptions.headers || {}) };
-
-      if (requestUrl.startsWith('/api/') && !headers['X-Admin-Password']) {
-        const storedPassword = getStoredPassword();
-        if (storedPassword) {
-          headers['X-Admin-Password'] = storedPassword;
-        } else if (isProtectedApiUrl(requestUrl)) {
-          showLoginOverlay('Sign in to continue');
-          return new Response(JSON.stringify({ error: 'Authentication required' }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      }
-
-      const response = await originalFetch(url, {
-        ...normalizedOptions,
-        headers,
-      });
-
-      if (response.status === 401 && isProtectedApiUrl(requestUrl)) {
-        clearStoredPassword();
-        showLoginOverlay('Session expired — please sign in again');
-      }
-
-      return response;
-    };
 
     // Render muscle map
     renderMuscleMap();
@@ -4590,7 +4568,14 @@ THERAPIST NOTES:
     apiFetch('/api/drive/status').then(r => r.json()).then(d => {
       const statusEl = document.getElementById('driveLinkStatus');
       const btnEl = document.getElementById('driveConnectBtn');
-      if (d.connected) {
+      if (d.enabled === false) {
+        if (statusEl) statusEl.textContent = 'Google Drive sync is disabled for this deployment.';
+        if (btnEl) {
+          btnEl.textContent = 'Drive Disabled';
+          btnEl.disabled = true;
+          btnEl.style.background = '#94a3b8';
+        }
+      } else if (d.connected) {
         if (statusEl) statusEl.innerHTML = '✅ Connected — new SOAP PDFs will be automatically saved to your Google Drive.';
         if (btnEl) btnEl.textContent = '✅ Connected';
       } else {
@@ -4682,6 +4667,10 @@ THERAPIST NOTES:
 
   // ─── Google Drive connection ───────────────────────────────────────────────
   function connectDriveForClient(accountNumber) {
+    if (document.getElementById('driveConnectBtn')?.disabled) {
+      return;
+    }
+
     const url = '/api/drive/auth?account=' + encodeURIComponent(accountNumber);
     const popup = window.open(url, 'google-drive-auth', 'width=500,height=620,top=100,left=200');
     const expectedOrigin = window.location.origin;
@@ -4706,7 +4695,10 @@ THERAPIST NOTES:
       const d = await res.json();
       const btn = document.getElementById('driveStatusBtn');
       const label = document.getElementById('driveStatusLabel');
-      if (d.connected) {
+      if (d.enabled === false) {
+        if (label) label.textContent = 'Drive Off';
+        if (btn) btn.title = 'Google Drive sync disabled';
+      } else if (d.connected) {
         if (label) label.innerHTML = '<span style="color:#38a169;">Drive ✓</span>';
         if (btn) btn.title = 'Google Drive connected';
       } else {
@@ -4724,6 +4716,10 @@ THERAPIST NOTES:
       const res = await apiFetch('/api/drive/sync-pdfs', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
+        if (data.enabled === false) {
+          alert('Google Drive sync is disabled for this deployment.');
+          return;
+        }
         alert('Sync failed: ' + (data.error || 'Unknown error'));
         return;
       }
@@ -4829,7 +4825,7 @@ THERAPIST NOTES:
   async function uploadPDFToDrive(sessionId, accountNumber, clientName, sessionDate) {
     try {
       const driveStatus = await apiFetch('/api/drive/status').then(r => r.json());
-      if (!driveStatus.connected) return;
+      if (driveStatus.enabled === false || !driveStatus.connected) return;
 
       // Generate PDF as base64
       const base64 = generatePDFBase64();

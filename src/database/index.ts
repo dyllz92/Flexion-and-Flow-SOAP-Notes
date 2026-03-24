@@ -17,6 +17,8 @@ import { runMigrations } from "./migrations.js";
  */
 export const ENV = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+  GOOGLE_DRIVE_SYNC_ENABLED:
+    (process.env.GOOGLE_DRIVE_SYNC_ENABLED || "true").toLowerCase() !== "false",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || "",

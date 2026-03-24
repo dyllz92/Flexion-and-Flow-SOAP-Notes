@@ -30,10 +30,34 @@ import path from "node:path";
 
 const drive = new Hono();
 
+function driveSyncDisabledResponse(c: any) {
+  return c.json(
+    {
+      error: "Google Drive sync is disabled",
+      enabled: false,
+      connected: false,
+    },
+    503,
+  );
+}
+
+function ensureDriveSyncEnabled(c: any): Response | null {
+  if (!ENV.GOOGLE_DRIVE_SYNC_ENABLED) {
+    return driveSyncDisabledResponse(c);
+  }
+
+  return null;
+}
+
 /**
  * GET /api/drive/auth — Start Google Drive OAuth flow
  */
 drive.get("/auth", (c) => {
+  const disabledResponse = ensureDriveSyncEnabled(c);
+  if (disabledResponse) {
+    return disabledResponse;
+  }
+
   const clientId = ENV.GOOGLE_CLIENT_ID;
   if (!clientId) {
     return c.json({ error: "Google OAuth not configured" }, 500);
@@ -67,6 +91,11 @@ drive.get("/auth", (c) => {
  * GET /api/drive/callback — OAuth callback handler
  */
 drive.get("/callback", async (c) => {
+  const disabledResponse = ensureDriveSyncEnabled(c);
+  if (disabledResponse) {
+    return disabledResponse;
+  }
+
   const code = c.req.query("code");
   const stateRaw = c.req.query("state");
 
@@ -215,6 +244,11 @@ async function uploadBase64PDFToDrive(
  * POST /api/drive/upload-pdf — Upload PDF to Google Drive
  */
 drive.post("/upload-pdf", async (c) => {
+  const disabledResponse = ensureDriveSyncEnabled(c);
+  if (disabledResponse) {
+    return disabledResponse;
+  }
+
   try {
     const body = (await c.req.json()) as {
       sessionId: string;
@@ -286,14 +320,23 @@ drive.post("/upload-pdf", async (c) => {
  * GET /api/drive/status — Check Google Drive connection status
  */
 drive.get("/status", (c) => {
+  if (!ENV.GOOGLE_DRIVE_SYNC_ENABLED) {
+    return c.json({ enabled: false, connected: false });
+  }
+
   const token = kv.get("global_drive_refresh_token");
-  return c.json({ connected: !!token });
+  return c.json({ enabled: true, connected: !!token });
 });
 
 /**
  * GET /api/drive/files — List recent PDF files from the Drive folder
  */
 drive.get("/files", async (c) => {
+  const disabledResponse = ensureDriveSyncEnabled(c);
+  if (disabledResponse) {
+    return disabledResponse;
+  }
+
   try {
     const refreshToken = kv.get("global_drive_refresh_token");
     if (!refreshToken) {
@@ -333,6 +376,11 @@ drive.get("/files", async (c) => {
  * GET /api/drive/extract-text/:fileId — Download a Drive PDF and return extracted text
  */
 drive.get("/extract-text/:fileId", async (c) => {
+  const disabledResponse = ensureDriveSyncEnabled(c);
+  if (disabledResponse) {
+    return disabledResponse;
+  }
+
   try {
     const fileId = c.req.param("fileId");
     if (!fileId || fileId.includes("..")) {
@@ -371,6 +419,11 @@ drive.get("/extract-text/:fileId", async (c) => {
  * POST /api/drive/sync-pdfs — Download PDFs from Drive, parse text, store as JSON
  */
 drive.post("/sync-pdfs", async (c) => {
+  const disabledResponse = ensureDriveSyncEnabled(c);
+  if (disabledResponse) {
+    return disabledResponse;
+  }
+
   try {
     const refreshToken = kv.get("global_drive_refresh_token");
     if (!refreshToken) {

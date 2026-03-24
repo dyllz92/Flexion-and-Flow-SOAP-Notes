@@ -102,7 +102,7 @@ sessions.post("/clients/:accountNumber/sessions", async (c) => {
 
   // Try Drive JSON upload if token exists
   const driveToken = kv.get("global_drive_refresh_token");
-  if (driveToken && ENV.GOOGLE_CLIENT_ID) {
+  if (ENV.GOOGLE_DRIVE_SYNC_ENABLED && driveToken && ENV.GOOGLE_CLIENT_ID) {
     refreshGoogleToken(
       driveToken,
       ENV.GOOGLE_CLIENT_ID,
