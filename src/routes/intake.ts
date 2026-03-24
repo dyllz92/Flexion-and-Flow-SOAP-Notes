@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { timingSafeEqual } from "node:crypto";
+import { secureCompare } from "../middleware/auth.js";
 import type { ClientRecord } from "../types/index.js";
 import {
   findClientByEmail,
@@ -54,7 +54,7 @@ intake.post("/intake-webhook", async (c) => {
   }
 
   // Timing-safe comparison to prevent timing attacks
-  if (!timingSafeEqual(Buffer.from(secret), Buffer.from(providedSecret))) {
+  if (!secureCompare(secret, providedSecret)) {
     await logSecurityEvent(
       "warn",
       AUDIT_EVENTS.INTAKE_WEBHOOK_UNAUTHORIZED,

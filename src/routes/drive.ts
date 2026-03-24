@@ -12,6 +12,8 @@ import {
   saveSession,
   db,
 } from "../database/index.js";
+import { createHmac } from "node:crypto";
+import { secureCompare } from "../middleware/auth.js";
 import {
   refreshGoogleToken,
   listDriveFiles,
@@ -40,9 +42,13 @@ drive.get("/auth", (c) => {
   const acct = c.req.query("account") || "";
   const origin = new URL(c.req.url).origin;
   const redirectUri = ENV.GOOGLE_REDIRECT_URI || `${origin}/api/drive/callback`;
-  const state = Buffer.from(JSON.stringify({ account: acct, origin })).toString(
-    "base64",
-  );
+  const stateData = Buffer.from(
+    JSON.stringify({ account: acct, origin }),
+  ).toString("base64");
+  const stateSignature = createHmac("sha256", ENV.SESSION_SECRET)
+    .update(stateData)
+    .digest("hex");
+  const state = `${stateData}.${stateSignature}`;
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -72,11 +78,22 @@ drive.get("/callback", async (c) => {
   let origin = "";
 
   try {
-    const parsed = JSON.parse(Buffer.from(stateRaw || "", "base64").toString());
+    const [stateData, stateSignature] = (stateRaw || "").split(".");
+    if (!stateData || !stateSignature) {
+      return c.html("<p>Error: invalid OAuth state.</p>", 400);
+    }
+    const expectedSig = createHmac("sha256", ENV.SESSION_SECRET)
+      .update(stateData)
+      .digest("hex");
+    if (!secureCompare(stateSignature, expectedSig)) {
+      return c.html("<p>Error: OAuth state signature mismatch.</p>", 400);
+    }
+    const parsed = JSON.parse(Buffer.from(stateData, "base64").toString());
     accountNumber = parsed.account || "";
     origin = parsed.origin || "";
   } catch (error) {
     console.error("Failed to parse OAuth state:", error);
+    return c.html("<p>Error: invalid OAuth state.</p>", 400);
   }
 
   const redirectUri =
@@ -121,7 +138,10 @@ drive.get("/callback", async (c) => {
     }
 
     const safeAccount = JSON.stringify(accountNumber);
-    const safeOrigin = JSON.stringify(origin || "*");
+    if (!origin) {
+      return c.html("<p>Error: missing origin in OAuth state.</p>", 400);
+    }
+    const safeOrigin = JSON.stringify(origin);
     return c.html(`<!DOCTYPE html><html><body>
       <p style="font-family:sans-serif;padding:20px;">✅ Google Drive connected! You can close this tab.</p>
       <script>

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { createMiddleware } from "hono/factory";
+import { bodyLimit } from "hono/body-limit";
 
 // Import our modular routes
 import clientsRouter from "./routes/clients.js";
@@ -18,19 +18,8 @@ import {
   uploadRateLimiter,
 } from "./middleware/rate-limit.js";
 import { cacheControl, securityHeaders } from "./middleware/cache.js";
+import { requireAuth, authRateLimit } from "./middleware/auth.js";
 import { db } from "./database/index.js";
-
-// Request size limiting middleware
-const requestSizeLimit = createMiddleware(async (c, next) => {
-  const contentLength = c.req.header("content-length");
-  if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
-    // 10MB limit
-    return c.json({ error: "Request too large. Maximum size is 10MB." }, 413);
-  }
-  await next();
-});
-
-// Import original renderApp function (keeping UI intact for now)
 import { renderApp } from "./components/app.js";
 
 const app = new Hono();
@@ -42,7 +31,14 @@ app.use("*", securityHeaders);
 app.use("/api/*", cors());
 
 // Request size limiting for API routes
-app.use("/api/*", requestSizeLimit);
+app.use(
+  "/api/*",
+  bodyLimit({
+    maxSize: 10 * 1024 * 1024,
+    onError: (c) =>
+      c.json({ error: "Request too large. Maximum size is 10MB." }, 413),
+  }),
+);
 
 // Rate limiting for API routes
 app.use("/api/*", standardRateLimiter(db));
@@ -57,6 +53,40 @@ app.use("/api/*", csrfProtection);
 
 // CSRF token endpoint for SPA
 app.get("/api/csrf-token", (c) => getCsrfToken(c));
+
+// Auth verification endpoint for SPA login
+app.post("/api/auth/verify", authRateLimit, requireAuth, (c) => {
+  return c.json({ authenticated: true });
+});
+
+// Require auth for SPA-facing data routes
+// (intake webhook and client export/import have their own webhook-secret auth)
+app.use("/api/clients/*", async (c, next) => {
+  const url = new URL(c.req.url);
+  const seg = url.pathname.split("/").filter(Boolean);
+  // Skip requireAuth for webhook-authenticated routes: /api/clients/export, import, sync
+  const last = seg[seg.length - 1];
+  if (last === "export" || last === "import" || last === "sync") {
+    return next();
+  }
+  return requireAuth(c, next);
+});
+app.use("/api/clients", requireAuth);
+app.use("/api/generate-soap", requireAuth);
+app.use("/api/ai-status", requireAuth);
+app.use("/api/drive/*", async (c, next) => {
+  const url = new URL(c.req.url);
+  const seg = url.pathname.split("/").filter(Boolean);
+  const last = seg[seg.length - 1];
+  // Skip requireAuth for OAuth flow routes
+  if (last === "auth" || last === "callback") {
+    return next();
+  }
+  return requireAuth(c, next);
+});
+app.use("/api/clients/:accountNumber/sessions", requireAuth);
+app.use("/api/clients/:accountNumber/sessions/*", requireAuth);
+app.use("/api/sessions/*", requireAuth);
 
 // Serve static files with caching
 app.use("/static/*", cacheControl, serveStatic({ root: "./public" }));

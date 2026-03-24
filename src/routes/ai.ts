@@ -349,7 +349,13 @@ ai.post("/generate-soap", async (c) => {
       return c.json({ error: "Invalid response from OpenAI" }, 500);
     }
 
-    const content = JSON.parse(data.choices[0].message.content);
+    let content;
+    try {
+      content = JSON.parse(data.choices[0].message.content);
+    } catch {
+      console.error("Failed to parse AI response as JSON");
+      return c.json({ error: "AI returned invalid response format" }, 502);
+    }
     return c.json(content);
   } catch (error: any) {
     if (error.name === "AbortError") {

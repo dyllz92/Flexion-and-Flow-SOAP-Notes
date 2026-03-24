@@ -6,7 +6,7 @@ import { logSecurityEvent, AUDIT_EVENTS } from "../utils/audit.js";
 /**
  * Timing-safe string comparison to prevent timing attacks
  */
-function secureCompare(a: string, b: string): boolean {
+export function secureCompare(a: string, b: string): boolean {
   if (typeof a !== "string" || typeof b !== "string") {
     return false;
   }

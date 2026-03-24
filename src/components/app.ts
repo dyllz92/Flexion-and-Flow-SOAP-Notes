@@ -67,6 +67,24 @@ export function renderApp(): string {
 <body>
   <div class="bg-wave"></div>
 
+  <!-- Login overlay -->
+  <div id="loginOverlay" style="position:fixed;inset:0;background:rgba(27,58,107,0.92);backdrop-filter:blur(6px);z-index:9999;display:flex;align-items:center;justify-content:center;">
+    <form id="loginForm" style="background:white;border-radius:var(--radius);padding:32px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="width:48px;height:48px;border-radius:12px;background:var(--primary);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;">
+          <i class="fas fa-lock" style="color:white;font-size:1.2rem;"></i>
+        </div>
+        <h2 style="font-size:1.1rem;font-weight:700;color:var(--primary);margin:0;">Flexion &amp; Flow</h2>
+        <p style="font-size:0.78rem;color:var(--text-light);margin:4px 0 0;">Enter admin password to continue</p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <input id="loginPassword" type="password" placeholder="Admin password" autocomplete="current-password" required style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.85rem;box-sizing:border-box;" />
+      </div>
+      <div id="loginError" style="display:none;color:var(--danger);font-size:0.78rem;margin-bottom:12px;text-align:center;"></div>
+      <button type="submit" style="width:100%;padding:10px;background:var(--primary);color:white;border:none;border-radius:var(--radius-sm);font-weight:600;font-size:0.85rem;cursor:pointer;">Sign In</button>
+    </form>
+  </div>
+
   <!-- Header -->
   <header class="site-header">
     <div class="header-inner">
@@ -823,6 +841,66 @@ export function renderApp(): string {
 
   <script>
   // ============================================================
+  // Authentication
+  // ============================================================
+  const AUTH_KEY = 'ff_soap_auth';
+
+  function getStoredPassword() {
+    return sessionStorage.getItem(AUTH_KEY) || '';
+  }
+
+  function showLoginOverlay(message) {
+    const overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.style.display = 'flex';
+    const errEl = document.getElementById('loginError');
+    if (errEl && message) { errEl.textContent = message; errEl.style.display = 'block'; }
+  }
+
+  function hideLoginOverlay() {
+    const overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  (function initLogin() {
+    const form = document.getElementById('loginForm');
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pw = document.getElementById('loginPassword').value;
+      if (!pw) return;
+      try {
+        const res = await fetch('/api/auth/verify', {
+          method: 'POST',
+          headers: { 'X-Admin-Password': pw, 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (res.ok) {
+          sessionStorage.setItem(AUTH_KEY, pw);
+          hideLoginOverlay();
+        } else {
+          const errEl = document.getElementById('loginError');
+          if (errEl) { errEl.textContent = 'Invalid password'; errEl.style.display = 'block'; }
+        }
+      } catch {
+        const errEl = document.getElementById('loginError');
+        if (errEl) { errEl.textContent = 'Connection error'; errEl.style.display = 'block'; }
+      }
+    });
+
+    // Auto-verify if we have a stored password
+    const stored = getStoredPassword();
+    if (stored) {
+      fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'X-Admin-Password': stored, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }).then(r => {
+        if (r.ok) hideLoginOverlay();
+      }).catch(() => {});
+    }
+  })();
+
+  // ============================================================
   // CSRF Protection & API Helpers
   // ============================================================
   let _csrfToken = null;
@@ -840,10 +918,16 @@ export function renderApp(): string {
     }
   }
   
-  // CSRF-protected fetch wrapper for POST/PUT/DELETE requests
+  // CSRF-protected fetch wrapper with auth
   async function apiFetch(url, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
     const headers = { ...options.headers };
+    
+    // Add admin password for authentication
+    const pw = getStoredPassword();
+    if (pw) {
+      headers['X-Admin-Password'] = pw;
+    }
     
     // Add CSRF token for state-changing requests
     if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
@@ -853,7 +937,14 @@ export function renderApp(): string {
       }
     }
     
-    return fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...options, headers });
+    
+    // If unauthorized, show login overlay
+    if (res.status === 401) {
+      showLoginOverlay('Session expired — please sign in again');
+    }
+    
+    return res;
   }
 
   // ============================================================

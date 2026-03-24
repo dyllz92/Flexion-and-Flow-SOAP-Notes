@@ -9,7 +9,7 @@ import {
   ENV,
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
-import { authRateLimit } from "../middleware/auth.js";
+import { authRateLimit, secureCompare } from "../middleware/auth.js";
 import {
   clientSchema,
   clientUpdateSchema,
@@ -247,7 +247,11 @@ clients.get("/", (c) => {
  */
 clients.get("/export", (c) => {
   const secret = c.req.header("X-Webhook-Secret");
-  if (!ENV.SESSION_SECRET || secret !== ENV.SESSION_SECRET) {
+  if (
+    !ENV.SESSION_SECRET ||
+    !secret ||
+    !secureCompare(secret, ENV.SESSION_SECRET)
+  ) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -276,7 +280,11 @@ clients.get("/export", (c) => {
  */
 clients.post("/import", async (c) => {
   const secret = c.req.header("X-Webhook-Secret");
-  if (!ENV.SESSION_SECRET || secret !== ENV.SESSION_SECRET) {
+  if (
+    !ENV.SESSION_SECRET ||
+    !secret ||
+    !secureCompare(secret, ENV.SESSION_SECRET)
+  ) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
