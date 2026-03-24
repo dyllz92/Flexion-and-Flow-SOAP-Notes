@@ -175,11 +175,34 @@ export const intakeWebhookSchema = z
 export type IntakeWebhookInput = z.infer<typeof intakeWebhookSchema>;
 
 /**
+ * IntakeSnapshot schema — mirrors the IntakeSnapshot interface
+ */
+const intakeSnapshotSchema = z.object({
+  savedAt: z.string(),
+  source: z.string(),
+  data: z.record(z.string(), z.string()),
+});
+
+/**
+ * Extended client schema for bulk imports — includes system-managed fields
+ * that are preserved when syncing between apps.
+ * accountNumber is optional; the import route generates one when absent.
+ */
+export const clientImportItemSchema = clientUpdateSchema.extend({
+  accountNumber: sanitizedString(50).optional(),
+  createdAt: dateSchema,
+  updatedAt: dateSchema,
+  intakeForms: z.array(intakeSnapshotSchema).optional(),
+  sessionCount: z.number().int().nonnegative().optional(),
+  lastSessionDate: dateSchema,
+});
+
+/**
  * Client import schema (for bulk imports)
  */
 export const clientImportSchema = z.object({
   clients: z
-    .array(clientUpdateSchema)
+    .array(clientImportItemSchema)
     .max(1000, "Maximum 1000 clients per import"),
 });
 
