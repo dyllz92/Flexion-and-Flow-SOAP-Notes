@@ -99,22 +99,22 @@ export function renderApp(): string {
   <!-- Step Bar -->
   <nav class="step-bar">
     <div class="step-bar-inner">
-      <div class="step-item active" id="stepItem1" onclick="goToStep(1)" data-testid="step-client-intake">
+      <div class="step-item active" id="stepItem1" data-step="1" data-testid="step-client-intake">
         <div class="step-num" id="stepNum1">1</div>
         <span class="step-label">Client Intake</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem2" onclick="goToStep(2)" data-testid="step-muscle-map">
+      <div class="step-item" id="stepItem2" data-step="2" data-testid="step-muscle-map">
         <div class="step-num" id="stepNum2">2</div>
         <span class="step-label" id="stepLabel2">Muscle Map</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem3" onclick="goToStep(3)" data-testid="step-session-notes">
+      <div class="step-item" id="stepItem3" data-step="3" data-testid="step-session-notes">
         <div class="step-num" id="stepNum3">3</div>
         <span class="step-label" id="stepLabel3">Session Notes</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem4" onclick="goToStep(4)" data-testid="step-soap-notes">
+      <div class="step-item" id="stepItem4" data-step="4" data-testid="step-soap-notes">
         <div class="step-num" id="stepNum4">4</div>
         <span class="step-label" id="stepLabel4">SOAP Notes</span>
       </div>
@@ -312,16 +312,16 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <div class="view-toggle">
-                  <button id="btnMale" onclick="setGender('male')" class="active" data-testid="btn-male">
+                  <button id="btnMale" class="active" data-testid="btn-male" data-gender="male">
                     <i class="fas fa-mars" style="margin-right:4px;"></i>Male
                   </button>
-                  <button id="btnFemale" onclick="setGender('female')" data-testid="btn-female">
+                  <button id="btnFemale" data-testid="btn-female" data-gender="female">
                     <i class="fas fa-venus" style="margin-right:4px;"></i>Female
                   </button>
                 </div>
                 <div class="view-toggle">
-                  <button id="btnAnterior" onclick="setView('anterior')" class="active" data-testid="btn-anterior">Anterior</button>
-                  <button id="btnPosterior" onclick="setView('posterior')" data-testid="btn-posterior">Posterior</button>
+                  <button id="btnAnterior" class="active" data-testid="btn-anterior" data-view="anterior">Anterior</button>
+                  <button id="btnPosterior" data-testid="btn-posterior" data-view="posterior">Posterior</button>
                 </div>
               </div>
             </div>
@@ -377,7 +377,7 @@ export function renderApp(): string {
                   <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Add a marker on the map, then describe each area here.</p>
                 </div>
               </div>
-              <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;" data-testid="btn-clear-all-markers">
+              <button class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;" data-testid="btn-clear-all-markers" id="clearAllMusclesBtn">
                 <i class="fas fa-times"></i> Clear All Markers
               </button>
             </div>
@@ -390,7 +390,7 @@ export function renderApp(): string {
 
           <!-- Quick Select Common Areas -->
           <div class="card-plain">
-            <div class="cp-head" style="cursor:pointer;user-select:none;" onclick="toggleQuickSelectPanel()">
+            <div class="cp-head" id="quickSelectHead" style="cursor:pointer;user-select:none;">
               <i class="fas fa-bolt"></i> Quick Select
               <i id="quickSelectChevron" class="fas fa-chevron-down" style="margin-left:auto;font-size:0.7rem;transition:transform 0.2s;"></i>
             </div>
@@ -401,10 +401,10 @@ export function renderApp(): string {
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;" data-testid="btn-step2-back">
+            <button class="btn btn-ghost" style="flex:1;justify-content:center;" data-testid="btn-step2-back" id="goToStep1FromMapBtn">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="goToStep(3)" class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-step2-next">
+            <button class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-step2-next" id="goToStep3FromMapBtn">
               Next <i class="fas fa-arrow-right"></i>
             </button>
           </div>
@@ -478,10 +478,10 @@ export function renderApp(): string {
               <div class="summary-row"><span class="sr-label">Session notes</span><span class="sr-val" id="reviewSessionNotes">—</span></div>
               <div class="summary-row" style="align-items:flex-start;"><span class="sr-label">Intake summary</span><span class="sr-val" id="reviewIntakePreview">—</span></div>
               <div style="display:flex;gap:8px;margin-top:6px;">
-                <button onclick="jumpToField(1, 'chiefComplaint')" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;">
+                <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" id="jumpToChiefComplaintBtn">
                   <i class="fas fa-pen"></i> Edit Intake
                 </button>
-                <button onclick="jumpToField(3, 'sessionSummary')" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;">
+                <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" id="jumpToSessionSummaryBtn">
                   <i class="fas fa-pen"></i> Edit Notes
                 </button>
               </div>
@@ -515,7 +515,7 @@ export function renderApp(): string {
             <button id="goToStep2FromNotesBtn" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-generate-soap">
+            <button class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-generate-soap" id="generateSOAPBtn">
               <i class="fas fa-wand-magic-sparkles"></i> Generate &amp; Save
             </button>
           </div>
@@ -673,13 +673,13 @@ export function renderApp(): string {
             </div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:8px;">
-                <button onclick="exportPDF()" class="btn btn-primary btn-full" data-testid="btn-export-pdf">
+                <button class="btn btn-primary btn-full" data-testid="btn-export-pdf" id="exportPDFBtn">
                   <i class="fas fa-file-pdf"></i> Export as PDF
                 </button>
-                <button onclick="copyAllSOAP()" class="btn btn-outline btn-full">
+                <button class="btn btn-outline btn-full" id="copyAllSOAPBtn">
                   <i class="fas fa-copy"></i> Copy All Text
                 </button>
-                <button onclick="regenerateSOAP()" class="btn btn-ghost btn-full" data-testid="btn-regenerate-soap">
+                <button class="btn btn-ghost btn-full" data-testid="btn-regenerate-soap" id="regenerateSOAPBtn">
                   <i class="fas fa-rotate"></i> Regenerate
                 </button>
               </div>
@@ -788,10 +788,10 @@ export function renderApp(): string {
         </div>
 
         <div style="display:flex;gap:10px;">
-          <button onclick="saveWebhookConfig()" class="btn btn-primary" style="flex:1;justify-content:center;">
+          <button class="btn btn-primary" style="flex:1;justify-content:center;" id="saveWebhookConfigBtn">
             <i class="fas fa-save"></i> Save Settings
           </button>
-          <button onclick="closeWebhookConfig()" class="btn btn-ghost" style="flex:1;justify-content:center;">Cancel</button>
+          <button class="btn btn-ghost" style="flex:1;justify-content:center;" id="cancelWebhookConfigBtn">Cancel</button>
         </div>
 
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
@@ -799,9 +799,8 @@ export function renderApp(): string {
           <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:8px;">Paste a client profile in JSON format:</p>
           <textarea id="manualImportJson" rows="3"
             placeholder='{"firstName":"Jane","lastName":"Smith","email":"jane@example.com",...}'
-            style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.75rem;outline:none;resize:vertical;"
-            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
-          <button onclick="importManualProfile()" class="btn btn-outline btn-sm" style="margin-top:8px;">
+            style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.75rem;outline:none;resize:vertical;"></textarea>
+          <button class="btn btn-outline btn-sm" style="margin-top:8px;" id="importManualProfileBtn">
             <i class="fas fa-file-import"></i> Import Profile
           </button>
         </div>
@@ -1147,7 +1146,7 @@ export function renderApp(): string {
       if (p.source === 'flexion-intake-form') tags.push('<span class="px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px]">Intake Form</span>');
       if (p.medicalConditions) tags.push('<span class="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[10px]">Medical Hx</span>');
       if (p.medications)       tags.push('<span class="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">Medications</span>');
-      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.accountNumber}').catch(console.error)">
+      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group client-profile-item" data-account-number="\${escapeHtml(p.accountNumber)}">
         <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${escapeHtml(initials || '?')}</div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-slate-800 text-sm">\${escapeHtml(name || 'Unknown Client')}</div>
@@ -1156,7 +1155,7 @@ export function renderApp(): string {
         </div>
         <div class="text-right flex-shrink-0">
           <div class="text-xs text-slate-400">\${dateStr}</div>
-          <button onclick="event.stopPropagation(); deleteClientProfile('\${escJsSingle(p.accountNumber)}').catch(console.error)" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
+          <button class="delete-client-profile mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block" data-account-number="\${escJsSingle(p.accountNumber)}">
             <i class="fas fa-trash"></i> Remove
           </button>
         </div>
@@ -1816,8 +1815,7 @@ export function renderApp(): string {
           onerror="this.style.opacity='0.2'"/>
 
         <canvas id="dotPlacementCanvas"
-          style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"
-          onclick="handleCanvasClick(event)"></canvas>
+          style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"></canvas>
 
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
@@ -1878,9 +1876,11 @@ export function renderApp(): string {
 
       return \`
         <g class="tension-dot" style="cursor:pointer;" data-dot-id="\${dot.id}"
-           onclick="removeTensionDot('\${dot.id}')"
-           onmouseenter="showDotTooltip(event, '\${dot.number}', '\${dot.muscleName}', '\${dot.type}', '\${dot.notes}')"
-           onmouseleave="hideDotTooltip()">
+           data-remove-dot-id="\${dot.id}"
+           data-dot-number="\${dot.number}"
+           data-muscle-name="\${dot.muscleName}"
+           data-dot-type="\${dot.type}"
+           data-dot-notes="\${dot.notes}">
           <circle cx="\${scaled.x}" cy="\${scaled.y}" r="12"
                   fill="rgba(239, 68, 68, 0.9)"
                   stroke="rgba(239, 68, 68, 1)"
@@ -2539,6 +2539,164 @@ export function renderApp(): string {
         }
       });
     }
+
+    // Client Accounts modal buttons
+    const modalCloseClientAccountsBtn = document.getElementById('modalCloseClientAccountsBtn');
+    if (modalCloseClientAccountsBtn) {
+      modalCloseClientAccountsBtn.addEventListener('click', closeClientAccounts);
+    }
+
+    const closeClientAccountsBtn = document.getElementById('closeClientAccountsBtn');
+    if (closeClientAccountsBtn) {
+      closeClientAccountsBtn.addEventListener('click', closeClientAccounts);
+    }
+
+    const accountSearch = document.getElementById('accountSearch');
+    if (accountSearch) {
+      accountSearch.addEventListener('input', filterAccountList);
+    }
+
+    const driveStatusBtn = document.getElementById('driveStatusBtn');
+    if (driveStatusBtn) {
+      driveStatusBtn.addEventListener('click', checkDriveStatus);
+    }
+
+    const driveSyncBtn = document.getElementById('driveSyncBtn');
+    if (driveSyncBtn) {
+      driveSyncBtn.addEventListener('click', syncDrivePDFs);
+    }
+
+    const clientSyncBtn = document.getElementById('clientSyncBtn');
+    if (clientSyncBtn) {
+      clientSyncBtn.addEventListener('click', syncClientsNow);
+    }
+
+    // Client File modal buttons
+    const loadClientFromFileBtn = document.getElementById('loadClientFromFileBtn');
+    if (loadClientFromFileBtn) {
+      loadClientFromFileBtn.addEventListener('click', loadClientFromFile);
+    }
+
+    const closeClientFileBtn = document.getElementById('closeClientFileBtn');
+    if (closeClientFileBtn) {
+      closeClientFileBtn.addEventListener('click', closeClientFile);
+    }
+
+    // Session View modal buttons
+    const closeSessionViewBtn = document.getElementById('closeSessionViewBtn');
+    if (closeSessionViewBtn) {
+      closeSessionViewBtn.addEventListener('click', closeSessionView);
+    }
+
+    // Quick Select toggle
+    const quickSelectHead = document.getElementById('quickSelectHead');
+    if (quickSelectHead) {
+      quickSelectHead.addEventListener('click', toggleQuickSelectPanel);
+    }
+
+    // Event delegation for dynamically generated elements
+    document.addEventListener('click', function(event) {
+      // Load client profile from list
+      const clientProfileItem = event.target.closest('.client-profile-item');
+      if (clientProfileItem) {
+        const accountNumber = clientProfileItem.dataset.accountNumber;
+        if (accountNumber) {
+          loadClientProfile(accountNumber).catch(console.error);
+        }
+      }
+
+      // Delete client profile
+      const deleteClientBtn = event.target.closest('.delete-client-profile');
+      if (deleteClientBtn) {
+        event.stopPropagation();
+        const accountNumber = deleteClientBtn.dataset.accountNumber;
+        if (accountNumber) {
+          deleteClientProfile(accountNumber).catch(console.error);
+        }
+      }
+
+      // Handle canvas click for muscle placement
+      if (event.target.id === 'dotPlacementCanvas') {
+        handleCanvasClick(event);
+      }
+
+      // Remove tension dot
+      const removeTensionBtn = event.target.closest('[data-remove-dot-id]');
+      if (removeTensionBtn) {
+        const dotId = removeTensionBtn.dataset.removeDotId;
+        if (dotId) {
+          removeTensionDot(dotId);
+        }
+      }
+
+      // Apply quick select preset
+      const presetBtn = event.target.closest('[data-quick-select-id]');
+      if (presetBtn) {
+        const presetId = presetBtn.dataset.quickSelectId;
+        if (presetId) {
+          applyQuickSelectPreset(presetId);
+        }
+      }
+
+      // Open client file
+      const openClientFileItem = event.target.closest('[data-client-account-number]');
+      if (openClientFileItem && openClientFileItem.dataset.action === 'open-client-file') {
+        const accountNumber = openClientFileItem.dataset.clientAccountNumber;
+        if (accountNumber) {
+          openClientFile(accountNumber);
+        }
+      }
+
+      // Open session view
+      const openSessionItem = event.target.closest('[data-session-id]');
+      if (openSessionItem && openSessionItem.dataset.action === 'open-session') {
+        const sessionId = openSessionItem.dataset.sessionId;
+        if (sessionId) {
+          openSessionView(sessionId);
+        }
+      }
+
+      // Connect drive for client
+      const connectDriveBtn = event.target.closest('[data-connect-drive-account]');
+      if (connectDriveBtn) {
+        const accountNumber = connectDriveBtn.dataset.connectDriveAccount;
+        if (accountNumber) {
+          connectDriveForClient(accountNumber);
+        }
+      }
+
+      // SVG tension dots mouseenter
+      const tensionDot = event.target.closest('.tension-dot');
+      if (tensionDot && event.type === 'mouseenter') {
+        const dotNumber = tensionDot.dataset.dotNumber;
+        const muscleName = tensionDot.dataset.muscleName;
+        const dotType = tensionDot.dataset.dotType;
+        const dotNotes = tensionDot.dataset.dotNotes;
+        showDotTooltip(event, dotNumber, muscleName, dotType, dotNotes);
+      }
+      if (tensionDot && event.type === 'mouseleave') {
+        hideDotTooltip();
+      }
+    }, true); // Use capture phase for better mouseenter/leave handling
+
+    // Add mouseenter and mouseleave listeners for SVG tension dots
+    document.addEventListener('mouseenter', function(event) {
+      const tensionDot = event.target.closest('.tension-dot');
+      if (tensionDot) {
+        const dotNumber = tensionDot.dataset.dotNumber;
+        const muscleName = tensionDot.dataset.muscleName;
+        const dotType = tensionDot.dataset.dotType;
+        const dotNotes = tensionDot.dataset.dotNotes;
+        showDotTooltip(event, dotNumber, muscleName, dotType, dotNotes);
+      }
+    }, true);
+
+    document.addEventListener('mouseleave', function(event) {
+      const tensionDot = event.target.closest('.tension-dot');
+      if (tensionDot) {
+        hideDotTooltip();
+      }
+    }, true);
   });
 
   function renderTechniques() {
@@ -2602,7 +2760,7 @@ export function renderApp(): string {
           return \`<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
               <strong style="font-size:0.78rem;color:var(--primary);">Marker \${dot.number}</strong>
-              <button type="button" onclick="removeTensionDot('\${dot.id}')" style="border:none;background:transparent;color:#e53e3e;font-size:1rem;line-height:1;cursor:pointer;" aria-label="Remove marker \${dot.number}">&times;</button>
+              <button type="button" class="remove-tension-dot-btn" data-remove-dot-id="\${dot.id}" style="border:none;background:transparent;color:#e53e3e;font-size:1rem;line-height:1;cursor:pointer;" aria-label="Remove marker \${dot.number}">&times;</button>
             </div>
             <div style="font-size:0.74rem;color:var(--text-light);margin-bottom:6px;">\${safeName}</div>
             <textarea rows="2" placeholder="Describe this pain area..." oninput="updateMarkerNotes('\${dot.id}', this.value)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font);font-size:0.78rem;resize:vertical;">\${safeNotes}</textarea>
@@ -2966,7 +3124,7 @@ export function renderApp(): string {
       // strip leading punctuation / spaces
       chunk = chunk.replace(/^[?:\\s]+/, '').trim();
       // stop at the next sentence-like boundary or question word
-      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\/ )/);
+      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\\/ )/);
       if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
       return chunk;
     }
@@ -3891,6 +4049,24 @@ THERAPIST NOTES:
   window.removeClientProfile = removeClientProfile;
   window.jumpToField = jumpToField;
   window.setMedicalShorthand = setMedicalShorthand;
+  // SOAP generation and export functions
+  window.generateSOAP = generateSOAP;
+  window.exportPDF = exportPDF;
+  window.copyAllSOAP = copyAllSOAP;
+  window.regenerateSOAP = regenerateSOAP;
+  // Client accounts functions
+  window.closeClientAccounts = closeClientAccounts;
+  window.checkDriveStatus = checkDriveStatus;
+  window.syncDrivePDFs = syncDrivePDFs;
+  window.syncClientsNow = syncClientsNow;
+  window.filterAccountList = filterAccountList;
+  // Client file and session functions
+  window.loadClientFromFile = loadClientFromFile;
+  window.closeClientFile = closeClientFile;
+  window.closeSessionView = closeSessionView;
+  window.openClientFile = openClientFile;
+  window.openSessionView = openSessionView;
+  window.connectDriveForClient = connectDriveForClient;
   // loadDriveFiles and selectDriveFile are exposed to window immediately after their definitions
   </script>
 
@@ -3904,22 +4080,21 @@ THERAPIST NOTES:
           <h3><i class="fas fa-folder-open" style="margin-right:8px;opacity:0.8;"></i>Client Accounts</h3>
           <p>All client files — account numbers, intake history &amp; SOAP sessions</p>
         </div>
-        <button class="modal-close" onclick="closeClientAccounts()"><i class="fas fa-times"></i></button>
+        <button class="modal-close" id="modalCloseClientAccountsBtn"><i class="fas fa-times"></i></button>
       </div>
 
       <!-- Toolbar -->
       <div style="padding:14px 24px;border-bottom:1px solid var(--border);background:#f7faff;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <input id="accountSearch" type="text" placeholder="Search by name, account number or email…"
-          oninput="filterAccountList()"
           style="flex:1;min-width:200px;padding:9px 14px;border:1.5px solid var(--border);border-radius:50px;font-family:var(--font);font-size:0.82rem;outline:none;"/>
         <span id="accountCount" style="font-size:0.75rem;color:var(--text-light);white-space:nowrap;"></span>
-        <button onclick="checkDriveStatus()" id="driveStatusBtn" class="btn btn-ghost btn-sm" title="Google Drive status">
+        <button id="driveStatusBtn" class="btn btn-ghost btn-sm" title="Google Drive status">
           <i class="fab fa-google-drive"></i> <span id="driveStatusLabel">Drive</span>
         </button>
-        <button onclick="syncDrivePDFs()" id="driveSyncBtn" class="btn btn-ghost btn-sm" title="Sync PDFs from Google Drive">
+        <button id="driveSyncBtn" class="btn btn-ghost btn-sm" title="Sync PDFs from Google Drive">
           <i class="fas fa-sync-alt"></i> <span id="driveSyncLabel">Sync PDFs</span>
         </button>
-        <button onclick="syncClientsNow()" id="clientSyncBtn" class="btn btn-ghost btn-sm" title="Sync client profiles across apps">
+        <button id="clientSyncBtn" class="btn btn-ghost btn-sm" title="Sync client profiles across apps">
           <i class="fas fa-cloud-download-alt"></i> <span id="clientSyncLabel">Sync Clients</span>
         </button>
       </div>
@@ -3929,7 +4104,7 @@ THERAPIST NOTES:
 
       <!-- Footer -->
       <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
-        <button onclick="closeClientAccounts()" class="btn btn-ghost btn-sm">Close</button>
+        <button class="btn btn-ghost btn-sm" id="closeClientAccountsBtn">Close</button>
       </div>
     </div>
   </div>
@@ -3945,10 +4120,10 @@ THERAPIST NOTES:
           <p id="clientFileSubtitle"></p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button onclick="loadClientFromFile()" class="btn btn-primary btn-sm">
+          <button class="btn btn-primary btn-sm" id="loadClientFromFileBtn">
             <i class="fas fa-play"></i> New Session
           </button>
-          <button class="modal-close" onclick="closeClientFile()"><i class="fas fa-times"></i></button>
+          <button class="modal-close" id="closeClientFileBtn"><i class="fas fa-times"></i></button>
         </div>
       </div>
       <div id="clientFileBody" style="padding:20px 24px;"></div>
@@ -3965,7 +4140,7 @@ THERAPIST NOTES:
           <h3><i class="fas fa-file-medical" style="margin-right:8px;opacity:0.8;"></i>Session Record</h3>
           <p id="sessionViewSubtitle"></p>
         </div>
-        <button class="modal-close" onclick="closeSessionView()"><i class="fas fa-times"></i></button>
+        <button class="modal-close" id="closeSessionViewBtn"><i class="fas fa-times"></i></button>
       </div>
       <div id="sessionViewBody" style="padding:20px 24px;"></div>
     </div>
