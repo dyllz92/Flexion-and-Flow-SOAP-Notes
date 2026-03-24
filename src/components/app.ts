@@ -1884,7 +1884,7 @@ export function renderApp(): string {
 
     list.innerHTML = visibleMuscles
       .slice(0, 40)
-      .map(muscle => `<option value="${muscle.name}">${muscle.group}</option>`)
+      .map(muscle => '<option value="' + muscle.name + '">' + muscle.group + '</option>')
       .join('');
   }
 
