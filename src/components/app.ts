@@ -849,6 +849,19 @@ export function renderApp(): string {
     return sessionStorage.getItem(AUTH_KEY) || '';
   }
 
+  function clearStoredPassword() {
+    sessionStorage.removeItem(AUTH_KEY);
+  }
+
+  function isPublicApiUrl(url) {
+    if (typeof url !== 'string') return false;
+    return url === '/api/csrf-token' || url === '/api/auth/verify';
+  }
+
+  function isProtectedApiUrl(url) {
+    return typeof url === 'string' && url.startsWith('/api/') && !isPublicApiUrl(url);
+  }
+
   function showLoginOverlay(message) {
     const overlay = document.getElementById('loginOverlay');
     if (overlay) overlay.style.display = 'flex';
@@ -876,8 +889,11 @@ export function renderApp(): string {
         });
         if (res.ok) {
           sessionStorage.setItem(AUTH_KEY, pw);
+          const errEl = document.getElementById('loginError');
+          if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
           hideLoginOverlay();
         } else {
+          clearStoredPassword();
           const errEl = document.getElementById('loginError');
           if (errEl) { errEl.textContent = 'Invalid password'; errEl.style.display = 'block'; }
         }
@@ -895,7 +911,12 @@ export function renderApp(): string {
         headers: { 'X-Admin-Password': stored, 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       }).then(r => {
-        if (r.ok) hideLoginOverlay();
+        if (r.ok) {
+          hideLoginOverlay();
+          return;
+        }
+        clearStoredPassword();
+        showLoginOverlay('Session expired — please sign in again');
       }).catch(() => {});
     }
   })();
@@ -941,6 +962,7 @@ export function renderApp(): string {
     
     // If unauthorized, show login overlay
     if (res.status === 401) {
+      clearStoredPassword();
       showLoginOverlay('Session expired — please sign in again');
     }
     
@@ -2369,17 +2391,44 @@ export function renderApp(): string {
 
     const originalFetch = window.fetch;
     window.fetch = async (url, options) => {
-      const method = options?.method?.toUpperCase();
+      const requestUrl = typeof url === 'string' ? url : url instanceof Request ? url.url : '';
+      const normalizedOptions = options ? { ...options } : {};
+      const headers = { ...(normalizedOptions.headers || {}) };
+
+      if (requestUrl.startsWith('/api/') && !headers['X-Admin-Password']) {
+        const storedPassword = getStoredPassword();
+        if (storedPassword) {
+          headers['X-Admin-Password'] = storedPassword;
+        } else if (isProtectedApiUrl(requestUrl)) {
+          showLoginOverlay('Sign in to continue');
+          return new Response(JSON.stringify({ error: 'Authentication required' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      const method = normalizedOptions.method?.toUpperCase();
       if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
         const csrfToken = getCsrfToken();
         if (csrfToken) {
-          options.headers = {
-            ...options.headers,
+          Object.assign(headers, {
             'X-CSRF-Token': csrfToken,
-          };
+          });
         }
       }
-      return originalFetch(url, options);
+
+      const response = await originalFetch(url, {
+        ...normalizedOptions,
+        headers,
+      });
+
+      if (response.status === 401 && isProtectedApiUrl(requestUrl)) {
+        clearStoredPassword();
+        showLoginOverlay('Session expired — please sign in again');
+      }
+
+      return response;
     };
 
     // Render muscle map
