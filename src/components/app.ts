@@ -3124,7 +3124,7 @@ export function renderApp(): string {
       // strip leading punctuation / spaces
       chunk = chunk.replace(/^[?:\\s]+/, '').trim();
       // stop at the next sentence-like boundary or question word
-      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\\/ )/);
+      const stopAt = chunk.search(new RegExp('\\\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\\\d+ / )'));
       if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
       return chunk;
     }
