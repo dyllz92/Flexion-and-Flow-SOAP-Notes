@@ -25,6 +25,7 @@ export interface ClientRecord {
   sessionCount: number;
   lastSessionDate: string;
   driveToken?: string; // encrypted Google Drive refresh token
+  dashboardClientId?: number; // linked Dashboard client ID
 }
 
 /**

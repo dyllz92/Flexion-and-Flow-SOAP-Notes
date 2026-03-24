@@ -6,6 +6,11 @@ import {
   generateAccountNumber,
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
+import {
+  intakeWebhookSchema,
+  validateInput,
+  ValidationError,
+} from "../validation/schemas.js";
 
 const intake = new Hono();
 
@@ -15,35 +20,37 @@ const intake = new Hono();
  */
 intake.post("/intake-webhook", async (c) => {
   try {
-    const body = await c.req.json();
+    const rawBody = await c.req.json();
 
-    // Validate minimum required fields
-    if (!body.firstName || !body.lastName) {
-      return c.json({ error: "firstName and lastName are required" }, 400);
+    // Validate input
+    let body;
+    try {
+      body = validateInput(intakeWebhookSchema, rawBody);
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        return c.json({ error: `Validation error: ${err.message}` }, 400);
+      }
+      return c.json({ error: "Invalid request body" }, 400);
     }
 
     const now = new Date().toISOString();
-    const email = String(body.email || "")
-      .toLowerCase()
-      .trim();
+    const email = (body.email || "").toLowerCase().trim();
 
-    // Parse profile fields
-    const firstName = String(body.firstName || "").trim();
-    const lastName = String(body.lastName || "").trim();
-    const phone = String(body.phone || "").trim();
-    const dob = String(body.dob || "").trim();
-    const occupation = String(body.occupation || "").trim();
-    const chiefComplaint = String(
-      body.primaryConcern || body.chiefComplaint || "",
-    ).trim();
+    // Parse profile fields (already validated and sanitized)
+    const firstName = body.firstName || "";
+    const lastName = body.lastName || "";
+    const phone = body.phone || "";
+    const dob = body.dob || "";
+    const occupation = body.occupation || "";
+    const chiefComplaint = body.primaryConcern || body.chiefComplaint || "";
     const medications = Array.isArray(body.medications)
       ? body.medications.join(", ")
-      : String(body.medications || "").trim();
-    const allergies = String(body.allergies || "").trim();
+      : (body.medications || "");
+    const allergies = body.allergies || "";
     const medicalConditions = Array.isArray(body.medicalConditions)
       ? body.medicalConditions.join(", ")
-      : String(body.medicalConditions || "").trim();
-    const areasToAvoid = String(body.areasToAvoid || "").trim();
+      : (body.medicalConditions || "");
+    const areasToAvoid = body.areasToAvoid || "";
 
     const intakeSnapshot = {
       savedAt: now,
@@ -51,7 +58,7 @@ intake.post("/intake-webhook", async (c) => {
       data: {
         painIntensity:
           body.painIntensity != null ? String(body.painIntensity) : "",
-        redFlags: String(body.redFlags || ""),
+        redFlags: body.redFlags || "",
         submittedAt: body.submittedAt || now,
       },
     };

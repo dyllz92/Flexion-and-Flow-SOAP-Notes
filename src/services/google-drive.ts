@@ -8,6 +8,31 @@ export interface DriveFileEntry {
   webViewLink?: string;
 }
 
+/** Default timeout for Google API calls (30 seconds) */
+const API_TIMEOUT_MS = 30000;
+
+/**
+ * Fetch with timeout wrapper for Google API calls
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = API_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * List files in a Google Drive folder
  */
@@ -32,17 +57,26 @@ export async function listDriveFiles(
     });
     if (pageToken) params.set("pageToken", pageToken);
 
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files?${params}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
-    if (!res.ok) {
-      console.error("Drive list error:", await res.text());
+    try {
+      const res = await fetchWithTimeout(
+        `https://www.googleapis.com/drive/v3/files?${params}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!res.ok) {
+        console.error("Drive list error:", await res.text());
+        break;
+      }
+      const data: any = await res.json();
+      files.push(...(data.files || []));
+      pageToken = data.nextPageToken;
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.error("Drive list timeout");
+      } else {
+        console.error("Drive list error:", error);
+      }
       break;
     }
-    const data: any = await res.json();
-    files.push(...(data.files || []));
-    pageToken = data.nextPageToken;
   } while (pageToken);
 
   return files;
@@ -55,15 +89,26 @@ export async function downloadDriveFile(
   accessToken: string,
   fileId: string,
 ): Promise<Buffer | null> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!res.ok) {
-    console.error("Drive download error:", await res.text());
+  try {
+    // Longer timeout for downloads (60 seconds)
+    const res = await fetchWithTimeout(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+      60000
+    );
+    if (!res.ok) {
+      console.error("Drive download error:", await res.text());
+      return null;
+    }
+    return Buffer.from(await res.arrayBuffer());
+  } catch (error: any) {
+    if (error.name === "AbortError") {
+      console.error("Drive download timeout");
+    } else {
+      console.error("Drive download error:", error);
+    }
     return null;
   }
-  return Buffer.from(await res.arrayBuffer());
 }
 
 /**
@@ -89,7 +134,8 @@ export async function uploadToDrive(
       content +
       `\r\n--${boundary}--`;
 
-    const res = await fetch(
+    // Longer timeout for uploads (60 seconds)
+    const res = await fetchWithTimeout(
       "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink",
       {
         method: "POST",
@@ -99,11 +145,19 @@ export async function uploadToDrive(
         },
         body,
       },
+      60000
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("Drive upload error:", await res.text());
+      return null;
+    }
     return (await res.json()) as DriveUploadResult;
-  } catch (error) {
-    console.error("Failed to upload to Google Drive:", error);
+  } catch (error: any) {
+    if (error.name === "AbortError") {
+      console.error("Drive upload timeout");
+    } else {
+      console.error("Failed to upload to Google Drive:", error);
+    }
     return null;
   }
 }
@@ -117,21 +171,32 @@ export async function refreshGoogleToken(
   clientSecret: string,
 ): Promise<string | null> {
   try {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-    });
-    if (!res.ok) return null;
+    const res = await fetchWithTimeout(
+      "https://oauth2.googleapis.com/token",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }),
+      },
+      15000 // 15 second timeout for token refresh
+    );
+    if (!res.ok) {
+      console.error("Token refresh error:", await res.text());
+      return null;
+    }
     const data: any = await res.json();
     return data.access_token || null;
-  } catch (error) {
-    console.error("Failed to refresh Google token:", error);
+  } catch (error: any) {
+    if (error.name === "AbortError") {
+      console.error("Token refresh timeout");
+    } else {
+      console.error("Failed to refresh Google token:", error);
+    }
     return null;
   }
 }

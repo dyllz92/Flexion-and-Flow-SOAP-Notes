@@ -1,6 +1,12 @@
 /**
  * Main App component - contains the full single page application
  * This is the main UI for the SOAP Notes Generator
+ *
+ * Structure:
+ * - CSS: /static/styles/app.css (extracted)
+ * - JS Utils: /static/js/utils.js
+ * - JS API: /static/js/api.js
+ * - PDF Loader: /static/js/pdf-loader.js (lazy loads PDF.js)
  */
 export function renderApp(): string {
   return `<!DOCTYPE html>
@@ -10,16 +16,33 @@ export function renderApp(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SOAP Notes — Flexion &amp; Flow</title>
   
+  <!-- Fonts & Icons -->
   <link rel="stylesheet" href="/static/vendor/fonts/montserrat.css"/>
   <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css"/>
-  <script src="/static/vendor/axios.min.js"></script>
+  
+  <!-- App Styles (external) -->
+  <link rel="stylesheet" href="/static/styles/app.css"/>
+  
+  <!-- jsPDF for PDF generation (always needed) -->
   <script src="/static/vendor/jspdf.umd.min.js"></script>
-  <script src="/static/vendor/pdf.min.js"></script>
+  
+  <!-- PDF.js loaded lazily when needed -->
+  <script>
+    // Lazy load PDF.js only when PDF viewing is needed
+    window.loadPdfJs = function() {
+      if (window.pdfjsLib) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/static/vendor/pdf.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+  </script>
+  
+  <!-- Inline critical styles (variables only) -->
   <style>
-    /* ═══════════════════════════════════════════════════════════
-       Flexion & Flow — SOAP Note Generator
-       Brand: Navy #1B3A6B | Sky #5BA3D9 | Light #EEF4FB
-       ═══════════════════════════════════════════════════════════ */
     :root {
       --primary:       #1b3a6b;
       --primary-light: #2c5fa3;
@@ -39,446 +62,6 @@ export function renderApp(): string {
       --shadow-sm:     0 2px 8px rgba(27,58,107,0.08);
       --font:          "Montserrat", -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    /* ── Background wave ── */
-    .bg-wave {
-      position: fixed; inset: 0;
-      background: url("/bg-wave.png") center center / cover no-repeat;
-      opacity: 0.45; z-index: 0; pointer-events: none;
-    }
-
-    /* ── Header ── */
-    .site-header {
-      position: static;
-      z-index: 200;
-      background: white;
-      box-shadow: 0 2px 12px rgba(255,255,255,0);
-    }
-    .header-inner {
-      max-width: 960px; margin: 0 auto;
-      padding: 20px 24px 12px;
-      display: flex; align-items: center; justify-content: center;
-      background: white;
-      position: relative;
-    }
-    .header-logo { height: 72px; object-fit: contain; }
-    .header-actions {
-      position: absolute; right: 24px; top: 50%;
-      transform: translateY(-50%);
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    /* ── Step bar ── */
-    .step-bar {
-      background: white;
-      border-bottom: 1px solid var(--border);
-      position: sticky; top: 0; z-index: 100;
-    }
-    .step-bar-inner {
-      max-width: 960px; margin: 0 auto;
-      padding: 0 24px;
-      display: flex; align-items: center; gap: 0;
-      overflow-x: auto;
-    }
-    .step-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 14px 20px 14px 16px;
-      cursor: pointer;
-      white-space: nowrap;
-      border-bottom: 3px solid transparent;
-      transition: all 0.2s;
-      position: relative;
-    }
-    .step-item:hover { background: var(--bg); }
-    .step-item.active { border-bottom-color: var(--primary); }
-    .step-item.done { border-bottom-color: var(--success); }
-    .step-num {
-      width: 28px; height: 28px; border-radius: 50%;
-      background: #e2ebf7; color: var(--text-light);
-      font-size: 0.8rem; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: all 0.2s;
-    }
-    .step-item.active .step-num { background: var(--primary); color: white; }
-    .step-item.done .step-num { background: var(--success); color: white; }
-    .step-label { font-size: 0.82rem; font-weight: 600; color: var(--text-light); transition: color 0.2s; }
-    .step-item.active .step-label { color: var(--primary); }
-    .step-item.done .step-label { color: var(--success); }
-    .step-sep { width: 24px; height: 1px; background: var(--border); flex-shrink: 0; }
-
-    /* ── Page layout ── */
-    .page-content {
-      position: relative; z-index: 1;
-      max-width: 960px; margin: 0 auto;
-      padding: 32px 16px 60px;
-    }
-    .step-panel { display: none; }
-    .step-panel.active { display: block; }
-
-    /* ── Cards ── */
-    .card {
-      background: var(--bg-card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-    .card-header-bar {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-      padding: 20px 28px;
-      color: white;
-    }
-    .card-header-bar h2 { font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
-    .card-header-bar p { font-size: 0.78rem; opacity: 0.8; }
-    .card-body { padding: 24px 28px; }
-    .card-footer { padding: 16px 28px; border-top: 1px solid var(--border); background: #f7faff; }
-
-    .card-plain { background: var(--bg-card); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
-    .card-plain .cp-head {
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px;
-      font-size: 0.88rem; font-weight: 700; color: var(--primary);
-    }
-    .card-plain .cp-head i { color: var(--accent); font-size: 0.9rem; }
-    .card-plain .cp-body { padding: 18px 20px; }
-
-    /* ── Grid ── */
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-    .col-span-2 { grid-column: span 2; }
-    @media (max-width: 768px) {
-      .grid-2, .grid-3 { grid-template-columns: 1fr; }
-      .col-span-2 { grid-column: span 1; }
-    }
-
-    /* ── Form fields ── */
-    .field { margin-bottom: 16px; }
-    .field label {
-      display: block; font-size: 0.78rem; font-weight: 700;
-      color: var(--primary); margin-bottom: 6px; letter-spacing: 0.3px;
-    }
-    .field label .req { color: var(--accent); }
-    .field input, .field select, .field textarea {
-      width: 100%; padding: 10px 14px;
-      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
-      font-family: var(--font); font-size: 0.85rem; color: var(--text);
-      background: #fff; transition: border-color 0.2s, box-shadow 0.2s;
-      outline: none;
-    }
-    .field input:focus, .field select:focus, .field textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(91,163,217,0.15);
-    }
-    .field textarea { resize: vertical; min-height: 80px; }
-    .field-row { display: flex; gap: 14px; }
-    .field-row > * { flex: 1; min-width: 0; }
-    @media (max-width: 540px) { .field-row { flex-direction: column; } }
-    @media (max-width: 500px) { .hide-mobile { display: none; } }
-
-    /* ── Buttons ── */
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 10px 22px; border-radius: 50px;
-      font-family: var(--font); font-size: 0.85rem; font-weight: 700;
-      cursor: pointer; transition: all 0.2s; border: none; outline: none;
-      text-decoration: none;
-    }
-    .btn-primary { background: var(--primary); color: white; }
-    .btn-primary:hover { background: var(--primary-light); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(27,58,107,0.25); }
-    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-    .btn-accent { background: var(--accent); color: white; }
-    .btn-accent:hover { background: #4a8fc0; transform: translateY(-1px); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: white; }
-    .btn-ghost { background: transparent; color: var(--text-light); border: 1.5px solid var(--border); }
-    .btn-ghost:hover { background: var(--bg); color: var(--text); border-color: var(--primary); }
-    .btn-danger { background: var(--danger); color: white; }
-    .btn-danger:hover { background: #c53030; }
-    .btn-sm { padding: 8px 18px; font-size: 0.8rem; }
-    .btn-lg { padding: 13px 36px; font-size: 0.95rem; }
-    .btn-full { width: 100%; justify-content: center; border-radius: var(--radius-sm); }
-
-    /* ── Client Profile Button Variants ── */
-    .btn-profile-primary {
-      background: white; color: var(--primary);
-      border: 1.5px solid rgba(255,255,255,0.8);
-      border-radius: 24px; font-weight: 600;
-      box-shadow: 0 2px 8px rgba(27,58,107,0.15);
-    }
-    .btn-profile-primary:hover {
-      background: #f8fbff; color: var(--primary);
-      border-color: white; transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(27,58,107,0.25);
-    }
-    .btn-profile-secondary {
-      background: rgba(255,255,255,0.2); color: white;
-      border: 1.5px solid rgba(255,255,255,0.4);
-      border-radius: 24px; font-weight: 600;
-      backdrop-filter: blur(8px);
-    }
-    .btn-profile-secondary:hover {
-      background: rgba(255,255,255,0.3); color: white;
-      border-color: rgba(255,255,255,0.6);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-    }
-
-    /* ── Status badge ── */
-    .badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 12px; border-radius: 50px;
-      font-size: 0.72rem; font-weight: 700;
-    }
-    .badge-success { background: #e6f7ed; color: var(--success); }
-    .badge-accent { background: #e8f4fc; color: var(--accent); }
-    .badge-warning { background: var(--warning-bg); color: var(--warning-txt); }
-    .badge-primary { background: #e2ebf7; color: var(--primary); }
-
-    /* ── Integration client chips ── */
-    .client-chip {
-      display: inline-flex; align-items: center; gap: 10px;
-      padding: 10px 16px; border-radius: 16px;
-      border: 1.5px solid var(--border);
-      background: white; cursor: pointer;
-      transition: all 0.2s ease; font-size: 0.84rem;
-      box-shadow: 0 1px 3px rgba(27,58,107,0.06);
-    }
-    .client-chip:hover { 
-      border-color: var(--accent); 
-      background: #f8fbff;
-      transform: translateY(-1px);
-      box-shadow: 0 3px 12px rgba(27,58,107,0.12);
-    }
-    .client-chip .chip-avatar {
-      width: 32px; height: 32px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-      color: white; font-size: 0.72rem; font-weight: 800;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; box-shadow: 0 2px 4px rgba(27,58,107,0.15);
-    }
-    .client-chip .chip-content { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .client-chip .chip-name { 
-      font-weight: 600; color: var(--primary); 
-      font-size: 0.85rem; line-height: 1.2;
-    }
-    .client-chip .chip-ago { 
-      font-size: 0.72rem; color: var(--text-light); 
-      font-weight: 500; opacity: 0.8;
-    }
-
-    /* ── Drop zone ── */
-    .drop-zone {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius-sm);
-      padding: 32px 20px; text-align: center;
-      cursor: pointer; transition: all 0.2s;
-      background: #f7faff;
-    }
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: var(--accent); background: #e8f4fc;
-    }
-    .drop-zone .dz-icon {
-      width: 52px; height: 52px; border-radius: 50%;
-      background: #e2ebf7; margin: 0 auto 12px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .drop-zone .dz-icon i { color: var(--primary); font-size: 1.3rem; }
-    .drop-zone p { font-size: 0.85rem; color: var(--text); font-weight: 600; }
-    .drop-zone .dz-sub { font-size: 0.75rem; color: var(--text-light); margin-top: 4px; }
-
-    /* ── Muscle map ── */
-    .muscle-path { cursor: pointer; transition: all 0.2s ease; stroke-width: 0.5; }
-    .muscle-path:hover { opacity: 0.75; filter: brightness(0.85); }
-    .muscle-path.treated { fill: #38a169 !important; stroke: #276749 !important; stroke-width: 1.5 !important; }
-    .muscle-path.follow-up { fill: #d69e2e !important; stroke: #b7791f !important; stroke-width: 1.5 !important; }
-    .muscle-tooltip {
-      position: fixed;
-      background: rgba(27,58,107,0.95); color: white;
-      padding: 6px 12px; border-radius: 6px; font-size: 11px;
-      pointer-events: none; z-index: 9999; white-space: nowrap;
-      font-family: var(--font); font-weight: 600;
-      transform: translate(-50%, -130%);
-    }
-    .view-toggle {
-      display: flex; background: var(--bg); border-radius: var(--radius-sm);
-      padding: 3px; gap: 3px; border: 1px solid var(--border);
-    }
-    .view-toggle button {
-      padding: 6px 16px; border-radius: 6px; border: none;
-      font-family: var(--font); font-size: 0.78rem; font-weight: 600;
-      color: var(--text-light); cursor: pointer; transition: all 0.15s;
-      background: transparent;
-    }
-    .view-toggle button.active { background: var(--primary); color: white; }
-
-    /* ── Muscle legend dots ── */
-    .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
-
-    /* ── Technique checkboxes ── */
-    .technique-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm); cursor: pointer;
-      font-size: 0.8rem; font-weight: 500; color: var(--text);
-      transition: all 0.15s; background: #fff;
-    }
-    .technique-item:hover { border-color: var(--accent); background: #f0f8ff; }
-    .technique-item input { accent-color: var(--primary); width: 15px; height: 15px; flex-shrink: 0; }
-    .technique-item input:checked + span { color: var(--primary); font-weight: 600; }
-
-    /* ── SOAP sections ── */
-    .soap-block { border-left: 4px solid; padding-left: 14px; margin-bottom: 4px; }
-    .soap-s { border-color: #5ba3d9; }
-    .soap-o { border-color: #38a169; }
-    .soap-a { border-color: #d69e2e; }
-    .soap-p { border-color: #805ad5; }
-    .soap-n { border-color: #718096; }
-    .soap-letter {
-      width: 30px; height: 30px; border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.88rem; font-weight: 800; flex-shrink: 0;
-    }
-    .soap-letter-s { background: #e8f4fc; color: #5ba3d9; }
-    .soap-letter-o { background: #e6f7ed; color: #38a169; }
-    .soap-letter-a { background: #fef9e8; color: #d69e2e; }
-    .soap-letter-p { background: #f3eeff; color: #805ad5; }
-    .soap-letter-n { background: #f1f5f9; color: #718096; }
-    .soap-textarea {
-      width: 100%; background: transparent; border: none; outline: none;
-      font-family: var(--font); font-size: 0.85rem; color: var(--text);
-      line-height: 1.7; resize: none; padding: 0;
-    }
-
-    /* ── Summary panel ── */
-    .summary-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 7px 0; border-bottom: 1px solid var(--border);
-      font-size: 0.8rem;
-    }
-    .summary-row:last-child { border-bottom: none; }
-    .summary-row .sr-label { color: var(--text-light); font-weight: 500; }
-    .summary-row .sr-val { font-weight: 700; color: var(--primary); }
-
-    /* ── Muscle list chips (selected) ── */
-    .muscle-chip {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 10px; border-radius: 50px; font-size: 0.72rem; font-weight: 600;
-      margin: 2px 3px 2px 0;
-    }
-    .muscle-chip-treated { background: #e6f7ed; color: #276749; border: 1px solid #c6f6d5; }
-    .muscle-chip-followup { background: #fef9e8; color: #b7791f; border: 1px solid #fef08a; }
-
-    /* ── Shimmer ── */
-    .shimmer {
-      background: linear-gradient(90deg, #e2ebf7 25%, #d0dff0 50%, #e2ebf7 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.5s infinite;
-      border-radius: 6px;
-    }
-    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-
-    /* ── Toast ── */
-    #toast {
-      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
-      background: var(--primary); color: white;
-      padding: 10px 24px; border-radius: 50px;
-      font-family: var(--font); font-size: 0.82rem; font-weight: 600;
-      box-shadow: 0 4px 20px rgba(27,58,107,0.3);
-      z-index: 10000; opacity: 0; transition: all 0.3s; pointer-events: none;
-      white-space: nowrap;
-    }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    /* ── Info box ── */
-    .info-box {
-      padding: 14px 16px; border-radius: var(--radius-sm);
-      font-size: 0.8rem; line-height: 1.6;
-    }
-    .info-box-blue { background: #e8f4fc; border: 1px solid #bee3f8; color: #1a5276; }
-    .info-box-yellow { background: var(--warning-bg); border: 1px solid #fde68a; color: var(--warning-txt); }
-    .info-box-green { background: #e6f7ed; border: 1px solid #c6f6d5; color: #276749; }
-    .info-box p { margin: 0; }
-    .info-box strong { font-weight: 700; }
-
-    /* ── PDF upload status ── */
-    .pdf-status {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px; background: #e6f7ed;
-      border: 1px solid #c6f6d5; border-radius: var(--radius-sm);
-      font-size: 0.82rem; color: #276749; font-weight: 600;
-    }
-
-    /* ── Modal ── */
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(27,58,107,0.45);
-      backdrop-filter: blur(3px); z-index: 500;
-      display: flex; align-items: center; justify-content: center; padding: 16px;
-    }
-    .modal-backdrop.hidden, .modal-backdrop[style*="display:none"] { display: none !important; }
-    .modal-box {
-      background: white; border-radius: var(--radius);
-      box-shadow: 0 20px 60px rgba(27,58,107,0.25);
-      width: 100%; overflow: hidden;
-    }
-    .modal-header {
-      background: linear-gradient(135deg, var(--primary), var(--primary-light));
-      padding: 18px 24px; color: white;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .modal-header h3 { font-size: 0.95rem; font-weight: 700; }
-    .modal-header p { font-size: 0.75rem; opacity: 0.8; margin-top: 2px; }
-    .modal-close {
-      background: rgba(255,255,255,0.15); border: none; color: white;
-      width: 30px; height: 30px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 0.85rem; transition: background 0.15s;
-    }
-    .modal-close:hover { background: rgba(255,255,255,0.3); }
-    .modal-body { padding: 20px 24px; overflow-y: auto; max-height: 65vh; }
-    .modal-footer { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    /* ── Footer ── */
-    .site-footer {
-      position: relative; z-index: 1;
-      background: var(--primary);
-      color: rgba(255,255,255,0.75);
-      text-align: center;
-      padding: 16px 24px;
-      font-size: 0.78rem;
-    }
-    .site-footer a { color: rgba(255,255,255,0.75); text-decoration: none; }
-    .site-footer a:hover { color: white; }
-
-    /* ── Responsive ── */
-    @media (max-width: 760px) {
-      [style*="1fr 300px"],
-      [style*="1fr 280px"] {
-        grid-template-columns: 1fr !important;
-      }
-    }
-    @media (max-width: 620px) {
-      .page-content { padding: 16px 14px 48px; }
-      .card-body { padding: 16px 18px; }
-      .card-header-bar { padding: 16px 18px; }
-      .header-inner { padding: 16px 16px 10px; }
-      .header-logo { height: 52px; }
-      .header-actions { right: 16px; }
-    }
   </style>
 </head>
 <body>
@@ -487,8 +70,7 @@ export function renderApp(): string {
   <!-- Header -->
   <header class="site-header">
     <div class="header-inner">
-      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"
-           onerror="this.src=''; this.onerror=null; this.style.display='none'; document.getElementById('fallbackLogo').style.display='flex'"/>
+      <img id="headerLogo" src="/logo-wordmark.png" alt="Flexion &amp; Flow" class="header-logo"/>
       <div id="fallbackLogo" style="display:none; flex-direction:column; align-items:center; gap:4px;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:40px;height:40px;border-radius:10px;background:var(--primary);display:flex;align-items:center;justify-content:center;">
@@ -504,10 +86,10 @@ export function renderApp(): string {
         <span id="statusBadge" class="badge badge-success" style="display:none">
           <i class="fas fa-check-circle"></i> Note Ready
         </span>
-        <button onclick="openClientAccounts()" class="btn btn-ghost btn-sm" title="Client Accounts">
+        <button id="openClientAccountsBtn" class="btn btn-ghost btn-sm" title="Client Accounts">
           <i class="fas fa-users"></i> <span class="hide-mobile">Clients</span>
         </button>
-        <button onclick="resetAll()" class="btn btn-ghost btn-sm">
+        <button id="resetAllBtn" class="btn btn-ghost btn-sm">
           <i class="fas fa-rotate-right"></i> <span class="hide-mobile">New Session</span>
         </button>
       </div>
@@ -517,22 +99,22 @@ export function renderApp(): string {
   <!-- Step Bar -->
   <nav class="step-bar">
     <div class="step-bar-inner">
-      <div class="step-item active" id="stepItem1" onclick="goToStep(1)">
+      <div class="step-item active" id="stepItem1" data-step="1" data-testid="step-client-intake">
         <div class="step-num" id="stepNum1">1</div>
         <span class="step-label">Client Intake</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem2" onclick="goToStep(2)">
+      <div class="step-item" id="stepItem2" data-step="2" data-testid="step-muscle-map">
         <div class="step-num" id="stepNum2">2</div>
         <span class="step-label" id="stepLabel2">Muscle Map</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem3" onclick="goToStep(3)">
+      <div class="step-item" id="stepItem3" data-step="3" data-testid="step-session-notes">
         <div class="step-num" id="stepNum3">3</div>
         <span class="step-label" id="stepLabel3">Session Notes</span>
       </div>
       <div class="step-sep"></div>
-      <div class="step-item" id="stepItem4" onclick="goToStep(4)">
+      <div class="step-item" id="stepItem4" data-step="4" data-testid="step-soap-notes">
         <div class="step-num" id="stepNum4">4</div>
         <span class="step-label" id="stepLabel4">SOAP Notes</span>
       </div>
@@ -560,10 +142,10 @@ export function renderApp(): string {
               </div>
             </div>
             <div style="display:flex;gap:10px;">
-              <button onclick="openClientBrowser()" class="btn btn-sm btn-profile-primary">
+              <button id="openClientBrowserBtn" class="btn btn-sm btn-profile-primary">
                 <i class="fas fa-search"></i> Browse Clients
               </button>
-              <button onclick="openWebhookConfig()" class="btn btn-sm btn-profile-secondary" title="Configure integration">
+              <button id="openWebhookConfigBtn" class="btn btn-sm btn-profile-secondary" title="Configure integration">
                 <i class="fas fa-link"></i> Setup
               </button>
             </div>
@@ -593,19 +175,16 @@ export function renderApp(): string {
             <p>Auto-extracts client information from the Flexion &amp; Flow intake PDF</p>
           </div>
           <div class="card-body">
-            <div id="dropZone" class="drop-zone"
-                 onclick="document.getElementById('pdfInput').click()"
-                 ondragover="handleDragOver(event)"
-                 ondrop="handleDrop(event)">
+            <div id="dropZone" class="drop-zone">
               <div class="dz-icon"><i class="fas fa-file-pdf"></i></div>
               <p>Drop PDF here or click to browse</p>
               <p class="dz-sub">Flexion &amp; Flow intake forms supported</p>
-              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none" onchange="handlePDFUpload(event)"/>
+              <input type="file" id="pdfInput" accept=".pdf" class="hidden" style="display:none"/>
             </div>
             <div id="pdfStatus" style="display:none;margin-top:12px;" class="pdf-status">
               <i class="fas fa-check-circle" style="color:var(--success);font-size:1rem;"></i>
               <span id="pdfFileName"></span>
-              <button onclick="clearPDF()" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
+              <button id="clearPDFBtn" style="margin-left:auto;background:none;border:none;color:var(--text-light);cursor:pointer;font-size:0.9rem;" title="Remove">
                 <i class="fas fa-times"></i>
               </button>
             </div>
@@ -614,19 +193,19 @@ export function renderApp(): string {
               <span>Extracting text from PDF…</span>
             </div>
 
-            <!-- Recent Drive PDFs -->
-            <div id="driveFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+            <!-- Supabase Stored PDFs -->
+            <div id="supabaseFilesSection" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                 <h3 style="margin:0;font-size:0.85rem;font-weight:600;color:var(--text);">
-                  <i class="fab fa-google-drive" style="margin-right:6px;opacity:0.7;"></i>Recent Drive PDFs
+                  <i class="fas fa-clipboard-list" style="margin-right:6px;opacity:0.7;"></i>Recent Intake Forms
                 </h3>
-                <button onclick="loadDriveFiles()" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh file list">
-                  <i class="fas fa-sync-alt" id="driveFilesRefreshIcon"></i>
+                <button id="supabaseFilesRefreshBtn" class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:3px 10px;" title="Refresh Supabase files">
+                  <i class="fas fa-sync-alt" id="supabaseFilesRefreshIcon"></i>
                 </button>
               </div>
-              <div id="driveFilesList" style="max-height:200px;overflow-y:auto;">
+              <div id="supabaseFilesList" style="max-height:200px;overflow-y:auto;">
                 <p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">
-                  Loading Drive files…
+                  Loading intake forms…
                 </p>
               </div>
             </div>
@@ -643,17 +222,17 @@ export function renderApp(): string {
             <div class="field-row">
               <div class="field">
                 <label>First Name <span class="req">*</span></label>
-                <input id="clientFirstName" type="text" placeholder="Jane" />
+                <input id="clientFirstName" type="text" placeholder="Jane" data-testid="input-first-name" />
               </div>
               <div class="field">
                 <label>Last Name <span class="req">*</span></label>
-                <input id="clientLastName" type="text" placeholder="Smith" />
+                <input id="clientLastName" type="text" placeholder="Smith" data-testid="input-last-name" />
               </div>
             </div>
             <div class="field-row">
               <div class="field">
                 <label>Email <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;">(used to link client file)</span></label>
-                <input id="clientEmail" type="email" placeholder="jane@example.com" oninput="updateSummaryPanel()" />
+                <input id="clientEmail" type="email" placeholder="jane@example.com" oninput="updateSummaryPanel()" data-testid="input-email" />
               </div>
               <div class="field">
                 <label>Date of Birth</label>
@@ -667,13 +246,13 @@ export function renderApp(): string {
               </div>
             <div class="field">
               <label>Chief Complaint / Reason for Visit</label>
-              <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches…" />
+              <input id="chiefComplaint" type="text" placeholder="e.g. Lower back pain, tension headaches…" data-testid="input-chief-complaint" />
               </div>
             </div>
             <div class="field-row">
               <div class="field">
                 <label>Pain Level (0–10)</label>
-                <input id="painLevel" type="number" min="0" max="10" placeholder="7" />
+                <input id="painLevel" type="number" min="0" max="10" placeholder="7" data-testid="input-pain-level" />
               </div>
               <div class="field">
                 <label>Session Duration</label>
@@ -705,12 +284,10 @@ export function renderApp(): string {
           <div class="card-body">
             <textarea id="intakeFormData" rows="5"
               placeholder="Intake form data will appear here after PDF upload, or type manually…&#10;&#10;Include: medical history, current conditions, allergies, medications, past injuries, client goals, etc."
-              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
-              onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
-              onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"></textarea>
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.85rem;color:var(--text);resize:vertical;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"></textarea>
           </div>
           <div class="card-footer" style="display:flex;justify-content:flex-end;">
-            <button onclick="goToStep(2)" class="btn btn-primary">
+            <button id="goToStep2Btn" class="btn btn-primary">
               Next: Select Muscles <i class="fas fa-arrow-right"></i>
             </button>
           </div>
@@ -735,16 +312,16 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <div class="view-toggle">
-                  <button id="btnMale" onclick="setGender('male')" class="active">
+                  <button id="btnMale" class="active" data-testid="btn-male" data-gender="male">
                     <i class="fas fa-mars" style="margin-right:4px;"></i>Male
                   </button>
-                  <button id="btnFemale" onclick="setGender('female')">
+                  <button id="btnFemale" data-testid="btn-female" data-gender="female">
                     <i class="fas fa-venus" style="margin-right:4px;"></i>Female
                   </button>
                 </div>
                 <div class="view-toggle">
-                  <button id="btnAnterior" onclick="setView('anterior')" class="active">Anterior</button>
-                  <button id="btnPosterior" onclick="setView('posterior')">Posterior</button>
+                  <button id="btnAnterior" class="active" data-testid="btn-anterior" data-view="anterior">Anterior</button>
+                  <button id="btnPosterior" data-testid="btn-posterior" data-view="posterior">Posterior</button>
                 </div>
               </div>
             </div>
@@ -757,7 +334,7 @@ export function renderApp(): string {
               </div>
               <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-light);">
                 <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-                  <input id="toggleMusclePolygons" type="checkbox" onchange="toggleMusclePolygons(this.checked)" />
+                  <input id="toggleMusclePolygons" type="checkbox" onchange="toggleMusclePolygons(this.checked)" data-testid="toggle-muscle-polygons" />
                   Show muscle polygons
                 </label>
               </div>
@@ -807,7 +384,7 @@ export function renderApp(): string {
                   <p style="font-size:0.75rem;color:var(--text-light);font-style:italic;">Add a marker on the map, then describe each area here.</p>
                 </div>
               </div>
-              <button onclick="clearAllMuscles()" class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;">
+              <button class="btn btn-ghost btn-sm btn-full" style="margin-top:14px;font-size:0.75rem;" data-testid="btn-clear-all-markers" id="clearAllMusclesBtn">
                 <i class="fas fa-times"></i> Clear All Markers
               </button>
             </div>
@@ -818,11 +395,23 @@ export function renderApp(): string {
             Toggle Anterior / Posterior to select muscles on both sides. All selections are retained.
           </div>
 
+          <!-- Quick Select Common Areas -->
+          <div class="card-plain">
+            <div class="cp-head" id="quickSelectHead" style="cursor:pointer;user-select:none;">
+              <i class="fas fa-bolt"></i> Quick Select
+              <i id="quickSelectChevron" class="fas fa-chevron-down" style="margin-left:auto;font-size:0.7rem;transition:transform 0.2s;"></i>
+            </div>
+            <div id="quickSelectPanel" class="cp-body" style="display:none;padding-top:8px;">
+              <p style="font-size:0.72rem;color:var(--text-light);margin-bottom:10px;">Select common pain patterns to quickly add markers:</p>
+              <div id="quickSelectButtons" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+            </div>
+          </div>
+
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(1)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+            <button class="btn btn-ghost" style="flex:1;justify-content:center;" data-testid="btn-step2-back" id="goToStep1FromMapBtn">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="goToStep(3)" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <button class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-step2-next" id="goToStep3FromMapBtn">
               Next <i class="fas fa-arrow-right"></i>
             </button>
           </div>
@@ -896,28 +485,25 @@ export function renderApp(): string {
               <div class="summary-row"><span class="sr-label">Session notes</span><span class="sr-val" id="reviewSessionNotes">—</span></div>
               <div class="summary-row" style="align-items:flex-start;"><span class="sr-label">Intake summary</span><span class="sr-val" id="reviewIntakePreview">—</span></div>
               <div style="display:flex;gap:8px;margin-top:6px;">
-                <button onclick="jumpToField(1, 'chiefComplaint')" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;">
+                <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" id="jumpToChiefComplaintBtn">
                   <i class="fas fa-pen"></i> Edit Intake
                 </button>
-                <button onclick="jumpToField(3, 'sessionSummary')" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;">
+                <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" id="jumpToSessionSummaryBtn">
                   <i class="fas fa-pen"></i> Edit Notes
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- API Key -->
+          <!-- API Status -->
           <div class="card-plain">
-            <div class="cp-head"><i class="fas fa-key"></i> OpenAI API Key</div>
+            <div class="cp-head"><i class="fas fa-robot"></i> AI Configuration</div>
             <div class="cp-body">
-              <p style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">Required to generate AI-powered SOAP notes</p>
-              <input id="openaiKey" type="password" placeholder="sk-…"
-                style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.82rem;color:var(--text);outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
-                onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(91,163,217,0.15)'"
-                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'"
-                oninput="saveOpenAIKey(this.value)"/>
-              <p id="apiKeySavedIndicator" style="font-size:0.72rem;color:var(--success);margin-top:6px;display:none;"><i class="fas fa-check-circle" style="margin-right:4px;"></i>Key saved to browser</p>
-              <p style="font-size:0.72rem;color:var(--text-light);margin-top:6px;"><i class="fas fa-lock" style="margin-right:4px;"></i>Stored in your browser only — never sent to our servers</p>
+              <div id="apiStatusContainer">
+                <p style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">
+                  <i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>Checking AI service status...
+                </p>
+              </div>
             </div>
           </div>
 
@@ -925,11 +511,18 @@ export function renderApp(): string {
             <p><strong><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Before Generating:</strong> Confirm the intake review above. Generate &amp; Save will create SOAP notes and save the updated session data to the client file.</p>
           </div>
 
+          <!-- Medical Shorthand Toggle -->
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
+            <input id="medicalShorthandToggle" type="checkbox" style="accent-color:var(--primary);cursor:pointer;" />
+            <span>Use medical shorthand (applies to generation + PDF export)</span>
+          </label>
+          <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);margin-top:-8px;">Current style: Normal writing</p>
+
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(2)" class="btn btn-ghost" style="flex:1;justify-content:center;">
+            <button id="goToStep2FromNotesBtn" class="btn btn-ghost" style="flex:1;justify-content:center;">
               <i class="fas fa-arrow-left"></i> Back
             </button>
-            <button onclick="generateSOAP()" id="generateBtn" class="btn btn-primary" style="flex:1;justify-content:center;">
+            <button class="btn btn-primary" style="flex:1;justify-content:center;" data-testid="btn-generate-soap" id="generateSOAPBtn">
               <i class="fas fa-wand-magic-sparkles"></i> Generate &amp; Save
             </button>
           </div>
@@ -985,7 +578,7 @@ export function renderApp(): string {
                   <span id="savedFileBadge" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;">
                     <i class="fas fa-folder-open" style="margin-right:4px;"></i><span></span>
                   </span>
-                  <a id="driveBadge" href="#" target="_blank" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;color:white;text-decoration:none;">
+                  <a id="driveBadge" href="#" target="_blank" style="display:none;background:rgba(255,255,255,0.15);border-radius:50px;padding:3px 10px;font-size:0.72rem;font-weight:600;color:white;text-decoration:none;" hidden>
                     <i class="fab fa-google-drive" style="margin-right:4px;"></i>View in Drive
                   </a>
                 </div>
@@ -998,7 +591,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-s">S</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Subjective</h3>
-                  <button onclick="copySection('S')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionSBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-s">
                   <textarea id="soapS" rows="4" class="soap-textarea"></textarea>
@@ -1012,7 +605,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-o">O</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Objective</h3>
-                  <button onclick="copySection('O')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionOBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-o">
                   <textarea id="soapO" rows="5" class="soap-textarea"></textarea>
@@ -1026,7 +619,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-a">A</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Assessment</h3>
-                  <button onclick="copySection('A')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionABtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-a">
                   <textarea id="soapA" rows="4" class="soap-textarea"></textarea>
@@ -1040,7 +633,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-p">P</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Plan</h3>
-                  <button onclick="copySection('P')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionPBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-p">
                   <textarea id="soapP" rows="4" class="soap-textarea"></textarea>
@@ -1054,7 +647,7 @@ export function renderApp(): string {
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
                   <div class="soap-letter soap-letter-n">N</div>
                   <h3 style="font-size:0.9rem;font-weight:700;color:var(--primary);">Therapist Notes</h3>
-                  <button onclick="copySection('N')" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
+                  <button id="copySectionNBtn" class="btn btn-ghost btn-sm" style="margin-left:auto;padding:5px 10px;"><i class="fas fa-copy"></i></button>
                 </div>
                 <div class="soap-block soap-n">
                   <textarea id="soapN" rows="3" class="soap-textarea"></textarea>
@@ -1087,18 +680,13 @@ export function renderApp(): string {
             </div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:8px;">
-                <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f7faff;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;color:var(--text);cursor:pointer;">
-                  <input id="medicalShorthandToggle" type="checkbox" onchange="setMedicalShorthand(this.checked)" style="accent-color:var(--primary);cursor:pointer;" />
-                  <span>Use medical shorthand (applies to generation + PDF export)</span>
-                </label>
-                <p id="writingStyleBadge" style="font-size:0.72rem;color:var(--text-light);">Current style: Normal writing</p>
-                <button onclick="exportPDF()" class="btn btn-primary btn-full">
+                <button class="btn btn-primary btn-full" data-testid="btn-export-pdf" id="exportPDFBtn">
                   <i class="fas fa-file-pdf"></i> Export as PDF
                 </button>
-                <button onclick="copyAllSOAP()" class="btn btn-outline btn-full">
+                <button class="btn btn-outline btn-full" id="copyAllSOAPBtn">
                   <i class="fas fa-copy"></i> Copy All Text
                 </button>
-                <button onclick="regenerateSOAP()" class="btn btn-ghost btn-full">
+                <button class="btn btn-ghost btn-full" data-testid="btn-regenerate-soap" id="regenerateSOAPBtn">
                   <i class="fas fa-rotate"></i> Regenerate
                 </button>
               </div>
@@ -1113,8 +701,8 @@ export function renderApp(): string {
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button onclick="goToStep(3)" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
-            <button onclick="resetAll()" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
+            <button id="goToStep3FromSOAPBtn" class="btn btn-ghost" style="flex:1;justify-content:center;"><i class="fas fa-arrow-left"></i> Back</button>
+            <button id="resetAllFromSOAPBtn" class="btn btn-outline" style="flex:1;justify-content:center;"><i class="fas fa-plus"></i> New</button>
           </div>
 
         </div>
@@ -1139,7 +727,7 @@ export function renderApp(): string {
           <h3><i class="fas fa-users" style="margin-right:8px;opacity:0.8;"></i>Client Profiles</h3>
           <p>Select a client to auto-fill their intake information</p>
         </div>
-        <button class="modal-close" onclick="closeClientBrowser()"><i class="fas fa-times"></i></button>
+        <button id="modalCloseClientBrowserBtn" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
         <div style="position:relative;">
@@ -1154,7 +742,7 @@ export function renderApp(): string {
       <div id="clientList" class="modal-body" style="flex:1;"></div>
       <div class="modal-footer">
         <span id="clientCount" style="font-size:0.75rem;color:var(--text-light);"></span>
-        <button onclick="closeClientBrowser()" class="btn btn-ghost btn-sm">Close</button>
+        <button id="closeClientBrowserBtn" class="btn btn-ghost btn-sm">Close</button>
       </div>
     </div>
   </div>
@@ -1169,7 +757,7 @@ export function renderApp(): string {
           <h3><i class="fas fa-link" style="margin-right:8px;opacity:0.8;"></i>Flexion &amp; Flow Integration Setup</h3>
           <p>Connect the intake form to this SOAP generator</p>
         </div>
-        <button class="modal-close" onclick="closeWebhookConfig()"><i class="fas fa-times"></i></button>
+        <button id="modalCloseWebhookBtn" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body">
         <div class="info-box info-box-blue" style="margin-bottom:18px;">
@@ -1187,7 +775,7 @@ export function renderApp(): string {
           <div style="display:flex;gap:8px;">
             <input id="myWebhookUrl" type="text" readonly
               style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.78rem;background:#f7faff;color:var(--text);outline:none;"/>
-            <button onclick="copyWebhookUrl()" class="btn btn-ghost btn-sm" title="Copy URL">
+            <button id="copyWebhookUrlBtn" class="btn btn-ghost btn-sm" title="Copy URL">
               <i class="fas fa-copy"></i>
             </button>
           </div>
@@ -1207,10 +795,10 @@ export function renderApp(): string {
         </div>
 
         <div style="display:flex;gap:10px;">
-          <button onclick="saveWebhookConfig()" class="btn btn-primary" style="flex:1;justify-content:center;">
+          <button class="btn btn-primary" style="flex:1;justify-content:center;" id="saveWebhookConfigBtn">
             <i class="fas fa-save"></i> Save Settings
           </button>
-          <button onclick="closeWebhookConfig()" class="btn btn-ghost" style="flex:1;justify-content:center;">Cancel</button>
+          <button class="btn btn-ghost" style="flex:1;justify-content:center;" id="cancelWebhookConfigBtn">Cancel</button>
         </div>
 
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
@@ -1218,9 +806,8 @@ export function renderApp(): string {
           <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:8px;">Paste a client profile in JSON format:</p>
           <textarea id="manualImportJson" rows="3"
             placeholder='{"firstName":"Jane","lastName":"Smith","email":"jane@example.com",...}'
-            style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.75rem;outline:none;resize:vertical;"
-            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
-          <button onclick="importManualProfile()" class="btn btn-outline btn-sm" style="margin-top:8px;">
+            style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:monospace;font-size:0.75rem;outline:none;resize:vertical;"></textarea>
+          <button class="btn btn-outline btn-sm" style="margin-top:8px;" id="importManualProfileBtn">
             <i class="fas fa-file-import"></i> Import Profile
           </button>
         </div>
@@ -1236,30 +823,86 @@ export function renderApp(): string {
 
   <script>
   // ============================================================
+  // CSRF Protection & API Helpers
+  // ============================================================
+  let _csrfToken = null;
+  
+  async function getCsrfToken() {
+    if (_csrfToken) return _csrfToken;
+    try {
+      const res = await fetch('/api/csrf-token');
+      const data = await res.json();
+      _csrfToken = data.csrfToken;
+      return _csrfToken;
+    } catch(e) {
+      console.warn('Could not fetch CSRF token:', e);
+      return null;
+    }
+  }
+  
+  // CSRF-protected fetch wrapper for POST/PUT/DELETE requests
+  async function apiFetch(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const headers = { ...options.headers };
+    
+    // Add CSRF token for state-changing requests
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      const token = await getCsrfToken();
+      if (token) {
+        headers['X-CSRF-Token'] = token;
+      }
+    }
+    
+    return fetch(url, { ...options, headers });
+  }
+
+  // ============================================================
   // CLIENT PROFILES (localStorage-based, synced via webhook)
   // ============================================================
   const CLIENT_PROFILES_KEY = 'flexion_soap_client_profiles';
   const WEBHOOK_CONFIG_KEY  = 'flexion_soap_webhook_config';
-  const OPENAI_KEY_STORAGE  = 'flexion_soap_openai_key';
 
-  // ── OpenAI API Key persistence ──
-  function saveOpenAIKey(value) {
-    try { localStorage.setItem(OPENAI_KEY_STORAGE, value); } catch(e) {}
-    const indicator = document.getElementById('apiKeySavedIndicator');
-    if (indicator) {
-      indicator.style.display = value ? 'block' : 'none';
-    }
-  }
-  function loadOpenAIKey() {
+  // ── API Status Check (server-side key) ──
+  async function checkAPIStatus() {
+    const container = document.getElementById('apiStatusContainer');
+    if (!container) return;
+    
     try {
-      const saved = localStorage.getItem(OPENAI_KEY_STORAGE) || '';
-      const el = document.getElementById('openaiKey');
-      if (el && saved) {
-        el.value = saved;
-        const indicator = document.getElementById('apiKeySavedIndicator');
-        if (indicator) indicator.style.display = 'block';
+      const response = await fetch('/api/ai-status');
+      const data = await response.json();
+      
+      if (data.configured) {
+        container.innerHTML = \`
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#e6f7ed;border:1px solid #c6f6d5;border-radius:var(--radius-sm);">
+            <i class="fas fa-check-circle" style="color:var(--success);font-size:1.1rem;"></i>
+            <div>
+              <div style="font-size:0.82rem;font-weight:600;color:#276749;">AI Service Ready</div>
+              <div style="font-size:0.72rem;color:#38a169;">OpenAI is configured and ready to generate SOAP notes</div>
+            </div>
+          </div>
+        \`;
+      } else {
+        container.innerHTML = \`
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--warning-bg);border:1px solid #fde68a;border-radius:var(--radius-sm);">
+            <i class="fas fa-exclamation-triangle" style="color:var(--warning-txt);font-size:1.1rem;"></i>
+            <div>
+              <div style="font-size:0.82rem;font-weight:600;color:var(--warning-txt);">AI Service Not Configured</div>
+              <div style="font-size:0.72rem;color:#92400e;">Contact administrator to set up OpenAI API key</div>
+            </div>
+          </div>
+        \`;
       }
-    } catch(e) {}
+    } catch(e) {
+      container.innerHTML = \`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-sm);">
+          <i class="fas fa-times-circle" style="color:var(--danger);font-size:1.1rem;"></i>
+          <div>
+            <div style="font-size:0.82rem;font-weight:600;color:var(--danger);">Connection Error</div>
+            <div style="font-size:0.72rem;color:#991b1b;">Could not check AI service status</div>
+          </div>
+        </div>
+      \`;
+    }
   }
 
   // Load client profiles from server database (replaces localStorage)
@@ -1284,9 +927,6 @@ export function renderApp(): string {
       return [];
     }
   }
-  function saveClientProfiles(profiles) {
-    localStorage.setItem(CLIENT_PROFILES_KEY, JSON.stringify(profiles));
-  }
   function loadWebhookConfig() {
     try { return JSON.parse(localStorage.getItem(WEBHOOK_CONFIG_KEY) || '{}'); }
     catch { return {}; }
@@ -1298,7 +938,7 @@ export function renderApp(): string {
   // Save a single profile (upsert by id or email) - now posts to server
   async function upsertClientProfile(profile) {
     try {
-      const res = await fetch('/api/clients', {
+      const res = await apiFetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1317,12 +957,48 @@ export function renderApp(): string {
           intakeData: profile.intakeData || {}
         })
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         await renderClientProfilesPreview();
       }
-      return res.ok;
+      return {
+        success: res.ok,
+        accountNumber: data.accountNumber || null
+      };
     } catch {
-      return false;
+      return {
+        success: false,
+        accountNumber: null
+      };
+    }
+  }
+
+  async function removeClientProfile(id) {
+    if (!id) return;
+    if (!confirm('Remove this client profile and all saved sessions?')) return;
+
+    try {
+      const res = await apiFetch('/api/clients/' + encodeURIComponent(id), {
+        method: 'DELETE'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to remove profile');
+      }
+
+      if (_currentClientFile && _currentClientFile.accountNumber === id) {
+        closeClientFile();
+      }
+
+      await renderClientProfilesPreview();
+      await filterClients();
+      if (document.getElementById('clientAccountsModal')?.style.display === 'flex') {
+        await loadAccountList();
+      }
+
+      showCopyFeedback('\u2705 Profile removed: ' + id);
+    } catch (e) {
+      alert('Could not remove profile: ' + (e?.message || 'Unknown error'));
     }
   }
 
@@ -1346,14 +1022,15 @@ export function renderApp(): string {
     // Show last 6 profiles as clickable chips
     const recent = profiles.slice(0, 6);
     container.innerHTML = recent.map(p => {
-      const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
-      const initials = [(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase();
+      const name = escapeHtml([p.firstName, p.lastName].filter(Boolean).join(' '));
+      const initials = escapeHtml([(p.firstName||'')[0], (p.lastName||'')[0]].filter(Boolean).join('').toUpperCase());
+      const safeId = escapeHtml(p.id);
       const ago = p.savedAt ? timeAgo(p.savedAt) : '';
-      return '<button onclick="loadClientProfile(this.dataset.clientId)" data-client-id="' + p.id + '" class="client-chip">'
+      return '<button onclick="loadClientProfile(this.dataset.clientId)" data-client-id="' + safeId + '" class="client-chip">'
         + '<div class="chip-avatar">' + (initials || "?") + '</div>'
         + '<div class="chip-content">'
         + '<div class="chip-name">' + (name || "Unknown") + '</div>'
-        + (ago ? '<div class="chip-ago">' + ago + '</div>' : "")
+        + (ago ? '<div class="chip-ago">' + escapeHtml(ago) + '</div>' : "")
         + '</div>'
         + '</button>';
     }).join('');
@@ -1476,16 +1153,16 @@ export function renderApp(): string {
       if (p.source === 'flexion-intake-form') tags.push('<span class="px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px]">Intake Form</span>');
       if (p.medicalConditions) tags.push('<span class="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[10px]">Medical Hx</span>');
       if (p.medications)       tags.push('<span class="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">Medications</span>');
-      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group" onclick="loadClientProfile('\${p.accountNumber}').catch(console.error)">
-        <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${initials || '?'}</div>
+      return \`<div class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50 transition cursor-pointer group client-profile-item" data-account-number="\${escapeHtml(p.accountNumber)}">
+        <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold flex-shrink-0">\${escapeHtml(initials || '?')}</div>
         <div class="flex-1 min-w-0">
-          <div class="font-semibold text-slate-800 text-sm">\${name || 'Unknown Client'}</div>
-          <div class="text-xs text-slate-400">\${[p.email, p.phone].filter(Boolean).join(' · ')}</div>
+          <div class="font-semibold text-slate-800 text-sm">\${escapeHtml(name || 'Unknown Client')}</div>
+          <div class="text-xs text-slate-400">\${escapeHtml([p.email, p.phone].filter(Boolean).join(' · '))}</div>
           <div class="flex flex-wrap gap-1 mt-1">\${tags.join('')}</div>
         </div>
         <div class="text-right flex-shrink-0">
           <div class="text-xs text-slate-400">\${dateStr}</div>
-          <button onclick="event.stopPropagation(); deleteClientProfile('\${p.accountNumber}').catch(console.error)" class="mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block">
+          <button class="delete-client-profile mt-1 text-[10px] text-slate-300 hover:text-red-500 transition hidden group-hover:block" data-account-number="\${escJsSingle(p.accountNumber)}">
             <i class="fas fa-trash"></i> Remove
           </button>
         </div>
@@ -1538,7 +1215,10 @@ export function renderApp(): string {
       if (!data.id) data.id = 'manual-' + Date.now();
       data.source = 'manual-import';
       data.savedAt = new Date().toISOString();
-      await upsertClientProfile(data);
+      const result = await upsertClientProfile(data);
+      if (!result.success) {
+        throw new Error('Import failed');
+      }
       document.getElementById('manualImportJson').value = '';
       showCopyFeedback('\\u2705 Profile imported: ' + [data.firstName, data.lastName].filter(Boolean).join(' '));
       await filterClients();
@@ -1561,9 +1241,9 @@ export function renderApp(): string {
         if (!profile.id) profile.id = 'url-' + Date.now();
         profile.source = profile.source || 'url-import';
         profile.savedAt = new Date().toISOString();
-        await upsertClientProfile(profile);
+        const upsertResult = await upsertClientProfile(profile);
         // Auto-load into form
-        await loadClientProfile(profile.accountNumber || profile.id);
+        await loadClientProfile(upsertResult.accountNumber || profile.accountNumber || profile.id);
         // Clean URL
         window.history.replaceState({}, '', window.location.pathname);
         showCopyFeedback('\\u2705 Client data imported from intake form!');
@@ -1763,203 +1443,206 @@ export function renderApp(): string {
   // Posterior muscles: x=0..400, y=0..920 mapped to right half of image
 
   const MUSCLES = [
-    // ─── ANTERIOR ────────────────────────────────────────────────────
+    // ─── ANTERIOR ──────────────────────────────────────────────────
+    // CORRECTED ALIGNMENT: Y values shifted UP by ~12-15px to better match image
 
-    // NECK
+    // NECK - Sternocleidomastoid
     { id:'scm_l', name:'Sternocleidomastoid (L)', group:'Neck', view:'anterior',
-      points:'178,92 172,104 166,118 164,132 167,144 174,150 182,145 186,132 184,118 181,104' },
+      points:'180,78 174,88 168,102 165,118 166,132 172,140 180,136 185,122 184,106 182,90' },
     { id:'scm_r', name:'Sternocleidomastoid (R)', group:'Neck', view:'anterior',
-      points:'222,92 228,104 234,118 236,132 233,144 226,150 218,145 214,132 216,118 219,104' },
+      points:'220,78 226,88 232,102 235,118 234,132 228,140 220,136 215,122 216,106 218,90' },
 
     // SHOULDER — ANTERIOR DELTOID
     { id:'deltoid_ant_l', name:'Anterior Deltoid (L)', group:'Shoulder', view:'anterior',
-      points:'150,148 138,152 124,160 110,170 100,182 96,198 98,214 107,222 120,226 134,222 144,212 150,198 154,182 153,165' },
+      points:'152,136 140,142 126,152 112,164 102,178 98,194 100,210 110,218 124,220 138,214 148,202 152,186 154,168 153,150' },
     { id:'deltoid_ant_r', name:'Anterior Deltoid (R)', group:'Shoulder', view:'anterior',
-      points:'250,148 262,152 276,160 290,170 300,182 304,198 302,214 293,222 280,226 266,222 256,212 250,198 246,182 247,165' },
+      points:'248,136 260,142 274,152 288,164 298,178 302,194 300,210 290,218 276,220 262,214 252,202 248,186 246,168 247,150' },
 
-    // CHEST
+    // CHEST - Pectoralis Major
     { id:'pec_major_l', name:'Pectoralis Major (L)', group:'Chest', view:'anterior',
-      points:'200,172 194,168 182,166 168,168 152,174 138,184 126,198 120,215 118,234 124,252 135,264 150,272 166,274 180,270 192,260 198,246 200,228' },
+      points:'200,156 194,154 180,154 164,158 148,168 134,182 124,200 120,220 124,240 136,256 152,264 170,266 186,260 196,248 200,230 200,210' },
     { id:'pec_major_r', name:'Pectoralis Major (R)', group:'Chest', view:'anterior',
-      points:'200,172 206,168 218,166 232,168 248,174 262,184 274,198 280,215 282,234 276,252 265,264 250,272 234,274 220,270 208,260 202,246 200,228' },
+      points:'200,156 206,154 220,154 236,158 252,168 266,182 276,200 280,220 276,240 264,256 248,264 230,266 214,260 204,248 200,230 200,210' },
 
-    // SERRATUS ANTERIOR (lateral ribs, below pec)
+    // SERRATUS ANTERIOR
     { id:'serratus_l', name:'Serratus Anterior (L)', group:'Core', view:'anterior',
-      points:'152,220 145,238 142,258 146,272 155,278 164,272 167,254 164,236 158,220' },
+      points:'148,210 140,228 138,250 142,268 152,274 162,266 165,246 160,226 154,212' },
     { id:'serratus_r', name:'Serratus Anterior (R)', group:'Core', view:'anterior',
-      points:'248,220 255,238 258,258 254,272 245,278 236,272 233,254 236,236 242,220' },
+      points:'252,210 260,228 262,250 258,268 248,274 238,266 235,246 240,226 246,212' },
 
     // BICEPS BRACHII
     { id:'biceps_l', name:'Biceps Brachii (L)', group:'Upper Arm', view:'anterior',
-      points:'138,228 126,238 114,256 104,276 97,302 95,330 97,356 106,372 120,376 132,366 140,344 142,314 140,284 138,256' },
+      points:'134,216 122,228 110,248 100,272 94,300 92,330 96,358 106,374 122,376 134,364 142,340 144,308 140,276 134,248' },
     { id:'biceps_r', name:'Biceps Brachii (R)', group:'Upper Arm', view:'anterior',
-      points:'262,228 274,238 286,256 296,276 303,302 305,330 303,356 294,372 280,376 268,366 260,344 258,314 260,284 262,256' },
+      points:'266,216 278,228 290,248 300,272 306,300 308,330 304,358 294,374 278,376 266,364 258,340 256,308 260,276 266,248' },
 
     // FOREARM FLEXORS
     { id:'forearm_flex_l', name:'Forearm Flexors (L)', group:'Forearm', view:'anterior',
-      points:'118,374 106,388 94,406 82,426 75,446 74,462 79,472 93,474 108,462 118,444 126,422 128,400' },
+      points:'114,372 100,388 88,410 78,434 72,458 74,476 82,484 98,480 114,464 124,438 130,410 128,386' },
     { id:'forearm_flex_r', name:'Forearm Flexors (R)', group:'Forearm', view:'anterior',
-      points:'282,374 294,388 306,406 318,426 325,446 326,462 321,472 307,474 292,462 282,444 274,422 272,400' },
+      points:'286,372 300,388 312,410 322,434 328,458 326,476 318,484 302,480 286,464 276,438 270,410 272,386' },
 
     // CORE — RECTUS ABDOMINIS
     { id:'rectus_abdominis', name:'Rectus Abdominis', group:'Core', view:'anterior',
-      points:'187,272 184,298 183,326 183,356 184,386 188,412 194,428 200,431 206,428 212,412 216,386 217,356 217,326 216,298 213,272 200,266' },
+      points:'188,262 184,290 182,322 182,356 184,388 188,416 196,432 200,434 204,432 212,416 216,388 218,356 218,322 216,290 212,262 200,258' },
 
-    // CORE — EXTERNAL OBLIQUES (lateral to rectus, taper downward)
+    // CORE — EXTERNAL OBLIQUES
     { id:'oblique_l', name:'External Oblique (L)', group:'Core', view:'anterior',
-      points:'185,272 176,285 168,310 160,338 152,366 148,392 151,415 162,424 175,418 180,400 183,374 183,342 183,308 184,280' },
+      points:'184,262 174,278 164,306 156,338 150,370 148,400 152,424 164,432 178,424 182,404 184,374 184,340 184,304 184,274' },
     { id:'oblique_r', name:'External Oblique (R)', group:'Core', view:'anterior',
-      points:'215,272 224,285 232,310 240,338 248,366 252,392 249,415 238,424 225,418 220,400 217,374 217,342 217,308 216,280' },
+      points:'216,262 226,278 236,306 244,338 250,370 252,400 248,424 236,432 222,424 218,404 216,374 216,340 216,304 216,274' },
 
     // HIP — ILIOPSOAS
     { id:'iliopsoas_l', name:'Iliopsoas / Hip Flexor (L)', group:'Hip', view:'anterior',
-      points:'182,440 174,455 170,472 173,488 181,498 191,500 199,492 200,474 196,456 189,441' },
+      points:'182,438 174,456 170,476 174,494 182,504 194,504 200,494 200,474 194,454 188,440' },
     { id:'iliopsoas_r', name:'Iliopsoas / Hip Flexor (R)', group:'Hip', view:'anterior',
-      points:'218,440 226,455 230,472 227,488 219,498 209,500 201,492 200,474 204,456 211,441' },
+      points:'218,438 226,456 230,476 226,494 218,504 206,504 200,494 200,474 206,454 212,440' },
 
-    // HIP — TENSOR FASCIA LATAE (outer hip, superior to IT band)
+    // HIP — TENSOR FASCIA LATAE
     { id:'tfl_l', name:'Tensor Fascia Latae (L)', group:'Hip', view:'anterior',
-      points:'153,440 144,454 136,472 132,490 135,506 145,514 156,510 162,494 162,474 158,454' },
+      points:'152,438 142,456 136,478 134,500 138,518 150,524 162,516 166,496 164,474 158,452' },
     { id:'tfl_r', name:'Tensor Fascia Latae (R)', group:'Hip', view:'anterior',
-      points:'247,440 256,454 264,472 268,490 265,506 255,514 244,510 238,494 238,474 242,454' },
+      points:'248,438 258,456 264,478 266,500 262,518 250,524 238,516 234,496 236,474 242,452' },
 
-    // THIGH — QUADRICEPS (large anterior thigh)
+    // THIGH — QUADRICEPS
     { id:'quad_l', name:'Quadriceps (L)', group:'Thigh', view:'anterior',
-      points:'158,508 146,526 134,554 124,582 120,612 122,644 129,664 144,674 159,674 170,663 176,644 177,612 172,582 163,554 157,526' },
+      points:'156,518 144,540 132,572 122,608 118,648 122,682 132,704 150,712 168,706 178,688 182,656 180,620 172,582 162,548 156,528' },
     { id:'quad_r', name:'Quadriceps (R)', group:'Thigh', view:'anterior',
-      points:'242,508 254,526 266,554 276,582 280,612 278,644 271,664 256,674 241,674 230,663 223,644 223,612 228,582 237,554 243,526' },
+      points:'244,518 256,540 268,572 278,608 282,648 278,682 268,704 250,712 232,706 222,688 218,656 220,620 228,582 238,548 244,528' },
 
-    // THIGH — ADDUCTORS (inner thigh — widened for better hit detection)
+    // THIGH — ADDUCTORS
     { id:'adductors_l', name:'Adductors (L)', group:'Thigh', view:'anterior',
-      points:'186,510 180,530 176,558 174,586 174,614 177,634 186,642 196,638 200,620 200,590 200,560 198,532 192,512' },
+      points:'186,516 180,538 176,572 174,608 174,644 178,672 188,682 198,676 200,648 200,612 200,576 198,542 192,520' },
     { id:'adductors_r', name:'Adductors (R)', group:'Thigh', view:'anterior',
-      points:'214,510 220,530 224,558 226,586 226,614 223,634 214,642 204,638 200,620 200,590 200,560 202,532 208,512' },
+      points:'214,516 220,538 224,572 226,608 226,644 222,672 212,682 202,676 200,648 200,612 200,576 202,542 208,520' },
 
-    // THIGH — SARTORIUS (diagonal strap, lateral hip to medial knee)
+    // THIGH — SARTORIUS
     { id:'sartorius_l', name:'Sartorius (L)', group:'Thigh', view:'anterior',
-      points:'162,506 157,528 155,554 156,582 160,612 166,640 171,662 178,662 176,640 170,612 166,582 165,554 165,528 167,506' },
+      points:'160,514 154,540 152,572 154,606 160,644 168,678 176,702 184,700 180,672 172,638 166,600 164,564 166,532 168,516' },
     { id:'sartorius_r', name:'Sartorius (R)', group:'Thigh', view:'anterior',
-      points:'238,506 243,528 245,554 244,582 240,612 234,640 229,662 222,662 224,640 230,612 234,582 235,554 235,528 233,506' },
+      points:'240,514 246,540 248,572 246,606 240,644 232,678 224,702 216,700 220,672 228,638 234,600 236,564 234,532 232,516' },
 
-    // LOWER LEG — TIBIALIS ANTERIOR (medial shin)
+    // LOWER LEG — TIBIALIS ANTERIOR
     { id:'tibialis_ant_l', name:'Tibialis Anterior (L)', group:'Lower Leg', view:'anterior',
-      points:'168,682 160,700 155,724 154,750 158,774 165,788 175,790 184,784 188,768 185,742 179,718 172,698' },
+      points:'166,714 158,736 152,764 150,796 154,826 164,844 176,846 188,836 192,812 188,778 180,746 172,724' },
     { id:'tibialis_ant_r', name:'Tibialis Anterior (R)', group:'Lower Leg', view:'anterior',
-      points:'232,682 240,700 245,724 246,750 242,774 235,788 225,790 216,784 212,768 215,742 221,718 228,698' },
+      points:'234,714 242,736 248,764 250,796 246,826 236,844 224,846 212,836 208,812 212,778 220,746 228,724' },
 
-    // LOWER LEG — PERONEALS (lateral shin)
+    // LOWER LEG — PERONEALS
     { id:'peroneals_l', name:'Peroneals (L)', group:'Lower Leg', view:'anterior',
-      points:'151,690 144,708 140,733 141,758 146,776 154,780 160,773 159,748 156,724 153,706' },
+      points:'148,720 140,744 136,774 138,804 144,828 154,834 162,824 162,794 158,762 152,736' },
     { id:'peroneals_r', name:'Peroneals (R)', group:'Lower Leg', view:'anterior',
-      points:'249,690 256,708 260,733 259,758 254,776 246,780 240,773 241,748 244,724 247,706' },
+      points:'252,720 260,744 264,774 262,804 256,828 246,834 238,824 238,794 242,762 248,736' },
 
-    // ─── POSTERIOR ────────────────────────────────────────────────────
+    // ─── POSTERIOR ──────────────────────────────────────────────────
 
-    // NECK — UPPER TRAPEZIUS (large triangle from C-spine to acromion)
+    // NECK — UPPER TRAPEZIUS
     { id:'upper_trap_l', name:'Upper Trapezius (L)', group:'Neck/Shoulder', view:'posterior',
-      points:'200,90 191,100 178,118 162,140 146,160 130,180 118,200 112,220 120,230 140,230 162,222 182,208 197,190 200,164' },
+      points:'200,76 190,88 176,108 158,132 140,156 122,180 110,202 106,224 116,232 138,228 162,216 184,198 198,176 200,150' },
     { id:'upper_trap_r', name:'Upper Trapezius (R)', group:'Neck/Shoulder', view:'posterior',
-      points:'200,90 209,100 222,118 238,140 254,160 270,180 282,200 288,220 280,230 260,230 238,222 218,208 203,190 200,164' },
+      points:'200,76 210,88 224,108 242,132 260,156 278,180 290,202 294,224 284,232 262,228 238,216 216,198 202,176 200,150' },
 
-    // NECK — LEVATOR SCAPULAE (small, under upper trap)
+    // NECK — LEVATOR SCAPULAE
     { id:'levator_scap_l', name:'Levator Scapulae (L)', group:'Neck', view:'posterior',
-      points:'192,90 186,103 183,118 186,130 193,135 199,130 199,114 196,99' },
+      points:'192,76 184,92 180,110 184,124 192,130 200,124 200,106 196,88' },
     { id:'levator_scap_r', name:'Levator Scapulae (R)', group:'Neck', view:'posterior',
-      points:'208,90 214,103 217,118 214,130 207,135 201,130 201,114 204,99' },
+      points:'208,76 216,92 220,110 216,124 208,130 200,124 200,106 204,88' },
 
     // SHOULDER — POSTERIOR DELTOID
     { id:'deltoid_post_l', name:'Posterior Deltoid (L)', group:'Shoulder', view:'posterior',
-      points:'120,196 106,210 93,228 88,248 93,268 108,276 126,270 140,254 145,230 136,212' },
+      points:'118,188 104,204 92,226 88,248 94,270 110,278 130,270 144,252 148,228 138,206' },
     { id:'deltoid_post_r', name:'Posterior Deltoid (R)', group:'Shoulder', view:'posterior',
-      points:'280,196 294,210 307,228 312,248 307,268 292,276 274,270 260,254 255,230 264,212' },
+      points:'282,188 296,204 308,226 312,248 306,270 290,278 270,270 256,252 252,228 262,206' },
 
-    // ROTATOR CUFF — INFRASPINATUS (fills scapula fossa)
+    // ROTATOR CUFF — INFRASPINATUS
     { id:'infraspinatus_l', name:'Infraspinatus (L)', group:'Rotator Cuff', view:'posterior',
-      points:'148,192 135,210 130,232 135,254 149,266 166,270 184,264 197,248 198,226 191,204 174,192' },
+      points:'148,180 134,200 128,224 134,250 150,264 168,268 188,260 200,242 200,218 192,194 174,180' },
     { id:'infraspinatus_r', name:'Infraspinatus (R)', group:'Rotator Cuff', view:'posterior',
-      points:'252,192 265,210 270,232 265,254 251,266 234,270 216,264 203,248 202,226 209,204 226,192' },
+      points:'252,180 266,200 272,224 266,250 250,264 232,268 212,260 200,242 200,218 208,194 226,180' },
 
     // ROTATOR CUFF — TERES MAJOR / MINOR
     { id:'teres_l', name:'Teres Major / Minor (L)', group:'Rotator Cuff', view:'posterior',
-      points:'133,255 126,272 126,293 134,308 147,312 160,302 163,282 154,262' },
+      points:'132,250 124,268 124,292 134,308 150,312 164,300 168,278 156,256' },
     { id:'teres_r', name:'Teres Major / Minor (R)', group:'Rotator Cuff', view:'posterior',
-      points:'267,255 274,272 274,293 266,308 253,312 240,302 237,282 246,262' },
+      points:'268,250 276,268 276,292 266,308 250,312 236,300 232,278 244,256' },
 
-    // UPPER BACK — RHOMBOIDS (between spine and medial scapula border)
+    // UPPER BACK — RHOMBOIDS
     { id:'rhomboids_l', name:'Rhomboids (L)', group:'Upper Back', view:'posterior',
-      points:'200,164 191,176 180,195 176,216 179,234 190,240 200,235 200,210 200,184' },
+      points:'200,152 190,166 178,188 174,212 178,232 190,240 200,234 200,206 200,176' },
     { id:'rhomboids_r', name:'Rhomboids (R)', group:'Upper Back', view:'posterior',
-      points:'200,164 209,176 220,195 224,216 221,234 210,240 200,235 200,210 200,184' },
+      points:'200,152 210,166 222,188 226,212 222,232 210,240 200,234 200,206 200,176' },
 
     // UPPER ARM — TRICEPS BRACHII
     { id:'triceps_l', name:'Triceps Brachii (L)', group:'Upper Arm', view:'posterior',
-      points:'114,224 102,240 90,262 82,290 80,320 84,350 95,368 110,372 124,362 133,338 136,306 133,274 122,246' },
+      points:'112,220 100,238 88,264 80,296 78,330 84,362 96,380 114,382 130,370 140,342 142,306 138,270 124,242' },
     { id:'triceps_r', name:'Triceps Brachii (R)', group:'Upper Arm', view:'posterior',
-      points:'286,224 298,240 310,262 318,290 320,320 316,350 305,368 290,372 276,362 267,338 264,306 267,274 278,246' },
+      points:'288,220 300,238 312,264 320,296 322,330 316,362 304,380 286,382 270,370 260,342 258,306 262,270 276,242' },
 
-    // FOREARM — EXTENSORS (posterior)
+    // FOREARM — EXTENSORS
     { id:'forearm_ext_l', name:'Forearm Extensors (L)', group:'Forearm', view:'posterior',
-      points:'100,374 86,392 72,412 62,434 60,454 65,466 80,470 94,460 107,440 117,418 120,396' },
+      points:'98,380 84,400 70,424 60,452 58,478 66,492 84,494 102,480 118,454 128,424 128,398' },
     { id:'forearm_ext_r', name:'Forearm Extensors (R)', group:'Forearm', view:'posterior',
-      points:'300,374 314,392 328,412 338,434 340,454 335,466 320,470 306,460 293,440 283,418 280,396' },
+      points:'302,380 316,400 330,424 340,452 342,478 334,492 316,494 298,480 282,454 272,424 272,398' },
 
     // MID/LOWER BACK — LATISSIMUS DORSI
     { id:'lats_l', name:'Latissimus Dorsi (L)', group:'Mid/Lower Back', view:'posterior',
-      points:'142,234 130,260 118,292 110,325 108,358 112,388 123,408 140,416 157,412 170,396 175,372 168,340 157,308 148,276 146,250' },
+      points:'142,228 128,258 116,296 108,336 106,376 112,410 126,432 146,438 166,430 180,408 186,374 178,336 166,298 154,264 148,240' },
     { id:'lats_r', name:'Latissimus Dorsi (R)', group:'Mid/Lower Back', view:'posterior',
-      points:'258,234 270,260 282,292 290,325 292,358 288,388 277,408 260,416 243,412 230,396 225,372 232,340 243,308 252,276 254,250' },
+      points:'258,228 272,258 284,296 292,336 294,376 288,410 274,432 254,438 234,430 220,408 214,374 222,336 234,298 246,264 252,240' },
 
-    // LOWER BACK — ERECTOR SPINAE (parallel columns flanking spine)
+    // LOWER BACK — ERECTOR SPINAE
     { id:'erector_l', name:'Erector Spinae (L)', group:'Lower Back', view:'posterior',
-      points:'186,252 181,274 177,305 175,336 175,368 177,398 182,416 192,418 200,410 200,380 200,350 198,318 195,286 191,260' },
+      points:'186,244 180,270 176,304 174,342 174,382 178,416 184,436 196,438 200,426 200,390 200,352 198,314 194,276 190,252' },
     { id:'erector_r', name:'Erector Spinae (R)', group:'Lower Back', view:'posterior',
-      points:'214,252 219,274 223,305 225,336 225,368 223,398 218,416 208,418 200,410 200,380 200,350 202,318 205,286 209,260' },
+      points:'214,244 220,270 224,304 226,342 226,382 222,416 216,436 204,438 200,426 200,390 200,352 202,314 206,276 210,252' },
 
     // LOWER BACK — QUADRATUS LUMBORUM
     { id:'ql_l', name:'Quadratus Lumborum (L)', group:'Lower Back', view:'posterior',
-      points:'180,390 172,406 170,426 176,440 187,445 198,437 200,416 196,398' },
+      points:'180,402 172,420 170,444 176,460 190,466 200,456 200,432 196,414' },
     { id:'ql_r', name:'Quadratus Lumborum (R)', group:'Lower Back', view:'posterior',
-      points:'220,390 228,406 230,426 224,440 213,445 202,437 200,416 204,398' },
+      points:'220,402 228,420 230,444 224,460 210,466 200,456 200,432 204,414' },
 
-    // GLUTES
+    // GLUTES - Gluteus Maximus
     { id:'glut_max_l', name:'Gluteus Maximus (L)', group:'Glutes', view:'posterior',
-      points:'158,442 143,460 131,483 128,508 132,536 143,554 160,560 178,556 193,542 200,522 200,494 198,466 188,448 173,442' },
+      points:'156,460 140,482 128,510 124,542 130,574 144,596 164,602 186,596 200,576 200,544 198,510 190,480 174,462' },
     { id:'glut_max_r', name:'Gluteus Maximus (R)', group:'Glutes', view:'posterior',
-      points:'245,442 260,460 272,483 275,508 270,536 260,554 243,560 225,556 210,542 202,522 200,494 202,466 215,448 230,442' },
+      points:'244,460 260,482 272,510 276,542 270,574 256,596 236,602 214,596 200,576 200,544 202,510 210,480 226,462' },
+    
+    // GLUTES - Gluteus Medius
     { id:'glut_med_l', name:'Gluteus Medius (L)', group:'Glutes', view:'posterior',
-      points:'150,413 138,428 132,446 136,464 147,474 161,476 173,465 178,446 174,428 163,415' },
+      points:'150,430 136,448 130,470 136,492 150,502 168,502 182,488 186,468 180,448 166,432' },
     { id:'glut_med_r', name:'Gluteus Medius (R)', group:'Glutes', view:'posterior',
-      points:'253,413 265,428 272,446 268,464 257,474 243,476 230,465 226,446 230,428 241,415' },
+      points:'250,430 264,448 270,470 264,492 250,502 232,502 218,488 214,468 220,448 234,432' },
 
-    // GLUTES/HIP — PIRIFORMIS (deep, under glute max)
+    // GLUTES/HIP — PIRIFORMIS
     { id:'piriformis_l', name:'Piriformis (L)', group:'Glutes/Hip', view:'posterior',
-      points:'180,478 171,492 171,508 180,518 194,521 202,510 202,492 192,480' },
+      points:'180,500 170,518 170,540 180,552 196,556 204,542 204,520 194,504' },
     { id:'piriformis_r', name:'Piriformis (R)', group:'Glutes/Hip', view:'posterior',
-      points:'222,478 232,492 232,508 224,518 210,521 200,510 200,492 210,480' },
+      points:'220,500 230,518 230,540 220,552 204,556 196,542 196,520 206,504' },
 
-    // HAMSTRINGS — BICEPS FEMORIS (lateral/outer)
+    // HAMSTRINGS — BICEPS FEMORIS
     { id:'biceps_fem_l', name:'Biceps Femoris (L)', group:'Hamstrings', view:'posterior',
-      points:'160,562 148,583 138,615 130,648 128,678 132,702 143,714 158,716 170,706 177,679 176,648 170,616 162,584' },
+      points:'158,598 144,624 134,662 126,702 124,740 130,770 144,784 162,784 176,770 184,738 182,700 174,660 164,622' },
     { id:'biceps_fem_r', name:'Biceps Femoris (R)', group:'Hamstrings', view:'posterior',
-      points:'243,562 255,583 265,615 272,648 275,678 270,702 260,714 245,716 234,706 226,679 226,648 232,616 242,584' },
+      points:'242,598 256,624 266,662 274,702 276,740 270,770 256,784 238,784 224,770 216,738 218,700 226,660 236,622' },
 
-    // HAMSTRINGS — SEMIMEMBRANOSUS / SEMITENDINOSUS (medial/inner)
+    // HAMSTRINGS — SEMIMEMBRANOSUS / SEMITENDINOSUS
     { id:'semimem_l', name:'Semimembranosus / Semitendinosus (L)', group:'Hamstrings', view:'posterior',
-      points:'195,562 184,584 177,616 173,648 173,678 177,704 188,716 202,718 212,707 214,678 212,646 207,614 200,582' },
+      points:'194,598 182,622 174,660 170,700 170,740 176,770 190,784 206,786 218,772 220,740 218,698 212,658 204,620' },
     { id:'semimem_r', name:'Semimembranosus / Semitendinosus (R)', group:'Hamstrings', view:'posterior',
-      points:'208,562 219,584 226,616 230,648 230,678 226,704 218,716 204,718 194,707 190,678 191,646 196,614 204,582' },
+      points:'206,598 218,622 226,660 230,700 230,740 224,770 210,784 194,786 182,772 180,740 182,698 188,658 196,620' },
 
     // CALF — GASTROCNEMIUS
     { id:'gastroc_l', name:'Gastrocnemius (L)', group:'Calf', view:'posterior',
-      points:'150,718 138,738 130,764 128,792 133,815 143,828 157,832 170,824 177,806 177,778 172,751 160,728' },
+      points:'148,784 134,808 126,840 124,876 132,904 146,920 164,922 180,912 188,888 188,852 180,818 166,794' },
     { id:'gastroc_r', name:'Gastrocnemius (R)', group:'Calf', view:'posterior',
-      points:'253,718 265,738 273,764 275,792 270,815 260,828 246,832 233,824 226,806 226,778 231,751 242,728' },
+      points:'252,784 266,808 274,840 276,876 268,904 254,920 236,922 220,912 212,888 212,852 220,818 234,794' },
 
-    // CALF — SOLEUS (below gastroc)
+    // CALF — SOLEUS
     { id:'soleus_l', name:'Soleus (L)', group:'Calf', view:'posterior',
-      points:'157,810 146,828 140,851 142,872 151,881 164,883 174,876 179,858 178,832 168,814' },
+      points:'158,900 146,920 140,948 144,974 156,986 172,988 186,978 192,954 190,924 176,904' },
     { id:'soleus_r', name:'Soleus (R)', group:'Calf', view:'posterior',
-      points:'246,810 258,828 263,851 262,872 253,881 240,883 230,876 224,858 226,832 238,814' },
+      points:'242,900 254,920 260,948 256,974 244,986 228,988 214,978 208,954 210,924 224,904' },
   ];
 
   // Convenience lookups
@@ -1967,96 +1650,188 @@ export function renderApp(): string {
   const POSTERIOR_MUSCLES = MUSCLES.filter(m => m.view === 'posterior');
 
   // ============================================================
+  // QUICK SELECT PRESETS - Common Pain Patterns
+  // ============================================================
+  const QUICK_SELECT_PRESETS = [
+    {
+      id: 'upper_back_tension',
+      name: 'Upper Back Tension',
+      icon: 'fa-person-rays',
+      description: 'Neck, traps & shoulders',
+      muscles: ['upper_trap_l', 'upper_trap_r', 'levator_scap_l', 'levator_scap_r', 'rhomboids_l', 'rhomboids_r', 'scm_l', 'scm_r']
+    },
+    {
+      id: 'lower_back_pain',
+      name: 'Lower Back Pain',
+      icon: 'fa-user-injured',
+      description: 'QL, erectors & glutes',
+      muscles: ['erector_l', 'erector_r', 'ql_l', 'ql_r', 'glut_max_l', 'glut_max_r', 'glut_med_l', 'glut_med_r', 'piriformis_l', 'piriformis_r']
+    },
+    {
+      id: 'desk_worker',
+      name: 'Desk Worker',
+      icon: 'fa-computer',
+      description: 'Chest, neck & hip flexors',
+      muscles: ['pec_major_l', 'pec_major_r', 'scm_l', 'scm_r', 'upper_trap_l', 'upper_trap_r', 'iliopsoas_l', 'iliopsoas_r']
+    },
+    {
+      id: 'runner_legs',
+      name: 'Runner Recovery',
+      icon: 'fa-person-running',
+      description: 'Quads, hamstrings & calves',
+      muscles: ['quad_l', 'quad_r', 'biceps_fem_l', 'biceps_fem_r', 'semimem_l', 'semimem_r', 'gastroc_l', 'gastroc_r', 'soleus_l', 'soleus_r', 'tfl_l', 'tfl_r']
+    },
+    {
+      id: 'shoulder_complex',
+      name: 'Shoulder Issues',
+      icon: 'fa-hand-fist',
+      description: 'Rotator cuff & deltoids',
+      muscles: ['deltoid_ant_l', 'deltoid_ant_r', 'deltoid_post_l', 'deltoid_post_r', 'infraspinatus_l', 'infraspinatus_r', 'teres_l', 'teres_r']
+    },
+    {
+      id: 'full_back',
+      name: 'Full Back',
+      icon: 'fa-arrows-up-down',
+      description: 'Complete posterior chain',
+      muscles: ['upper_trap_l', 'upper_trap_r', 'rhomboids_l', 'rhomboids_r', 'lats_l', 'lats_r', 'erector_l', 'erector_r', 'ql_l', 'ql_r', 'infraspinatus_l', 'infraspinatus_r', 'teres_l', 'teres_r']
+    }
+  ];
+
+  // ============================================================
   // IMAGE-BASED MUSCLE MAP
   // ============================================================
-  // The image viewBox is 400×870 (normalised from actual half-image).
-  // For the MALE image (890×1024): each half = 445×1024, normalised to 400×870
-  // For the FEMALE image (862×1024): each half = 431×1024, normalised to 400×870
-  // Image is positioned so only the correct half is visible:
-  //   anterior → show left half  (image translateX 0)
-  //   posterior → show right half (image translateX -100%)
+  // Geometry helpers keep polygon rendering, hit-testing and dot placement
+  // aligned in the same coordinate system for both male and female figures.
+
+  const VIEWBOX_WIDTH = 400;
+  const MALE_VIEWBOX_HEIGHT = 920;
+
+  function getViewBoxHeight(gender) {
+    const g = gender || state.currentGender;
+    if (g === 'male') return 920;
+    // Female half image width = 431 (862 / 2)
+    return Math.round(1024 / (431 / VIEWBOX_WIDTH));
+  }
+
+  function scalePointForGender(x, y, gender, vbH) {
+    const g = gender || state.currentGender;
+    const targetHeight = vbH || getViewBoxHeight(g);
+
+    if (g !== 'female') {
+      return { x: x, y: y };
+    }
+
+    let sx, cx;
+    if      (y < 130) { sx = 0.60; cx = 214; }
+    else if (y < 220) { sx = 0.69; cx = 215; }
+    else if (y < 360) { sx = 0.80; cx = 215; }
+    else if (y < 470) { sx = 0.91; cx = 215; }
+    else if (y < 535) { sx = 1.08; cx = 214; }
+    else if (y < 680) { sx = 0.86; cx = 215; }
+    else if (y < 780) { sx = 0.69; cx = 216; }
+    else              { sx = 0.75; cx = 215; }
+
+    return {
+      x: Math.round((x - 205) * sx + cx),
+      y: Math.round(y * (targetHeight / MALE_VIEWBOX_HEIGHT))
+    };
+  }
+
+  function getPolygonPoints(muscle, gender, vbH) {
+    const g = gender || state.currentGender;
+    const targetHeight = vbH || getViewBoxHeight(g);
+    return muscle.points.split(' ').map(function(pair) {
+      const nums = pair.split(',').map(Number);
+      return scalePointForGender(nums[0], nums[1], g, targetHeight);
+    });
+  }
+
+  function polygonToString(points) {
+    return points.map(function(p) {
+      return p.x + ',' + p.y;
+    }).join(' ');
+  }
+
+  function pointInPolygon(x, y, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i].x, yi = points[i].y;
+      const xj = points[j].x, yj = points[j].y;
+      const intersects = ((yi > y) !== (yj > y)) &&
+        (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  }
+
+  function polygonArea(points) {
+    let area = 0;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      area += (points[j].x * points[i].y) - (points[i].x * points[j].y);
+    }
+    return Math.abs(area / 2);
+  }
+
+  function polygonCentroid(points) {
+    let x = 0;
+    let y = 0;
+    let areaFactor = 0;
+
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const cross = (points[j].x * points[i].y) - (points[i].x * points[j].y);
+      areaFactor += cross;
+      x += (points[j].x + points[i].x) * cross;
+      y += (points[j].y + points[i].y) * cross;
+    }
+
+    const area = areaFactor / 2;
+    if (Math.abs(area) < 1e-9) {
+      return {
+        x: points.reduce(function(sum, p) { return sum + p.x; }, 0) / points.length,
+        y: points.reduce(function(sum, p) { return sum + p.y; }, 0) / points.length
+      };
+    }
+
+    return {
+      x: x / (6 * area),
+      y: y / (6 * area)
+    };
+  }
 
   function renderMuscleMap() {
     const container = document.getElementById('muscleMapContainer');
-    const gender    = state.currentGender;   // 'male' | 'female'
-    const view      = state.currentView;     // 'anterior' | 'posterior'
-    const muscles   = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    const imgSrc    = \`/static/muscle-map-\${gender}.png\`;
+    const gender = state.currentGender;
+    const view = state.currentView;
+    const muscles = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
+    const imgSrc = "/static/muscle-map-" + gender + ".png";
 
-    // Image natural dimensions
     const imgW = gender === 'male' ? 890 : 862;
     const halfW = imgW / 2;
     const imgH = 1024;
-
-    // We display a 400px wide viewport and scale proportionally
-    // SVG viewBox per half: halfW × imgH, displayed at width=400, height=auto
-    const vbH = Math.round(imgH / (halfW / 400));
-
-    // Translate the image: anterior = left half (translateX 0), posterior = right half (translateX -50%)
+    const vbH = getViewBoxHeight(gender);
     const imgTranslate = view === 'anterior' ? '0' : '-50%';
 
-    // Scale muscle polygons to match each gender's body proportions.
-    // Coordinates were authored for the MALE figure (SVG 400×920).
-    // Female body proportions differ by region (computed from image pixel analysis):
-    //   Y=0-130  (head/neck):  scale≈0.60, center shifts to X:214
-    //   Y=130-220 (shoulders): scale≈0.69, center X:215
-    //   Y=220-360 (chest/biceps): scale≈0.80, center X:215
-    //   Y=360-470 (forearms/abdomen): scale≈0.91, center X:215
-    //   Y=470-535 (hips): scale≈1.08 (female hips wider), center X:214
-    //   Y=535-680 (quads): scale≈0.86, center X:215
-    //   Y=680-780 (shins): scale≈0.69, center X:216
-    //   Y=780+    (feet): scale≈0.75, center X:215
-    const maleVbH  = 920;
-    const scaleY   = gender === 'female' ? (vbH / maleVbH) : 1;
-
-    function scalePoints(pts) {
-      if (gender !== 'female') return pts;
-      return pts.split(' ').map(pair => {
-        const [x, y] = pair.split(',').map(Number);
-        let sx, cx;
-        // Y-based horizontal scale toward female body proportions
-        if      (y < 130) { sx = 0.60; cx = 214; }
-        else if (y < 220) { sx = 0.69; cx = 215; }
-        else if (y < 360) { sx = 0.80; cx = 215; }
-        else if (y < 470) { sx = 0.91; cx = 215; }
-        else if (y < 535) { sx = 1.08; cx = 214; }
-        else if (y < 680) { sx = 0.86; cx = 215; }
-        else if (y < 780) { sx = 0.69; cx = 216; }
-        else              { sx = 0.75; cx = 215; }
-        const nx = Math.round((x - 205) * sx + cx);  // male center ~205
-        const ny = Math.round(y * scaleY);
-        return nx + ',' + ny;
-      }).join(' ');
-    }
-
-    const musclePolygons = state.showMusclePolygons
-      ? renderMusclePolygons(muscles, scalePoints)
-      : '';
+    // Keep selected muscles visible even when the polygon toggle is off.
+    const shouldRenderPolygons = state.showMusclePolygons || state.treatedMuscles.size > 0;
+    const musclePolygons = shouldRenderPolygons ? renderMusclePolygons(muscles, vbH) : '';
     const tensionDots = renderTensionDots(vbH);
 
-    // Render the map at full container width, allow vertical scroll for tall aspect ratio
-    // Each half dimensions: male=445×1024, female=431×1024 (nearly 1:2.3 aspect)
-    // At 480px wide the map would be ~1100px tall — use a scrollable container with max-height
-
     container.innerHTML = \`
-      <div style="position:relative;width:100%;padding-bottom:\${Math.round(imgH/halfW*100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
-        <!-- Base image — 200% width, translate to show correct half -->
+      <div style="position:relative;width:100%;padding-bottom:\${Math.round(imgH / halfW * 100)}%;overflow:hidden;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#f8fafc;">
         <img src="\${imgSrc}" alt="Muscle map"
           style="position:absolute;top:0;left:0;width:200%;height:100%;transform:translateX(\${imgTranslate});pointer-events:none;object-fit:fill;"
           onerror="this.style.opacity='0.2'"/>
-        <!-- Dot placement overlay canvas -->
-        <canvas id="dotPlacementCanvas" 
-          style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"
-          onclick="handleCanvasClick(event)"></canvas>
+
+        <canvas id="dotPlacementCanvas"
+          style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10;"></canvas>
+
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
           preserveAspectRatio="none"
           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;">
-          <g>
-            \${musclePolygons}
-          </g>
+          <g>\${musclePolygons}</g>
         </svg>
-        <!-- SVG overlay for tension dots -->
+
         <svg viewBox="0 0 400 \${vbH}"
           xmlns="http://www.w3.org/2000/svg"
           preserveAspectRatio="none"
@@ -2068,19 +1843,24 @@ export function renderApp(): string {
       </div>
     \`;
 
-    // Set up canvas for click detection
     setupCanvasClickDetection();
   }
 
-  function renderMusclePolygons(muscles, scalePoints) {
+  function renderMusclePolygons(muscles, vbH) {
     return muscles.map(function(muscle) {
-      const points = state.currentGender === 'female'
-        ? scalePoints(muscle.points)
-        : muscle.points;
-      return '<polygon points="' + points + '" '
-        + 'fill="rgba(91,163,217,0.18)" '
-        + 'stroke="rgba(37,99,235,0.65)" '
-        + 'stroke-width="1.2"></polygon>';
+      const points = polygonToString(getPolygonPoints(muscle, state.currentGender, vbH));
+      const isTreated = state.treatedMuscles.has(muscle.id);
+      const fill = isTreated ? 'rgba(56, 161, 105, 0.42)' : 'rgba(91,163,217,0.14)';
+      const stroke = isTreated ? 'rgba(39, 103, 73, 0.95)' : 'rgba(37,99,235,0.45)';
+      const strokeWidth = isTreated ? 2 : 1.1;
+
+      return '<polygon '
+        + 'class="muscle-path ' + (isTreated ? 'treated' : '') + '" '
+        + 'data-muscle-id="' + muscle.id + '" '
+        + 'points="' + points + '" '
+        + 'fill="' + fill + '" '
+        + 'stroke="' + stroke + '" '
+        + 'stroke-width="' + strokeWidth + '"></polygon>';
     }).join('');
   }
 
@@ -2150,57 +1930,37 @@ export function renderApp(): string {
   // TENSION POINTS SYSTEM (Enhanced Muscle Map)
   // ============================================================
 
-  // Render tension dots as SVG circles with numbers
   function renderTensionDots(vbH) {
     if (state.tensionPoints.length === 0) return '';
-    
+
     const currentView = state.currentView;
     const currentGender = state.currentGender;
-    
-    // Filter dots for current view
-    const viewDots = state.tensionPoints.filter(dot => {
-      // Check if muscle is from current view
-      const muscle = MUSCLES.find(m => m.id === dot.muscleId);
+
+    const viewDots = state.tensionPoints.filter(function(dot) {
+      const muscle = MUSCLES.find(function(m) { return m.id === dot.muscleId; });
       return muscle && muscle.view === currentView;
     });
 
-    return viewDots.map(dot => {
-      // Apply gender scaling to dot position if needed
-      let x = dot.x;
-      let y = dot.y;
-      
-      if (currentGender === 'female') {
-        // Apply same scaling as muscle polygons
-        const maleVbH = 920;
-        const scaleY = vbH / maleVbH;
-        let sx, cx;
-        if      (y < 130) { sx = 0.60; cx = 214; }
-        else if (y < 220) { sx = 0.69; cx = 215; }
-        else if (y < 360) { sx = 0.80; cx = 215; }
-        else if (y < 470) { sx = 0.91; cx = 215; }
-        else if (y < 535) { sx = 1.08; cx = 214; }
-        else if (y < 680) { sx = 0.86; cx = 215; }
-        else if (y < 780) { sx = 0.69; cx = 216; }
-        else              { sx = 0.75; cx = 215; }
-        x = Math.round((dot.x - 205) * sx + cx);
-        y = Math.round(dot.y * scaleY);
-      }
+    return viewDots.map(function(dot) {
+      const scaled = scalePointForGender(dot.x, dot.y, currentGender, vbH);
 
       return \`
         <g class="tension-dot" style="cursor:pointer;" data-dot-id="\${dot.id}"
-           onclick="removeTensionDot('\${dot.id}')"
-           onmouseenter="showDotTooltip(event, '\${dot.number}', '\${dot.muscleName}', '\${dot.type}', '\${dot.notes}')"
-           onmouseleave="hideDotTooltip()">
-          <circle cx="\${x}" cy="\${y}" r="12" 
-                  fill="rgba(239, 68, 68, 0.9)" 
-                  stroke="rgba(239, 68, 68, 1)" 
+           data-remove-dot-id="\${dot.id}"
+           data-dot-number="\${dot.number}"
+           data-muscle-name="\${dot.muscleName}"
+           data-dot-type="\${dot.type}"
+           data-dot-notes="\${dot.notes}">
+          <circle cx="\${scaled.x}" cy="\${scaled.y}" r="12"
+                  fill="rgba(239, 68, 68, 0.9)"
+                  stroke="rgba(239, 68, 68, 1)"
                   stroke-width="2"/>
-          <text x="\${x}" y="\${y + 1}" 
-                text-anchor="middle" 
+          <text x="\${scaled.x}" y="\${scaled.y + 1}"
+                text-anchor="middle"
                 dominant-baseline="middle"
-                fill="white" 
-                font-family="var(--font)" 
-                font-size="11" 
+                fill="white"
+                font-family="var(--font)"
+                font-size="11"
                 font-weight="bold">
             \${dot.number}
           </text>
@@ -2208,103 +1968,75 @@ export function renderApp(): string {
     }).join('\\n');
   }
 
-  // Set up canvas click detection
   function setupCanvasClickDetection() {
     const canvas = document.getElementById('dotPlacementCanvas');
     if (!canvas) return;
-    
-    // Ensure canvas has proper dimensions for coordinate calculation
-    const resizeCanvas = () => {
+
+    const resizeCanvas = function() {
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
     };
-    
+
+    if (window.__soapCanvasResizeHandler) {
+      window.removeEventListener('resize', window.__soapCanvasResizeHandler);
+    }
+
+    window.__soapCanvasResizeHandler = resizeCanvas;
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
   }
 
-  // Handle canvas click for dot placement
   function handleCanvasClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    
+
     const canvas = document.getElementById('dotPlacementCanvas');
     if (!canvas) return;
-    
-    // Get click coordinates relative to canvas
+
     const rect = canvas.getBoundingClientRect();
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
-    
-    // Convert to base coordinates (400x920 normalized space)
-    const svgX = (canvasX / rect.width) * 400;
-    const svgY = (canvasY / rect.height) * 920;
-    
-    // Find which muscle contains this point
-    const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender);
-    
+    const vbH = getViewBoxHeight(state.currentGender);
+    const svgX = (canvasX / rect.width) * VIEWBOX_WIDTH;
+    const svgY = (canvasY / rect.height) * vbH;
+
+    const detectedMuscle = findMuscleAtPoint(svgX, svgY, state.currentView, state.currentGender, vbH);
+
     if (detectedMuscle) {
       saveTensionDot(svgX, svgY, detectedMuscle.id, detectedMuscle.name, 'pain-area', '');
     } else {
-      showCopyFeedback('Click on a body area to place a marker');
+      showCopyFeedback('Click on a mapped muscle area to place a marker');
     }
   }
 
-  // Point-in-polygon detection to find muscle at click point
-  function findMuscleAtPoint(x, y, view, gender) {
+  function findMuscleAtPoint(x, y, view, gender, vbH) {
     const muscles = view === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
-    
-    for (const muscle of muscles) {
-      if (isPointInMuscle(x, y, muscle, gender)) {
-        return muscle;
-      }
-    }
-    return null;
+    const targetHeight = vbH || getViewBoxHeight(gender);
+
+    const matches = muscles
+      .map(function(muscle) {
+        const points = getPolygonPoints(muscle, gender, targetHeight);
+        if (!pointInPolygon(x, y, points)) return null;
+
+        const centroid = polygonCentroid(points);
+        const area = polygonArea(points);
+        const distance = Math.hypot(x - centroid.x, y - centroid.y);
+        const score = distance + (area * 0.0025);
+
+        return { muscle: muscle, score: score };
+      })
+      .filter(Boolean)
+      .sort(function(a, b) { return a.score - b.score; });
+
+    return matches.length ? matches[0].muscle : null;
   }
 
-  // Check if point is inside muscle polygon
-  function isPointInMuscle(x, y, muscle, gender) {
-    const points = muscle.points;
-    let scaledPoints = points;
-    
-    // Apply gender scaling if female
-    if (gender === 'female') {
-      scaledPoints = points.split(' ').map(pair => {
-        const [px, py] = pair.split(',').map(Number);
-        let sx, cx;
-        if      (py < 130) { sx = 0.60; cx = 214; }
-        else if (py < 220) { sx = 0.69; cx = 215; }
-        else if (py < 360) { sx = 0.80; cx = 215; }
-        else if (py < 470) { sx = 0.91; cx = 215; }
-        else if (py < 535) { sx = 1.08; cx = 214; }
-        else if (py < 680) { sx = 0.86; cx = 215; }
-        else if (py < 780) { sx = 0.69; cx = 216; }
-        else              { sx = 0.75; cx = 215; }
-        const nx = Math.round((px - 205) * sx + cx);
-        return nx + ',' + py;
-      }).join(' ');
-    }
-    
-    // Parse polygon points
-    const coords = scaledPoints.split(' ').map(pair => {
-      const [px, py] = pair.split(',').map(Number);
-      return [px, py];
-    });
-    
-    // Ray casting algorithm for point-in-polygon
-    let inside = false;
-    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-      if (((coords[i][1] > y) !== (coords[j][1] > y)) &&
-          (x < (coords[j][0] - coords[i][0]) * (y - coords[i][1]) / (coords[j][1] - coords[i][1]) + coords[i][0])) {
-        inside = !inside;
-      }
-    }
-    return inside;
+  function isPointInMuscle(x, y, muscle, gender, vbH) {
+    const points = getPolygonPoints(muscle, gender, vbH || getViewBoxHeight(gender));
+    return pointInPolygon(x, y, points);
   }
 
-
-  
 
   // Save tension dot
   function saveTensionDot(x, y, muscleId, muscleName, selectedType = 'pain-area', notes = '') {
@@ -2368,8 +2100,11 @@ export function renderApp(): string {
   // Show dot tooltip
   function showDotTooltip(event, number, muscleName, type, notes) {
     const tooltip = document.getElementById('muscleTooltip') || createTooltipElement();
-    const displayText = \`\${number}. \${muscleName}\\n\${type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ')}\${notes ? '\\n' + notes : ''}\`;
-    tooltip.innerHTML = displayText.replace(/\\n/g, '<br>');
+    const safeMuscleName = escapeHtml(muscleName);
+    const safeType = escapeHtml(type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' '));
+    const safeNotes = notes ? escapeHtml(notes) : '';
+    const displayText = \`\${number}. \${safeMuscleName}<br>\${safeType}\${safeNotes ? '<br>' + safeNotes : ''}\`;
+    tooltip.innerHTML = displayText;
     tooltip.classList.remove('hidden');
     tooltip.style.display = 'block';
     tooltip.style.left = (event.clientX + 10) + 'px';
@@ -2398,6 +2133,132 @@ export function renderApp(): string {
     return tooltip;
   }
 
+  // ============================================================
+  // QUICK SELECT FUNCTIONS
+  // ============================================================
+  
+  function toggleQuickSelectPanel() {
+    const panel = document.getElementById('quickSelectPanel');
+    const chevron = document.getElementById('quickSelectChevron');
+    if (panel && chevron) {
+      const isHidden = panel.style.display === 'none';
+      panel.style.display = isHidden ? 'block' : 'none';
+      chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+      
+      // Render buttons on first open
+      if (isHidden) {
+        renderQuickSelectButtons();
+      }
+    }
+  }
+  
+  function renderQuickSelectButtons() {
+    const container = document.getElementById('quickSelectButtons');
+    if (!container) return;
+    
+    container.innerHTML = QUICK_SELECT_PRESETS.map(preset => {
+      const isActive = checkPresetActive(preset);
+      return \`
+        <button 
+          data-testid="quick-select-\${preset.id}"
+          onclick="applyQuickSelectPreset('\${preset.id}')"
+          class="btn \${isActive ? 'btn-primary' : 'btn-ghost'} btn-sm"
+          style="display:flex;flex-direction:column;align-items:center;padding:10px 8px;gap:4px;height:auto;text-align:center;\${isActive ? 'background:var(--accent);color:white;' : ''}"
+          title="\${preset.description}">
+          <i class="fas \${preset.icon}" style="font-size:1rem;"></i>
+          <span style="font-size:0.68rem;line-height:1.2;white-space:normal;">\${preset.name}</span>
+        </button>
+      \`;
+    }).join('');
+  }
+  
+  function checkPresetActive(preset) {
+    // Check if any muscles from this preset are already marked
+    return preset.muscles.some(muscleId => state.treatedMuscles.has(muscleId));
+  }
+  
+  function applyQuickSelectPreset(presetId) {
+    const preset = QUICK_SELECT_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    
+    // Check if preset is already active (has any muscles marked)
+    const isActive = checkPresetActive(preset);
+    
+    if (isActive) {
+      // Remove all muscles from this preset
+      preset.muscles.forEach(muscleId => {
+        // Remove all dots for this muscle
+        const dotsToRemove = state.tensionPoints.filter(dot => dot.muscleId === muscleId);
+        dotsToRemove.forEach(dot => {
+          const dotIndex = state.tensionPoints.findIndex(d => d.id === dot.id);
+          if (dotIndex !== -1) {
+            state.tensionPoints.splice(dotIndex, 1);
+          }
+        });
+        state.treatedMuscles.delete(muscleId);
+      });
+      
+      // Renumber remaining dots
+      state.tensionPoints.forEach((dot, index) => {
+        dot.number = index + 1;
+      });
+      
+      showCopyFeedback(\`Cleared \${preset.name} markers\`);
+    } else {
+      // Add markers for all muscles in preset
+      let addedCount = 0;
+      preset.muscles.forEach(muscleId => {
+        // Skip if already has a marker
+        if (state.treatedMuscles.has(muscleId)) return;
+        
+        const muscle = MUSCLES.find(m => m.id === muscleId);
+        if (!muscle) return;
+        
+        // Calculate centroid for marker placement
+        const vbH = getViewBoxHeight(state.currentGender);
+        const points = getPolygonPoints(muscle, state.currentGender, vbH);
+        const centroid = polygonCentroid(points);
+        
+        // Convert back to male coordinates for storage (will be scaled on render)
+        const storageX = muscle.view === state.currentView ? centroid.x : centroid.x;
+        const storageY = muscle.view === state.currentView ? centroid.y : centroid.y;
+        
+        // Get original centroid from muscle points (not gender-scaled)
+        const originalPoints = muscle.points.split(' ').map(pair => {
+          const nums = pair.split(',').map(Number);
+          return { x: nums[0], y: nums[1] };
+        });
+        const originalCentroid = polygonCentroid(originalPoints);
+        
+        // Create new tension point
+        const dotNumber = state.tensionPoints.length + 1;
+        const newDot = {
+          id: 'dot_' + Date.now() + '_' + muscleId,
+          number: dotNumber,
+          x: Math.round(originalCentroid.x),
+          y: Math.round(originalCentroid.y),
+          muscleId: muscleId,
+          muscleName: muscle.name,
+          type: 'pain-area',
+          notes: '',
+          timestamp: new Date().toISOString()
+        };
+        
+        state.tensionPoints.push(newDot);
+        state.treatedMuscles.add(muscleId);
+        addedCount++;
+      });
+      
+      showCopyFeedback(\`Added \${addedCount} markers for \${preset.name}\`);
+    }
+    
+    // Refresh display
+    renderMuscleMap();
+    updateMuscleLists();
+    updateSummaryPanel();
+    renderQuickSelectButtons();
+  }
+
 
   // ============================================================
   // INITIALIZE
@@ -2409,6 +2270,27 @@ export function renderApp(): string {
     // Render techniques
     renderTechniques();
     
+    // CSRF Protection: Automatically add CSRF token to state-changing requests
+    const getCsrfToken = () => {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      return meta ? meta.getAttribute('content') : '';
+    };
+
+    const originalFetch = window.fetch;
+    window.fetch = async (url, options) => {
+      const method = options?.method?.toUpperCase();
+      if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+          options.headers = {
+            ...options.headers,
+            'X-CSRF-Token': csrfToken,
+          };
+        }
+      }
+      return originalFetch(url, options);
+    };
+
     // Render muscle map
     renderMuscleMap();
     populateMuscleSearchList();
@@ -2435,11 +2317,14 @@ export function renderApp(): string {
     // Load client profiles from server database
     await renderClientProfilesPreview();
 
-    // Load saved OpenAI API key
-    loadOpenAIKey();
+    // Check API status (server-side key)
+    checkAPIStatus();
+    
+    // Pre-fetch CSRF token for subsequent API calls
+    getCsrfToken();
 
-    // Load recent Drive PDFs
-    loadDriveFiles();
+    // Load recent intake form PDFs
+    setTimeout(() => { if (typeof loadSupabaseFiles === 'function') loadSupabaseFiles(); }, 20);
 
     // Check if client data was passed via URL (from intake form redirect)
     await checkUrlClientData();
@@ -2460,6 +2345,429 @@ export function renderApp(): string {
     document.getElementById('sessionViewModal').addEventListener('click', function(e) {
       if (e.target === this) closeSessionView();
     });
+
+    // Header buttons
+    document.getElementById('openClientAccountsBtn').addEventListener('click', openClientAccounts);
+    document.getElementById('resetAllBtn').addEventListener('click', resetAll);
+
+    // Step navigation
+    document.querySelectorAll('.step-item').forEach(stepItem => {
+      stepItem.addEventListener('click', function() {
+        const step = parseInt(this.dataset.step);
+        goToStep(step);
+      });
+    });
+
+    // Client profile buttons
+    document.getElementById('openClientBrowserBtn').addEventListener('click', openClientBrowser);
+    document.getElementById('openWebhookConfigBtn').addEventListener('click', openWebhookConfig);
+
+    // PDF upload functionality
+    const dropZone = document.getElementById('dropZone');
+    const pdfInput = document.getElementById('pdfInput');
+    
+    dropZone.addEventListener('click', () => pdfInput.click());
+    dropZone.addEventListener('dragover', handleDragOver);
+    dropZone.addEventListener('drop', handleDrop);
+    pdfInput.addEventListener('change', handlePDFUpload);
+    
+    const clearPDFBtn = document.getElementById('clearPDFBtn');
+    if (clearPDFBtn) {
+      clearPDFBtn.addEventListener('click', clearPDF);
+    }
+
+    // Intake form textarea focus/blur styling
+    const intakeFormData = document.getElementById('intakeFormData');
+    if (intakeFormData) {
+      intakeFormData.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+        this.style.boxShadow = '0 0 0 3px rgba(91,163,217,0.15)';
+      });
+      intakeFormData.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.boxShadow = 'none';
+      });
+    }
+
+    // Navigation buttons
+    const goToStep2Btn = document.getElementById('goToStep2Btn');
+    if (goToStep2Btn) {
+      goToStep2Btn.addEventListener('click', () => goToStep(2));
+    }
+
+    // Gender and view toggles
+    document.getElementById('btnMale').addEventListener('click', function() {
+      setGender(this.dataset.gender);
+    });
+    document.getElementById('btnFemale').addEventListener('click', function() {
+      setGender(this.dataset.gender);
+    });
+    document.getElementById('btnAnterior').addEventListener('click', function() {
+      setView(this.dataset.view);
+    });
+    document.getElementById('btnPosterior').addEventListener('click', function() {
+      setView(this.dataset.view);
+    });
+
+    // Muscle polygons toggle
+    const toggleMusclePolygons = document.getElementById('toggleMusclePolygons');
+    if (toggleMusclePolygons) {
+      toggleMusclePolygons.addEventListener('change', function() {
+        toggleMusclePolygons(this.checked);
+      });
+    }
+
+    // Additional form elements with oninput handlers
+    const clientEmail = document.getElementById('clientEmail');
+    if (clientEmail) {
+      clientEmail.addEventListener('input', updateSummaryPanel);
+    }
+
+    // Step 2 (Muscle Map) buttons
+    const clearAllMusclesBtn = document.getElementById('clearAllMusclesBtn');
+    if (clearAllMusclesBtn) {
+      clearAllMusclesBtn.addEventListener('click', clearAllMuscles);
+    }
+
+    const goToStep1FromMapBtn = document.getElementById('goToStep1FromMapBtn');
+    if (goToStep1FromMapBtn) {
+      goToStep1FromMapBtn.addEventListener('click', () => goToStep(1));
+    }
+
+    const goToStep3FromMapBtn = document.getElementById('goToStep3FromMapBtn');
+    if (goToStep3FromMapBtn) {
+      goToStep3FromMapBtn.addEventListener('click', () => goToStep(3));
+    }
+
+    // Step 3 (Session Notes) form field focus/blur styling
+    const chiefComplaint = document.getElementById('chiefComplaint');
+    if (chiefComplaint) {
+      chiefComplaint.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+        this.style.boxShadow = '0 0 0 3px rgba(91,163,217,0.15)';
+      });
+      chiefComplaint.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.boxShadow = 'none';
+      });
+    }
+
+    // Jump navigation buttons
+    const jumpToChiefComplaintBtn = document.getElementById('jumpToChiefComplaintBtn');
+    if (jumpToChiefComplaintBtn) {
+      jumpToChiefComplaintBtn.addEventListener('click', () => jumpToField(1, 'chiefComplaint'));
+    }
+
+    const jumpToSessionSummaryBtn = document.getElementById('jumpToSessionSummaryBtn');
+    if (jumpToSessionSummaryBtn) {
+      jumpToSessionSummaryBtn.addEventListener('click', () => jumpToField(3, 'sessionSummary'));
+    }
+
+    // Medical shorthand toggle
+    const medicalShorthandToggle = document.getElementById('medicalShorthandToggle');
+    if (medicalShorthandToggle) {
+      medicalShorthandToggle.addEventListener('change', function() {
+        setMedicalShorthand(this.checked);
+      });
+    }
+
+    // Step 3 navigation buttons
+    const goToStep2FromNotesBtn = document.getElementById('goToStep2FromNotesBtn');
+    if (goToStep2FromNotesBtn) {
+      goToStep2FromNotesBtn.addEventListener('click', () => goToStep(2));
+    }
+
+    const generateSOAPBtn = document.getElementById('generateSOAPBtn');
+    if (generateSOAPBtn) {
+      generateSOAPBtn.addEventListener('click', generateSOAP);
+    }
+
+    // SOAP section copy buttons
+    const copySectionSBtn = document.getElementById('copySectionSBtn');
+    if (copySectionSBtn) {
+      copySectionSBtn.addEventListener('click', () => copySection('S'));
+    }
+
+    const copySectionOBtn = document.getElementById('copySectionOBtn');
+    if (copySectionOBtn) {
+      copySectionOBtn.addEventListener('click', () => copySection('O'));
+    }
+
+    const copySectionABtn = document.getElementById('copySectionABtn');
+    if (copySectionABtn) {
+      copySectionABtn.addEventListener('click', () => copySection('A'));
+    }
+
+    const copySectionPBtn = document.getElementById('copySectionPBtn');
+    if (copySectionPBtn) {
+      copySectionPBtn.addEventListener('click', () => copySection('P'));
+    }
+
+    const copySectionNBtn = document.getElementById('copySectionNBtn');
+    if (copySectionNBtn) {
+      copySectionNBtn.addEventListener('click', () => copySection('N'));
+    }
+
+    // Step 4 (SOAP) action buttons
+    const exportPDFBtn = document.getElementById('exportPDFBtn');
+    if (exportPDFBtn) {
+      exportPDFBtn.addEventListener('click', exportPDF);
+    }
+
+    const copyAllSOAPBtn = document.getElementById('copyAllSOAPBtn');
+    if (copyAllSOAPBtn) {
+      copyAllSOAPBtn.addEventListener('click', copyAllSOAP);
+    }
+
+    const regenerateSOAPBtn = document.getElementById('regenerateSOAPBtn');
+    if (regenerateSOAPBtn) {
+      regenerateSOAPBtn.addEventListener('click', regenerateSOAP);
+    }
+
+    // Step 4 navigation buttons
+    const goToStep3FromSOAPBtn = document.getElementById('goToStep3FromSOAPBtn');
+    if (goToStep3FromSOAPBtn) {
+      goToStep3FromSOAPBtn.addEventListener('click', () => goToStep(3));
+    }
+
+    const resetAllFromSOAPBtn = document.getElementById('resetAllFromSOAPBtn');
+    if (resetAllFromSOAPBtn) {
+      resetAllFromSOAPBtn.addEventListener('click', resetAll);
+    }
+
+    // Modal close buttons
+    const modalCloseClientBrowserBtn = document.getElementById('modalCloseClientBrowserBtn');
+    if (modalCloseClientBrowserBtn) {
+      modalCloseClientBrowserBtn.addEventListener('click', closeClientBrowser);
+    }
+
+    const closeClientBrowserBtn = document.getElementById('closeClientBrowserBtn');
+    if (closeClientBrowserBtn) {
+      closeClientBrowserBtn.addEventListener('click', closeClientBrowser);
+    }
+
+    const modalCloseWebhookBtn = document.getElementById('modalCloseWebhookBtn');
+    if (modalCloseWebhookBtn) {
+      modalCloseWebhookBtn.addEventListener('click', closeWebhookConfig);
+    }
+
+    // Client search functionality
+    const clientSearch = document.getElementById('clientSearch');
+    if (clientSearch) {
+      clientSearch.addEventListener('input', function() {
+        filterClients().catch(console.error);
+      });
+      clientSearch.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+      });
+      clientSearch.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+      });
+    }
+
+    // Webhook config buttons
+    const copyWebhookUrlBtn = document.getElementById('copyWebhookUrlBtn');
+    if (copyWebhookUrlBtn) {
+      copyWebhookUrlBtn.addEventListener('click', copyWebhookUrl);
+    }
+
+    const saveWebhookConfigBtn = document.getElementById('saveWebhookConfigBtn');
+    if (saveWebhookConfigBtn) {
+      saveWebhookConfigBtn.addEventListener('click', saveWebhookConfig);
+    }
+
+    const cancelWebhookConfigBtn = document.getElementById('cancelWebhookConfigBtn');
+    if (cancelWebhookConfigBtn) {
+      cancelWebhookConfigBtn.addEventListener('click', closeWebhookConfig);
+    }
+
+    // Manual client data textarea
+    const manualClientData = document.getElementById('manualClientData');
+    if (manualClientData) {
+      manualClientData.addEventListener('focus', function() {
+        this.style.borderColor = 'var(--accent)';
+      });
+      manualClientData.addEventListener('blur', function() {
+        this.style.borderColor = 'var(--border)';
+      });
+    }
+
+    const importManualProfileBtn = document.getElementById('importManualProfileBtn');
+    if (importManualProfileBtn) {
+      importManualProfileBtn.addEventListener('click', importManualProfile);
+    }
+
+    // Logo error handling
+    const headerLogo = document.getElementById('headerLogo');
+    if (headerLogo) {
+      headerLogo.addEventListener('error', function() {
+        this.src = '';
+        this.onerror = null;
+        this.style.display = 'none';
+        const fallbackLogo = document.getElementById('fallbackLogo');
+        if (fallbackLogo) {
+          fallbackLogo.style.display = 'flex';
+        }
+      });
+    }
+
+    // Client Accounts modal buttons
+    const modalCloseClientAccountsBtn = document.getElementById('modalCloseClientAccountsBtn');
+    if (modalCloseClientAccountsBtn) {
+      modalCloseClientAccountsBtn.addEventListener('click', closeClientAccounts);
+    }
+
+    const closeClientAccountsBtn = document.getElementById('closeClientAccountsBtn');
+    if (closeClientAccountsBtn) {
+      closeClientAccountsBtn.addEventListener('click', closeClientAccounts);
+    }
+
+    const accountSearch = document.getElementById('accountSearch');
+    if (accountSearch) {
+      accountSearch.addEventListener('input', filterAccountList);
+    }
+
+    const driveStatusBtn = document.getElementById('driveStatusBtn');
+    if (driveStatusBtn) {
+      driveStatusBtn.addEventListener('click', checkDriveStatus);
+    }
+
+    const driveSyncBtn = document.getElementById('driveSyncBtn');
+    if (driveSyncBtn) {
+      driveSyncBtn.addEventListener('click', syncDrivePDFs);
+    }
+
+    const clientSyncBtn = document.getElementById('clientSyncBtn');
+    if (clientSyncBtn) {
+      clientSyncBtn.addEventListener('click', syncClientsNow);
+    }
+
+    // Client File modal buttons
+    const loadClientFromFileBtn = document.getElementById('loadClientFromFileBtn');
+    if (loadClientFromFileBtn) {
+      loadClientFromFileBtn.addEventListener('click', loadClientFromFile);
+    }
+
+    const closeClientFileBtn = document.getElementById('closeClientFileBtn');
+    if (closeClientFileBtn) {
+      closeClientFileBtn.addEventListener('click', closeClientFile);
+    }
+
+    // Session View modal buttons
+    const closeSessionViewBtn = document.getElementById('closeSessionViewBtn');
+    if (closeSessionViewBtn) {
+      closeSessionViewBtn.addEventListener('click', closeSessionView);
+    }
+
+    // Quick Select toggle
+    const quickSelectHead = document.getElementById('quickSelectHead');
+    if (quickSelectHead) {
+      quickSelectHead.addEventListener('click', toggleQuickSelectPanel);
+    }
+
+    // Event delegation for dynamically generated elements
+    document.addEventListener('click', function(event) {
+      // Load client profile from list
+      const clientProfileItem = event.target.closest('.client-profile-item');
+      if (clientProfileItem) {
+        const accountNumber = clientProfileItem.dataset.accountNumber;
+        if (accountNumber) {
+          loadClientProfile(accountNumber).catch(console.error);
+        }
+      }
+
+      // Delete client profile
+      const deleteClientBtn = event.target.closest('.delete-client-profile');
+      if (deleteClientBtn) {
+        event.stopPropagation();
+        const accountNumber = deleteClientBtn.dataset.accountNumber;
+        if (accountNumber) {
+          deleteClientProfile(accountNumber).catch(console.error);
+        }
+      }
+
+      // Handle canvas click for muscle placement
+      if (event.target.id === 'dotPlacementCanvas') {
+        handleCanvasClick(event);
+      }
+
+      // Remove tension dot
+      const removeTensionBtn = event.target.closest('[data-remove-dot-id]');
+      if (removeTensionBtn) {
+        const dotId = removeTensionBtn.dataset.removeDotId;
+        if (dotId) {
+          removeTensionDot(dotId);
+        }
+      }
+
+      // Apply quick select preset
+      const presetBtn = event.target.closest('[data-quick-select-id]');
+      if (presetBtn) {
+        const presetId = presetBtn.dataset.quickSelectId;
+        if (presetId) {
+          applyQuickSelectPreset(presetId);
+        }
+      }
+
+      // Open client file
+      const openClientFileItem = event.target.closest('[data-client-account-number]');
+      if (openClientFileItem && openClientFileItem.dataset.action === 'open-client-file') {
+        const accountNumber = openClientFileItem.dataset.clientAccountNumber;
+        if (accountNumber) {
+          openClientFile(accountNumber);
+        }
+      }
+
+      // Open session view
+      const openSessionItem = event.target.closest('[data-session-id]');
+      if (openSessionItem && openSessionItem.dataset.action === 'open-session') {
+        const sessionId = openSessionItem.dataset.sessionId;
+        if (sessionId) {
+          openSessionView(sessionId);
+        }
+      }
+
+      // Connect drive for client
+      const connectDriveBtn = event.target.closest('[data-connect-drive-account]');
+      if (connectDriveBtn) {
+        const accountNumber = connectDriveBtn.dataset.connectDriveAccount;
+        if (accountNumber) {
+          connectDriveForClient(accountNumber);
+        }
+      }
+
+      // SVG tension dots mouseenter
+      const tensionDot = event.target.closest('.tension-dot');
+      if (tensionDot && event.type === 'mouseenter') {
+        const dotNumber = tensionDot.dataset.dotNumber;
+        const muscleName = tensionDot.dataset.muscleName;
+        const dotType = tensionDot.dataset.dotType;
+        const dotNotes = tensionDot.dataset.dotNotes;
+        showDotTooltip(event, dotNumber, muscleName, dotType, dotNotes);
+      }
+      if (tensionDot && event.type === 'mouseleave') {
+        hideDotTooltip();
+      }
+    }, true); // Use capture phase for better mouseenter/leave handling
+
+    // Add mouseenter and mouseleave listeners for SVG tension dots
+    document.addEventListener('mouseenter', function(event) {
+      const tensionDot = event.target.closest('.tension-dot');
+      if (tensionDot) {
+        const dotNumber = tensionDot.dataset.dotNumber;
+        const muscleName = tensionDot.dataset.muscleName;
+        const dotType = tensionDot.dataset.dotType;
+        const dotNotes = tensionDot.dataset.dotNotes;
+        showDotTooltip(event, dotNumber, muscleName, dotType, dotNotes);
+      }
+    }, true);
+
+    document.addEventListener('mouseleave', function(event) {
+      const tensionDot = event.target.closest('.tension-dot');
+      if (tensionDot) {
+        hideDotTooltip();
+      }
+    }, true);
   });
 
   function renderTechniques() {
@@ -2496,6 +2804,10 @@ export function renderApp(): string {
       .replace(/'/g, '&#39;');
   }
 
+  function escJsSingle(value) {
+    return String(value || '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+  }
+
   function updateMarkerNotes(dotId, notes) {
     const dot = state.tensionPoints.find(item => item.id === dotId);
     if (!dot) return;
@@ -2519,7 +2831,7 @@ export function renderApp(): string {
           return \`<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
               <strong style="font-size:0.78rem;color:var(--primary);">Marker \${dot.number}</strong>
-              <button type="button" onclick="removeTensionDot('\${dot.id}')" style="border:none;background:transparent;color:#e53e3e;font-size:1rem;line-height:1;cursor:pointer;" aria-label="Remove marker \${dot.number}">&times;</button>
+              <button type="button" class="remove-tension-dot-btn" data-remove-dot-id="\${dot.id}" style="border:none;background:transparent;color:#e53e3e;font-size:1rem;line-height:1;cursor:pointer;" aria-label="Remove marker \${dot.number}">&times;</button>
             </div>
             <div style="font-size:0.74rem;color:var(--text-light);margin-bottom:6px;">\${safeName}</div>
             <textarea rows="2" placeholder="Describe this pain area..." oninput="updateMarkerNotes('\${dot.id}', this.value)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font);font-size:0.78rem;resize:vertical;">\${safeNotes}</textarea>
@@ -2608,6 +2920,8 @@ export function renderApp(): string {
   // ============================================================
   // DRIVE FILE PICKER
   // ============================================================
+  
+  // Hoisted function declaration (available immediately)
   async function loadDriveFiles() {
     const list = document.getElementById('driveFilesList');
     const icon = document.getElementById('driveFilesRefreshIcon');
@@ -2623,16 +2937,34 @@ export function renderApp(): string {
         list.innerHTML = data.files.map(function(f) {
           const date = new Date(f.modifiedTime);
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          const nameShort = f.name.length > 40 ? f.name.slice(0, 37) + '…' : f.name;
-          return '<div class="drive-file-row" data-file-id="' + f.id + '" onclick="selectDriveFile(\\'' + f.id + '\\', \\'' + f.name.replace(/'/g, "\\\\'") + '\\')" '
-            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;" '
-            + 'onmouseenter="if(this.dataset.selected!==\\'1\\') this.style.background=\\'rgba(91,163,217,0.08)\\'" '
-            + 'onmouseleave="if(this.dataset.selected!==\\'1\\') this.style.background=\\'transparent\\'">'
+          const rawName = String(f.name || '');
+          const fileNameEncoded = encodeURIComponent(rawName.replace(/\\r?\\n/g, ' '));
+          const nameShort = rawName.length > 40 ? rawName.slice(0, 37) + '…' : rawName;
+          const safeNameShort = escapeHtml(nameShort);
+          const safeTitle = escapeHtml(rawName);
+          return '<div class="drive-file-row" data-file-id="' + f.id + '" data-file-name="' + fileNameEncoded + '" '
+            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;">'
             + '<i class="fas fa-file-pdf" style="color:#e53e3e;opacity:0.7;flex-shrink:0;"></i>'
-            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + f.name.replace(/"/g, '&quot;') + '">' + nameShort + '</span>'
+            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeTitle + '">' + safeNameShort + '</span>'
             + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + dateStr + '</span>'
             + '</div>';
         }).join('');
+
+        const rows = list.querySelectorAll('.drive-file-row');
+        rows.forEach(function(row) {
+          row.addEventListener('mouseenter', function() {
+            if (row.dataset.selected !== '1') row.style.background = 'rgba(91,163,217,0.08)';
+          });
+          row.addEventListener('mouseleave', function() {
+            if (row.dataset.selected !== '1') row.style.background = 'transparent';
+          });
+          row.addEventListener('click', function() {
+            const fileId = row.dataset.fileId || '';
+            const fileName = decodeURIComponent(row.dataset.fileName || '');
+            if (!fileId) return;
+            selectDriveFile(fileId, fileName);
+          });
+        });
       }
     } catch (err) {
       if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load Drive files.</p>';
@@ -2690,6 +3022,86 @@ export function renderApp(): string {
       if (progress) progress.style.display = 'none';
       if (dropZone) dropZone.style.display = '';
     }
+  }
+
+  // Expose to window for button onclick handlers
+  window.selectDriveFile = selectDriveFile;
+
+  // ============================================================
+  // SUPABASE FILE PICKER
+  // ============================================================
+  async function loadSupabaseFiles() {
+    const list = document.getElementById('supabaseFilesList');
+    const icon = document.getElementById('supabaseFilesRefreshIcon');
+    if (icon) icon.classList.add('fa-spin');
+    try {
+      const res = await fetch('/api/drive/supabase-files');
+      const data = await res.json();
+      if (!res.ok || !data.files || data.files.length === 0) {
+        if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No intake form PDFs found.</p>';
+        return;
+      }
+      if (list) {
+        list.innerHTML = data.files.map(function(f) {
+          const date = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+          const rawName = String(f.name || '');
+          const nameShort = rawName.length > 40 ? rawName.slice(0, 37) + '…' : rawName;
+          const safeNameShort = escapeHtml(nameShort);
+          const safeTitle = escapeHtml(rawName);
+          const safeUrl = escapeHtml(f.url || '');
+          return '<div class="supabase-file-row" data-file-name="' + encodeURIComponent(rawName) + '" '
+            + 'style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;font-size:0.8rem;">'
+            + '<i class="fas fa-file-pdf" style="color:#3b82f6;opacity:0.7;flex-shrink:0;"></i>'
+            + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeTitle + '">' + safeNameShort + '</span>'
+            + '<button class="supabase-open-btn btn btn-ghost btn-sm" data-filename="' + encodeURIComponent(rawName) + '" style="font-size:0.7rem;color:var(--accent);white-space:nowrap;border:none;background:none;cursor:pointer;padding:2px 6px;" title="View PDF">'
+            + '<i class="fas fa-external-link-alt"></i></button>'
+            + '<span style="font-size:0.7rem;color:var(--text-light);white-space:nowrap;">' + date + '</span>'
+            + '</div>';
+        }).join('');
+
+        const rows = list.querySelectorAll('.supabase-file-row');
+        rows.forEach(function(row) {
+          row.addEventListener('mouseenter', function() { row.style.background = 'rgba(59,130,246,0.08)'; });
+          row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+        });
+
+        // Open PDFs via signed URL
+        list.querySelectorAll('.supabase-open-btn').forEach(function(btn) {
+          btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
+            const filename = decodeURIComponent(btn.getAttribute('data-filename') || '');
+            if (!filename) return;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            try {
+              const urlRes = await fetch('/api/drive/supabase-file-url/' + encodeURIComponent(filename));
+              const urlData = await urlRes.json();
+              if (urlData.url) {
+                window.open(urlData.url, '_blank');
+              } else {
+                alert('Could not get file URL');
+              }
+            } catch (err) {
+              alert('Error fetching file URL');
+            } finally {
+              btn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+            }
+          });
+        });
+      }
+    } catch (err) {
+      if (list) list.innerHTML = '<p style="font-size:0.78rem;color:#e53e3e;">Failed to load intake forms.</p>';
+    } finally {
+      if (icon) icon.classList.remove('fa-spin');
+    }
+  }
+
+  window.loadSupabaseFiles = loadSupabaseFiles;
+
+  const supabaseRefreshBtn = document.getElementById('supabaseFilesRefreshBtn');
+  if (supabaseRefreshBtn) {
+    supabaseRefreshBtn.addEventListener('click', () => {
+      loadSupabaseFiles();
+    });
   }
 
   // ============================================================
@@ -2785,7 +3197,7 @@ export function renderApp(): string {
       // strip leading punctuation / spaces
       chunk = chunk.replace(/^[?:\\s]+/, '').trim();
       // stop at the next sentence-like boundary or question word
-      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\/ )/);
+      const stopAt = chunk.search(/\\s+(?:How |What |Do |Are |Have |When |Please|Emergency|Lifestyle|Previous|Declaration|Signature|\\d+ \\\/ )/);
       if (stopAt > 5) chunk = chunk.slice(0, stopAt).trim();
       return chunk;
     }
@@ -2934,11 +3346,7 @@ export function renderApp(): string {
   // GENERATE SOAP NOTES
   // ============================================================
   async function generateSOAP() {
-    const apiKey = document.getElementById('openaiKey').value.trim();
-    if (!apiKey) {
-      alert('Please enter your OpenAI API key to generate SOAP notes.');
-      return;
-    }
+    // API key is now handled server-side - no client key needed
 
     goToStep(4);
     document.getElementById('soapLoading').style.display = 'block';
@@ -3003,29 +3411,18 @@ export function renderApp(): string {
     };
 
     try {
-      // Call OpenAI directly from frontend with provided key
       const prompt = buildPrompt(contextData, intakeData, state.useMedicalShorthand);
       
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await apiFetch('/api/generate-soap', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + apiKey
         },
         body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an expert massage therapist and clinical documentation specialist. Generate professional SOAP notes in JSON format using clinical massage therapy terminology.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.3
+          prompt: prompt,
+          intakeData: intakeData,
+          sessionSummary: contextData.sessionSummary,
+          muscles: treatedMuscles,
         })
       });
 
@@ -3034,8 +3431,7 @@ export function renderApp(): string {
         throw new Error(errData.error?.message || 'OpenAI API error');
       }
 
-      const data = await response.json();
-      const soapData = JSON.parse(data.choices[0].message.content);
+      const soapData = await response.json();
       const formattedSoapData = applyWritingStyleToSoapData(soapData);
       state.soapData = formattedSoapData;
 
@@ -3231,185 +3627,420 @@ THERAPIST NOTES:
   }
 
   // ============================================================
-  // PDF EXPORT
+  // PDF EXPORT UTILITIES
   // ============================================================
-  function exportPDF() {
+  
+  // Enhanced PDF configuration for professional output
+  const PDF_CONFIG = {
+    pageWidth: 210,
+    marginTop: 20,
+    marginSide: 20,
+    lineHeight: 4.5,
+    sectionSpacing: 8,
+    colors: {
+      primary: [124, 58, 237],     // Violet brand color
+      secondary: [99, 102, 241],   // Indigo accent
+      dark: [15, 23, 42],          // Primary text
+      medium: [71, 85, 105],       // Secondary text
+      light: [248, 250, 252],      // Background
+      success: [16, 185, 129],     // Green
+      warning: [245, 158, 11],     // Amber
+      info: [59, 130, 246],        // Blue
+      accent: [139, 92, 246],      // Purple
+      neutral: [107, 114, 128]     // Gray
+    },
+    fonts: {
+      title: { size: 18, style: 'bold' },
+      subtitle: { size: 12, style: 'bold' },
+      heading: { size: 11, style: 'bold' },
+      body: { size: 9.5, style: 'normal' },
+      small: { size: 8, style: 'normal' },
+      tiny: { size: 7, style: 'normal' }
+    }
+  };
+
+  // Utility function to create consistent PDF instance
+  function createPDFInstance() {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ 
+      orientation: 'portrait', 
+      unit: 'mm', 
+      format: 'a4',
+      putOnlyUsedFonts: true,
+      precision: 2
+    });
     
-    const pageW = 210;
-    const margin = 18;
-    const contentW = pageW - margin * 2;
-    let y = 20;
+    // Enable text justification and better spacing
+    doc.setLineHeightFactor(1.2);
+    return doc;
+  }
 
-    // Colors
-    const violet = [124, 58, 237];
-    const dark = [15, 23, 42];
-    const mid = [71, 85, 105];
-    const light = [248, 250, 252];
+  // Enhanced text wrapping with better line breaks
+  function wrapTextWithSpacing(doc, text, maxWidth, fontSize = 9.5) {
+    if (!text || !text.trim()) return [];
+    
+    doc.setFontSize(fontSize);
+    
+    // Split into paragraphs first
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+    const allLines = [];
+    
+    paragraphs.forEach((paragraph, index) => {
+      const cleanPara = paragraph.replace(/\s+/g, ' ').trim();
+      const lines = doc.splitTextToSize(cleanPara, maxWidth);
+      allLines.push(...lines);
+      
+      // Add paragraph spacing (except for last paragraph)
+      if (index < paragraphs.length - 1) {
+        allLines.push(''); // Empty line for paragraph break
+      }
+    });
+    
+    return allLines;
+  }
 
-    // Header
-    doc.setFillColor(...violet);
-    doc.rect(0, 0, pageW, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
+  // Professional header with branding
+  function renderPDFHeader(doc, pageNumber = 1) {
+    const { pageWidth, marginSide, colors } = PDF_CONFIG;
+    const contentWidth = pageWidth - (marginSide * 2);
+    
+    if (pageNumber === 1) {
+      // Main header with full branding
+      doc.setFillColor(...colors.primary);
+      doc.rect(0, 0, pageWidth, 32, 'F');
+      
+      // Title
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(PDF_CONFIG.fonts.title.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOAP NOTE — MASSAGE THERAPY', marginSide, 16);
+      
+      // Subtitle with practice name
+      doc.setFontSize(PDF_CONFIG.fonts.small.size);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Flexion & Flow Massage Therapy', marginSide, 25);
+      
+      return 40; // Return Y position after header
+    } else {
+      // Continuation page header
+      doc.setFillColor(...colors.medium);
+      doc.rect(0, 0, pageWidth, 20, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(PDF_CONFIG.fonts.body.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOAP Note (Continued)', marginSide, 12);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.text('Page ' + pageNumber, pageWidth - marginSide - 20, 12);
+      
+      return 28; // Return Y position after header
+    }
+  }
+
+  function generatePdfDocument(outputType = 'save') { // 'save' or 'base64'
+    const doc = createPDFInstance();
+    const { pageWidth, marginSide, colors, fonts } = PDF_CONFIG;
+    const contentWidth = pageWidth - (marginSide * 2);
+    let currentPage = 1;
+    let y = renderPDFHeader(doc, currentPage);
+
+    // Professional client information panel
+    y += 5;
+
+    // Enhanced client information panel
+    const clientData = {
+      name: document.getElementById('soapClientName')?.textContent || 'Client',
+      date: document.getElementById('sessionDate')?.value || '',
+      duration: document.getElementById('sessionDuration')?.value || '',
+      complaint: document.getElementById('chiefComplaint')?.value || '',
+      painBefore: document.getElementById('painLevel')?.value || '',
+      painAfter: document.getElementById('postPainLevel')?.value || '',
+      therapist: document.getElementById('therapistName')?.value || '',
+      credentials: document.getElementById('therapistCredentials')?.value || '',
+      accountNumber: state.lastAccountNumber || ''
+    };
+
+    // Client info panel with enhanced styling
+    const panelHeight = 30;
+    doc.setFillColor(...colors.light);
+    doc.rect(marginSide, y, contentWidth, panelHeight, 'F');
+    doc.setDrawColor(...colors.medium);
+    doc.setLineWidth(0.5);
+    doc.rect(marginSide, y, contentWidth, panelHeight, 'S');
+    
+    // Client name (prominent)
+    doc.setTextColor(...colors.dark);
+    doc.setFontSize(fonts.subtitle.size);
     doc.setFont('helvetica', 'bold');
-    doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Generated by SOAP Note Generator', margin, 22);
-    y = 38;
-
-    // Client info row
-    const client = document.getElementById('soapClientName').textContent;
-    const dateText = document.getElementById('sessionDate').value || '';
-    const duration = document.getElementById('sessionDuration').value || '';
-    const chiefComplaint = document.getElementById('chiefComplaint').value || '';
-    const painBefore = document.getElementById('painLevel').value;
-    const painAfter = document.getElementById('postPainLevel').value;
-    const therapist = document.getElementById('therapistName').value || '';
-    const creds = document.getElementById('therapistCredentials').value || '';
-
-    doc.setFillColor(...light);
-    doc.rect(margin, y, contentW, 22, 'F');
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(margin, y, contentW, 22, 'S');
+    doc.text(clientData.name, marginSide + 4, y + 8);
     
-    doc.setTextColor(...dark);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(client || 'Client', margin + 3, y + 7);
-    
-    doc.setFontSize(8);
+    // Session details (two columns)
+    doc.setFontSize(fonts.small.size);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...mid);
-    doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
-    doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
-    if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
-    if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
-    if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
-    y += 28;
+    doc.setTextColor(...colors.medium);
+    
+    // Left column
+    const leftCol = marginSide + 4;
+    doc.text('Date: ' + (clientData.date || '—'), leftCol, y + 15);
+    doc.text('Duration: ' + (clientData.duration || '—'), leftCol, y + 20);
+    if (clientData.accountNumber) {
+      doc.text('Account: ' + clientData.accountNumber, leftCol, y + 25);
+    }
+    
+    // Center column  
+    const centerCol = marginSide + 70;
+    if (clientData.complaint) {
+      const ccLines = wrapTextWithSpacing(doc, 'Chief Complaint: ' + clientData.complaint, 60, fonts.small.size);
+      doc.text(ccLines[0] || '', centerCol, y + 15);
+      if (ccLines[1]) doc.text(ccLines[1], centerCol, y + 20);
+    }
+    
+    // Right column - Pain scores
+    const rightCol = marginSide + 130;
+    if (clientData.painBefore) {
+      doc.text('Pain Before: ' + clientData.painBefore + '/10', rightCol, y + 15);
+    }
+    if (clientData.painAfter) {
+      doc.text('Pain After: ' + clientData.painAfter + '/10', rightCol, y + 20);
+    }
+    
+    y += panelHeight + 8;
 
-    // SOAP Sections
-    const sections = [
-      { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
-      { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
-      { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
-      { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
-      { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
+    // Enhanced SOAP Sections with better typography
+    const soapSections = [
+      { label: 'S — Subjective', id: 'soapS', color: colors.info, description: 'Patient\'s reported symptoms and concerns' },
+      { label: 'O — Objective', id: 'soapO', color: colors.success, description: 'Observable findings and measurements' },
+      { label: 'A — Assessment', id: 'soapA', color: colors.warning, description: 'Professional evaluation and analysis' },
+      { label: 'P — Plan', id: 'soapP', color: colors.accent, description: 'Treatment plan and recommendations' },
+      { label: 'N — Therapist Notes', id: 'soapN', color: colors.neutral, description: 'Additional observations and notes' },
     ];
 
-    for (const section of sections) {
-      const rawText = document.getElementById(section.id).value;
-      const text = applyWritingStyle(rawText);
-      if (!text) continue;
+    for (const section of soapSections) {
+      const rawText = document.getElementById(section.id)?.value || '';
+      const processedText = applyWritingStyle(rawText);
+      
+      if (!processedText.trim()) continue;
 
-      // Check if we need a new page
-      if (y > 250) {
+      // Smart page break management
+      if (y > 240) {
         doc.addPage();
-        y = 20;
+        currentPage++;
+        y = renderPDFHeader(doc, currentPage);
+      }
+
+      // Enhanced section header with color bar and description
+      doc.setFillColor(...section.color);
+      doc.rect(marginSide, y, 6, 10, 'F');
+      
+      doc.setTextColor(...colors.dark);
+      doc.setFontSize(fonts.heading.size);
+      doc.setFont('helvetica', 'bold');
+      doc.text(section.label, marginSide + 10, y + 7);
+      
+      // Optional: Add subtle description
+      doc.setFontSize(fonts.tiny.size);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(...colors.medium);
+      doc.text(section.description, marginSide + 10, y + 11);
+      
+      y += 16;
+
+      // Section content with improved formatting
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(fonts.body.size);
+      doc.setTextColor(...colors.dark);
+      
+      const textLines = wrapTextWithSpacing(doc, processedText, contentWidth - 8, fonts.body.size);
+      
+      for (const line of textLines) {
+        if (y > 265) { // Leave more space for footer
+          doc.addPage();
+          currentPage++;
+          y = renderPDFHeader(doc, currentPage);
+        }
+        
+        if (line.trim()) { // Skip empty lines from paragraph breaks
+          doc.text(line, marginSide + 4, y);
+        }
+        y += line.trim() ? PDF_CONFIG.lineHeight : PDF_CONFIG.lineHeight * 0.8; // Smaller spacing for paragraph breaks
+      }
+      
+      y += PDF_CONFIG.sectionSpacing;
+    }
+
+    // Enhanced Treatment Areas & Tension Points section
+    const treatmentData = {
+      muscles: [],
+      tensionPoints: [],
+      techniques: []
+    };
+    
+    // Organize tension points by muscle
+    const muscleGroups = new Map();
+    state.tensionPoints.forEach(point => {
+      if (!muscleGroups.has(point.muscleId)) {
+        muscleGroups.set(point.muscleId, []);
+        treatmentData.muscles.push(point.muscleName);
+      }
+      muscleGroups.get(point.muscleId).push(point);
+      
+      const pointDetail = {
+        number: point.number,
+        muscle: point.muscleName,
+        type: point.type,
+        notes: point.notes || ''
+      };
+      treatmentData.tensionPoints.push(pointDetail);
+    });
+
+    // Add treatment areas section if there's data
+    if (treatmentData.muscles.length > 0 || treatmentData.tensionPoints.length > 0) {
+      // Page break check
+      if (y > 230) {
+        doc.addPage();
+        currentPage++;
+        y = renderPDFHeader(doc, currentPage);
       }
 
       // Section header
-      doc.setFillColor(...section.color);
-      doc.rect(margin, y, 4, 8, 'F');
-      doc.setTextColor(...dark);
-      doc.setFontSize(10);
+      doc.setFillColor(...colors.secondary);
+      doc.rect(marginSide, y, 6, 10, 'F');
+      doc.setTextColor(...colors.dark);
+      doc.setFontSize(fonts.heading.size);
       doc.setFont('helvetica', 'bold');
-      doc.text(section.label, margin + 7, y + 5.5);
-      y += 11;
+      doc.text('Treatment Areas & Clinical Findings', marginSide + 10, y + 7);
+      y += 16;
 
-      // Section content
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(...mid);
-      const lines = doc.splitTextToSize(text, contentW - 5);
-      
-      for (const line of lines) {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
-        doc.text(line, margin + 3, y);
-        y += 5;
-      }
-      y += 5;
-    }
-
-    // Muscles section - Tension Points
-    const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
-    const treatedMuscles = [];
-    const tensionPointDetails = [];
-    
-    // Create muscle summary from tension points
-    const muscleGroups = new Map();
-    state.tensionPoints.forEach(dot => {
-      if (!muscleGroups.has(dot.muscleId)) {
-        muscleGroups.set(dot.muscleId, []);
-        treatedMuscles.push(dot.muscleName);
-      }
-      muscleGroups.get(dot.muscleId).push(dot);
-      tensionPointDetails.push(dot.number + '. ' + dot.muscleName + ': ' + dot.type + (dot.notes ? ' - ' + dot.notes : ''));
-    });
-
-    if (treatedMuscles.length || tensionPointDetails.length) {
-      if (y > 240) { doc.addPage(); y = 20; }
-      doc.setFillColor(107, 114, 128);
-      doc.rect(margin, y, 4, 8, 'F');
-      doc.setTextColor(...dark);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Treatment Areas & Tension Points', margin + 7, y + 5.5);
-      y += 11;
-
-      if (treatedMuscles.length) {
-        doc.setFontSize(8);
+      // Treated muscles summary
+      if (treatmentData.muscles.length > 0) {
+        doc.setFontSize(fonts.body.size);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(16, 185, 129);
-        doc.text('Treated:', margin + 3, y);
-        y += 4.5;
+        doc.setTextColor(...colors.success);
+        doc.text('◆ Treated Areas:', marginSide + 4, y);
+        y += 6;
+        
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(treatedMuscles.join(', '), contentW - 10);
-        lines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
-        y += 2;
+        doc.setTextColor(...colors.dark);
+        const muscleText = treatmentData.muscles.join(', ');
+        const muscleLines = wrapTextWithSpacing(doc, muscleText, contentWidth - 12, fonts.body.size);
+        muscleLines.forEach(line => {
+          if (line.trim()) {
+            doc.text(line, marginSide + 8, y);
+            y += PDF_CONFIG.lineHeight;
+          }
+        });
+        y += 4;
       }
       
-      // Add detailed tension points
-      if (tensionPointDetails.length) {
-        doc.setFontSize(8);
+      // Detailed tension points 
+      if (treatmentData.tensionPoints.length > 0) {
+        doc.setFontSize(fonts.body.size);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(239, 68, 68);
-        doc.text('Tension Points:', margin + 3, y);
-        y += 4.5;
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...mid);
-        tensionPointDetails.forEach(detail => {
-          const detailLines = doc.splitTextToSize(detail, contentW - 10);
-          detailLines.forEach(l => { doc.text(l, margin + 3, y); y += 4.5; });
+        doc.setTextColor([220, 38, 127]); // Rose color for tension points
+        doc.text('◆ Tension Points & Clinical Notes:', marginSide + 4, y);
+        y += 6;
+        
+        // Group and display tension points
+        treatmentData.tensionPoints.forEach((point, index) => {
+          if (y > 265) {
+            doc.addPage();
+            currentPage++;
+            y = renderPDFHeader(doc, currentPage);
+          }
+          
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...colors.dark);
+          doc.setFontSize(fonts.small.size);
+          
+          const pointText = point.number + '. ' + point.muscle + ': ' + point.type;
+          doc.text(pointText, marginSide + 8, y);
+          y += 4;
+          
+          if (point.notes) {
+            doc.setTextColor(...colors.medium);
+            doc.setFont('helvetica', 'italic');
+            const noteLines = wrapTextWithSpacing(doc, 'Notes: ' + point.notes, contentWidth - 16, fonts.tiny.size);
+            noteLines.forEach(noteLine => {
+              if (noteLine.trim()) {
+                doc.text(noteLine, marginSide + 12, y);
+                y += 3.5;
+              }
+            });
+          }
+          y += 2;
         });
       }
-      y += 5;
+      
+      y += PDF_CONFIG.sectionSpacing;
     }
 
-    // Footer / signature
-    if (y > 255) { doc.addPage(); y = 20; }
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, y + 5, margin + contentW, y + 5);
+    // Professional footer with signature area
+    if (y > 240) {
+      doc.addPage();
+      currentPage++;
+      y = renderPDFHeader(doc, currentPage);
+    }
+
+    // Signature section
     y += 10;
-    doc.setTextColor(...mid);
-    doc.setFontSize(8);
-    if (therapist || creds) {
-      doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y);
-      y += 5;
-    }
-    doc.setFontSize(7);
-    doc.setTextColor(180, 180, 180);
-    doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
+    doc.setDrawColor(...colors.medium);
+    doc.setLineWidth(0.5);
+    doc.line(marginSide, y, marginSide + contentWidth, y);
+    y += 8;
 
-    // Save
-    const filename = 'SOAP_Note_' + (client || 'Client').replace(/\\s+/g, '_') + '_' + (dateText || 'date') + '.pdf';
-    doc.save(filename);
+    // Therapist information
+    doc.setTextColor(...colors.dark);
+    doc.setFontSize(fonts.body.size);
+    doc.setFont('helvetica', 'bold');
+    
+    if (clientData.therapist || clientData.credentials) {
+      const therapistInfo = [clientData.therapist, clientData.credentials].filter(Boolean).join(', ');
+      doc.text('Therapist:', marginSide, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(therapistInfo, marginSide + 25, y);
+      y += 6;
+    }
+    
+    // Signature line
+    doc.setTextColor(...colors.medium);
+    doc.setFontSize(fonts.small.size);
+    doc.text('Signature:', marginSide, y);
+    doc.setDrawColor(...colors.medium);
+    doc.line(marginSide + 25, y, marginSide + 100, y);
+    
+    doc.text('Date:', marginSide + 110, y);
+    doc.line(marginSide + 125, y, marginSide + contentWidth, y);
+    y += 8;
+    
+    // Practice information
+    doc.setTextColor(...colors.medium);
+    doc.setFontSize(fonts.tiny.size);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Flexion & Flow Massage Therapy', marginSide, y);
+    
+    // Generation timestamp
+    const timestamp = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    doc.setTextColor(180, 180, 180);
+    doc.text('Generated: ' + timestamp, marginSide + contentWidth - 80, y);
+
+    // Return based on output type
+    if (outputType === 'base64') {
+      return doc.output('datauristring').split(',')[1];
+    } else {
+      // Enhanced filename with better formatting
+      const safeName = (clientData.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+      const safeDate = (clientData.date || '').replace(/[^0-9]/g, '') || 'date';
+      const filename = 'SOAP_Note_' + safeName + '_' + safeDate + '.pdf';
+      doc.save(filename);
+    }
   }
 
   // ============================================================
@@ -3482,8 +4113,9 @@ THERAPIST NOTES:
   window.saveTensionDot = saveTensionDot;
   window.removeTensionDot = removeTensionDot;
   window.updateMarkerNotes = updateMarkerNotes;
-  window.saveOpenAIKey = saveOpenAIKey;
-  window.loadOpenAIKey = loadOpenAIKey;
+  // Quick Select functions
+  window.toggleQuickSelectPanel = toggleQuickSelectPanel;
+  window.applyQuickSelectPreset = applyQuickSelectPreset;
   window.openClientBrowser = openClientBrowser;
   window.closeClientBrowser = closeClientBrowser;
   window.filterClients = filterClients;
@@ -3494,8 +4126,28 @@ THERAPIST NOTES:
   window.saveWebhookConfig = saveWebhookConfig;
   window.copyWebhookUrl = copyWebhookUrl;
   window.deleteClientProfile = deleteClientProfile;
+  window.removeClientProfile = removeClientProfile;
   window.jumpToField = jumpToField;
   window.setMedicalShorthand = setMedicalShorthand;
+  // SOAP generation and export functions
+  window.generateSOAP = generateSOAP;
+  window.exportPDF = exportPDF;
+  window.copyAllSOAP = copyAllSOAP;
+  window.regenerateSOAP = regenerateSOAP;
+  // Client accounts functions
+  window.closeClientAccounts = closeClientAccounts;
+  window.checkDriveStatus = checkDriveStatus;
+  window.syncDrivePDFs = syncDrivePDFs;
+  window.syncClientsNow = syncClientsNow;
+  window.filterAccountList = filterAccountList;
+  // Client file and session functions
+  window.loadClientFromFile = loadClientFromFile;
+  window.closeClientFile = closeClientFile;
+  window.closeSessionView = closeSessionView;
+  window.openClientFile = openClientFile;
+  window.openSessionView = openSessionView;
+  window.connectDriveForClient = connectDriveForClient;
+  // loadDriveFiles and selectDriveFile are exposed to window immediately after their definitions
   </script>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -3508,22 +4160,21 @@ THERAPIST NOTES:
           <h3><i class="fas fa-folder-open" style="margin-right:8px;opacity:0.8;"></i>Client Accounts</h3>
           <p>All client files — account numbers, intake history &amp; SOAP sessions</p>
         </div>
-        <button class="modal-close" onclick="closeClientAccounts()"><i class="fas fa-times"></i></button>
+        <button class="modal-close" id="modalCloseClientAccountsBtn"><i class="fas fa-times"></i></button>
       </div>
 
       <!-- Toolbar -->
       <div style="padding:14px 24px;border-bottom:1px solid var(--border);background:#f7faff;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <input id="accountSearch" type="text" placeholder="Search by name, account number or email…"
-          oninput="filterAccountList()"
           style="flex:1;min-width:200px;padding:9px 14px;border:1.5px solid var(--border);border-radius:50px;font-family:var(--font);font-size:0.82rem;outline:none;"/>
         <span id="accountCount" style="font-size:0.75rem;color:var(--text-light);white-space:nowrap;"></span>
-        <button onclick="checkDriveStatus()" id="driveStatusBtn" class="btn btn-ghost btn-sm" title="Google Drive status">
+        <button id="driveStatusBtn" class="btn btn-ghost btn-sm" title="Google Drive status">
           <i class="fab fa-google-drive"></i> <span id="driveStatusLabel">Drive</span>
         </button>
-        <button onclick="syncDrivePDFs()" id="driveSyncBtn" class="btn btn-ghost btn-sm" title="Sync PDFs from Google Drive">
+        <button id="driveSyncBtn" class="btn btn-ghost btn-sm" title="Sync PDFs from Google Drive">
           <i class="fas fa-sync-alt"></i> <span id="driveSyncLabel">Sync PDFs</span>
         </button>
-        <button onclick="syncClientsNow()" id="clientSyncBtn" class="btn btn-ghost btn-sm" title="Sync client profiles across apps">
+        <button id="clientSyncBtn" class="btn btn-ghost btn-sm" title="Sync client profiles across apps">
           <i class="fas fa-cloud-download-alt"></i> <span id="clientSyncLabel">Sync Clients</span>
         </button>
       </div>
@@ -3533,7 +4184,7 @@ THERAPIST NOTES:
 
       <!-- Footer -->
       <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
-        <button onclick="closeClientAccounts()" class="btn btn-ghost btn-sm">Close</button>
+        <button class="btn btn-ghost btn-sm" id="closeClientAccountsBtn">Close</button>
       </div>
     </div>
   </div>
@@ -3549,10 +4200,10 @@ THERAPIST NOTES:
           <p id="clientFileSubtitle"></p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button onclick="loadClientFromFile()" class="btn btn-primary btn-sm">
+          <button class="btn btn-primary btn-sm" id="loadClientFromFileBtn">
             <i class="fas fa-play"></i> New Session
           </button>
-          <button class="modal-close" onclick="closeClientFile()"><i class="fas fa-times"></i></button>
+          <button class="modal-close" id="closeClientFileBtn"><i class="fas fa-times"></i></button>
         </div>
       </div>
       <div id="clientFileBody" style="padding:20px 24px;"></div>
@@ -3569,7 +4220,7 @@ THERAPIST NOTES:
           <h3><i class="fas fa-file-medical" style="margin-right:8px;opacity:0.8;"></i>Session Record</h3>
           <p id="sessionViewSubtitle"></p>
         </div>
-        <button class="modal-close" onclick="closeSessionView()"><i class="fas fa-times"></i></button>
+        <button class="modal-close" id="closeSessionViewBtn"><i class="fas fa-times"></i></button>
       </div>
       <div id="sessionViewBody" style="padding:20px 24px;"></div>
     </div>
@@ -3611,7 +4262,7 @@ THERAPIST NOTES:
     btn.disabled = true;
     label.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/clients/sync', { method: 'POST' });
+      const res = await apiFetch('/api/clients/sync', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         label.textContent = 'Synced ✓';
@@ -3640,21 +4291,25 @@ THERAPIST NOTES:
     }
 
     list.innerHTML = clients.map(c => {
-      const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Unknown';
-      const initials = [(c.firstName||'')[0],(c.lastName||'')[0]].filter(Boolean).join('').toUpperCase() || '?';
+      const name = escapeHtml([c.firstName, c.lastName].filter(Boolean).join(' ') || 'Unknown');
+      const initials = escapeHtml([(c.firstName||'')[0],(c.lastName||'')[0]].filter(Boolean).join('').toUpperCase() || '?');
       const lastSess = c.lastSessionDate ? new Date(c.lastSessionDate).toLocaleDateString('en-AU') : '—';
       const sessions = c.sessionCount || 0;
-      return \`<div onclick="openClientFile('\${c.accountNumber}')"
+      const safeAccountNumber = escJsSingle(c.accountNumber);
+      const safeEmail = escapeHtml(c.email || '');
+      const safePhone = escapeHtml(c.phone || '');
+      const contactInfo = [safeEmail, safePhone].filter(Boolean).join(' · ') || 'No contact details';
+      return \`<div onclick="openClientFile('\${safeAccountNumber}')"
         style="display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;transition:all 0.15s;background:white;"
         onmouseenter="this.style.borderColor='var(--accent)';this.style.background='#f0f8ff';"
         onmouseleave="this.style.borderColor='var(--border)';this.style.background='white';">
         <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;flex-shrink:0;">\${initials}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:700;color:var(--primary);font-size:0.9rem;">\${name}</div>
-          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">\${[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</div>
+          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">\${contactInfo}</div>
         </div>
         <div style="text-align:center;flex-shrink:0;">
-          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">\${c.accountNumber}</div>
+          <div style="font-size:0.72rem;color:var(--text-light);font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;font-weight:600;">\${escapeHtml(c.accountNumber)}</div>
           <div style="font-size:0.7rem;color:var(--text-light);margin-top:4px;">\${sessions} session\${sessions !== 1 ? 's' : ''} · Last: \${lastSess}</div>
         </div>
         <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;"></i>
@@ -3703,9 +4358,15 @@ THERAPIST NOTES:
   }
 
   function renderClientFile(client, sessions) {
+    const esc = (v) => escapeHtml(String(v ?? ''));
+    const escJs = (v) => String(v ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/\\n/g, ' ');
+    const safeFullName = esc([client.firstName, client.lastName].filter(Boolean).join(' ') || '—');
+    const safeAccountNumber = esc(client.accountNumber || '');
+    const safeConnectAccount = escJs(client.accountNumber || '');
+
     document.getElementById('clientFileTitle').innerHTML =
       '<i class="fas fa-user-circle" style="margin-right:8px;opacity:0.8;"></i>' +
-      [client.firstName, client.lastName].filter(Boolean).join(' ');
+      safeFullName;
     document.getElementById('clientFileSubtitle').textContent =
       client.accountNumber + ' · ' + (client.email || 'No email') + ' · ' + (sessions.length) + ' sessions';
 
@@ -3716,19 +4377,19 @@ THERAPIST NOTES:
       <!-- Account Details -->
       <div class="card-plain" style="margin-bottom:16px;">
         <div class="cp-head"><i class="fas fa-id-card"></i> Account Details
-          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">\${client.accountNumber}</span>
+          <span style="margin-left:auto;font-size:0.72rem;font-family:monospace;background:#eef4fb;padding:3px 8px;border-radius:50px;">\${safeAccountNumber}</span>
         </div>
         <div class="cp-body">
           <div class="grid-2" style="gap:12px;">
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">\${[client.firstName,client.lastName].filter(Boolean).join(' ')||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">\${client.dob||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">\${client.email||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">\${client.phone||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">\${client.occupation||'—'}</div></div>
-            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">\${client.chiefComplaint||'—'}</div></div>
-            \${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + client.medications + '</div></div>' : ''}
-            \${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + client.allergies + '</div></div>' : ''}
-            \${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + client.medicalConditions + '</div></div>' : ''}
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Full Name</span><div style="font-size:0.88rem;margin-top:3px;">\${safeFullName}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Date of Birth</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.dob||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Email</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.email||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Phone</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.phone||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Occupation</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.occupation||'—')}</div></div>
+            <div><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Chief Complaint</span><div style="font-size:0.88rem;margin-top:3px;">\${esc(client.chiefComplaint||'—')}</div></div>
+            \${client.medications ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medications</span><div style="font-size:0.88rem;margin-top:3px;background:#fff7ed;padding:6px 10px;border-radius:6px;">' + esc(client.medications) + '</div></div>' : ''}
+            \${client.allergies ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Allergies</span><div style="font-size:0.88rem;margin-top:3px;background:#fef2f2;padding:6px 10px;border-radius:6px;">' + esc(client.allergies) + '</div></div>' : ''}
+            \${client.medicalConditions ? '<div class="col-span-2"><span style="font-size:0.72rem;color:var(--text-light);text-transform:uppercase;font-weight:700;">Medical Conditions</span><div style="font-size:0.88rem;margin-top:3px;">' + esc(client.medicalConditions) + '</div></div>' : ''}
           </div>
           <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light);">
             Created: \${new Date(client.createdAt).toLocaleDateString('en-AU')} · 
@@ -3747,9 +4408,9 @@ THERAPIST NOTES:
             <details style="border-bottom:1px solid var(--border);">
               <summary style="padding:12px 20px;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--primary);list-style:none;display:flex;align-items:center;gap:8px;">
                 <i class="fas fa-file-alt" style="color:var(--accent);"></i>
-                Intake \${client.intakeForms.length - i}: \${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">\${f.source||''}</span>
+                Intake \${client.intakeForms.length - i}: \${new Date(f.savedAt).toLocaleDateString('en-AU')} <span style="font-size:0.7rem;color:var(--text-light);font-weight:400;margin-left:auto;">\${esc(f.source||'')}</span>
               </summary>
-              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">\${Object.entries(f.data||{}).map(([k,v]) => k+': '+v).join('\\n')||'No structured data captured.'}</div>
+              <div style="padding:12px 20px 16px;background:#f7faff;font-size:0.8rem;color:var(--text);white-space:pre-wrap;">\${Object.entries(f.data||{}).map(([k,v]) => esc(k)+': '+esc(v)).join('\\n')||'No structured data captured.'}</div>
             </details>
           \`).join('')}
         </div>
@@ -3777,7 +4438,7 @@ THERAPIST NOTES:
                     \${s.pdfDriveUrl ? '<i class="fab fa-google-drive" style="color:#38a169;margin-left:6px;font-size:0.75rem;" title="PDF saved to Drive"></i>' : ''}
                   </div>
                   <div style="font-size:0.72rem;color:var(--text-light);margin-top:2px;">
-                    \${s.duration} · \${s.musclesTreated?.length||0} muscles treated · \${s.chiefComplaint||''}
+                    \${esc(s.duration)} · \${s.musclesTreated?.length||0} muscles treated · \${esc(s.chiefComplaint||'')}
                   </div>
                 </div>
                 <i class="fas fa-chevron-right" style="color:var(--border);flex-shrink:0;font-size:0.75rem;"></i>
@@ -3787,14 +4448,14 @@ THERAPIST NOTES:
         </div>
       </div>
 
-      <!-- Google Drive Connect -->
-      <div id="driveConnectSection" style="margin-top:16px;padding:14px 16px;background:#f0faf5;border:1.5px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.82rem;">
+      <!-- Google Drive Connect (hidden - backend only) -->
+      <div id="driveConnectSection" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div>
             <strong style="color:#276749;"><i class="fab fa-google-drive" style="margin-right:6px;"></i>Google Drive PDF Backup</strong>
             <div style="color:#2f855a;margin-top:3px;" id="driveLinkStatus">Checking connection…</div>
           </div>
-          <button onclick="connectDriveForClient('\${client.accountNumber}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
+          <button onclick="connectDriveForClient('\${safeConnectAccount}')" id="driveConnectBtn" class="btn btn-sm" style="background:#276749;color:white;border-radius:50px;">
             <i class="fab fa-google-drive"></i> Connect Drive
           </button>
         </div>
@@ -3816,7 +4477,7 @@ THERAPIST NOTES:
 
   async function loadClientFromFile() {
     if (!_currentClientFile) return;
-    await loadClientProfile(_currentClientFile.id || _currentClientFile.accountNumber);
+    await loadClientProfile(_currentClientFile.accountNumber || _currentClientFile.id);
     closeClientFile();
     closeClientAccounts();
   }
@@ -3842,6 +4503,7 @@ THERAPIST NOTES:
   }
 
   function renderSessionView(s) {
+    const esc = (v) => escapeHtml(String(v ?? ''));
     document.getElementById('sessionViewSubtitle').textContent =
       new Date(s.sessionDate).toLocaleDateString('en-AU',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) +
       ' · ' + s.clientName + ' · ' + s.duration;
@@ -3850,18 +4512,18 @@ THERAPIST NOTES:
     document.getElementById('sessionViewBody').innerHTML = \`
       <!-- Client & session info -->
       <div style="display:flex;gap:20px;flex-wrap:wrap;background:#f7faff;padding:14px 16px;border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.82rem;">
-        <div><strong style="color:var(--primary);">\${s.clientName}</strong><div style="color:var(--text-light);">\${s.accountNumber}</div></div>
+        <div><strong style="color:var(--primary);">\${esc(s.clientName)}</strong><div style="color:var(--text-light);">\${esc(s.accountNumber)}</div></div>
         <div><strong>Date</strong><div style="color:var(--text-light);">\${new Date(s.sessionDate).toLocaleDateString('en-AU')}</div></div>
-        <div><strong>Duration</strong><div style="color:var(--text-light);">\${s.duration}</div></div>
+        <div><strong>Duration</strong><div style="color:var(--text-light);">\${esc(s.duration)}</div></div>
         <div><strong>Pain</strong><div style="color:var(--text-light);">\${s.painBefore||'—'}/10 → \${s.painAfter||'—'}/10</div></div>
-        \${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+s.therapistName+(s.therapistCredentials?' ('+s.therapistCredentials+')':'')+'</div></div>' : ''}
+        \${s.therapistName ? '<div><strong>Therapist</strong><div style="color:var(--text-light);">'+esc(s.therapistName)+(s.therapistCredentials?' ('+esc(s.therapistCredentials)+')':'')+'</div></div>' : ''}
       </div>
 
       <!-- Muscles -->
       \${(s.musclesTreated?.length || s.musclesToFollowUp?.length) ? \`
         <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">
-          \${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+m+'</span>').join('')}
-          \${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+m+'</span>').join('')}
+          \${(s.musclesTreated||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#d1fae5;color:#065f46;border-radius:50px;">'+esc(m)+'</span>').join('')}
+          \${(s.musclesToFollowUp||[]).map(m => '<span style="font-size:0.72rem;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:50px;"><i class="fas fa-clock" style="margin-right:3px;"></i>'+esc(m)+'</span>').join('')}
         </div>
       \` : ''}
 
@@ -3878,7 +4540,7 @@ THERAPIST NOTES:
             <div style="width:4px;height:18px;background:\${sec.color};border-radius:2px;"></div>
             <strong style="font-size:0.82rem;color:var(--primary);">\${sec.label}</strong>
           </div>
-          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">\${soap[sec.key]}</div>
+          <div style="font-size:0.83rem;line-height:1.6;color:var(--text);background:#f7faff;padding:12px 14px;border-radius:var(--radius-sm);">\${esc(soap[sec.key])}</div>
         </div>
       \`).join('')}
 
@@ -3886,7 +4548,7 @@ THERAPIST NOTES:
       \${s.pdfDriveUrl ? \`
         <div style="margin-top:16px;padding:12px 14px;background:#f0faf5;border:1px solid #c6f6d5;border-radius:var(--radius-sm);font-size:0.8rem;display:flex;align-items:center;gap:10px;">
           <i class="fab fa-google-drive" style="color:#38a169;font-size:1.1rem;"></i>
-          <div>PDF backed up to Google Drive — <a href="\${s.pdfDriveUrl}" target="_blank" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
+          <div>PDF backed up to Google Drive — <a href="\${esc(s.pdfDriveUrl)}" target="_blank" rel="noopener noreferrer" style="color:#276749;text-decoration:underline;">View in Drive</a></div>
         </div>
       \` : ''}
 
@@ -3898,7 +4560,10 @@ THERAPIST NOTES:
   function connectDriveForClient(accountNumber) {
     const url = '/api/drive/auth?account=' + encodeURIComponent(accountNumber);
     const popup = window.open(url, 'google-drive-auth', 'width=500,height=620,top=100,left=200');
+    const expectedOrigin = window.location.origin;
     window.addEventListener('message', function handler(e) {
+      if (e.origin !== expectedOrigin) return;
+      if (popup && e.source !== popup) return;
       if (e.data?.type === 'DRIVE_AUTH_SUCCESS') {
         window.removeEventListener('message', handler);
         popup?.close();
@@ -3932,7 +4597,7 @@ THERAPIST NOTES:
     if (btn) btn.disabled = true;
     if (label) label.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
     try {
-      const res = await fetch('/api/drive/sync-pdfs', { method: 'POST' });
+      const res = await apiFetch('/api/drive/sync-pdfs', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         alert('Sync failed: ' + (data.error || 'Unknown error'));
@@ -3969,7 +4634,7 @@ THERAPIST NOTES:
       });
 
       // 1. Create/upsert client record
-      const clientRes = await fetch('/api/clients', {
+      const clientRes = await apiFetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3993,7 +4658,7 @@ THERAPIST NOTES:
       if (!accountNumber) throw new Error('No account number returned');
 
       // 2. Save session
-      const sessRes = await fetch('/api/clients/' + accountNumber + '/sessions', {
+      const sessRes = await apiFetch('/api/clients/' + accountNumber + '/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4048,7 +4713,7 @@ THERAPIST NOTES:
 
       const filename = 'SOAP_' + accountNumber + '_' + sessionDate + '_' + clientName.replace(/\\s+/g,'_') + '.pdf';
 
-      const res = await fetch('/api/drive/upload-pdf', {
+      const res = await apiFetch('/api/drive/upload-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, accountNumber, filename, pdfBase64: base64 })
@@ -4064,85 +4729,11 @@ THERAPIST NOTES:
     }
   }
 
-  // ─── Generate PDF and return base64 string ───────────────────────────────
+  // ─── Generate PDF and return base64 string ────────────────────────────────
   function generatePDFBase64() {
     try {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageW = 210, margin = 18, contentW = pageW - margin * 2;
-      let y = 20;
-      const violet = [124, 58, 237], dark = [15, 23, 42], mid = [71, 85, 105], light = [248, 250, 252];
-
-      doc.setFillColor(...violet);
-      doc.rect(0, 0, pageW, 30, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
-      doc.text('SOAP NOTE — MASSAGE THERAPY', margin, 14);
-      doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-      doc.text('Generated by SOAP Note Generator · Flexion & Flow', margin, 22);
-      y = 38;
-
-      const client = document.getElementById('soapClientName')?.textContent || '';
-      const dateText = document.getElementById('sessionDate')?.value || '';
-      const duration = document.getElementById('sessionDuration')?.value || '';
-      const chiefComplaint = document.getElementById('chiefComplaint')?.value || '';
-      const painBefore = document.getElementById('painLevel')?.value || '';
-      const painAfter = document.getElementById('postPainLevel')?.value || '';
-      const therapist = document.getElementById('therapistName')?.value || '';
-      const creds = document.getElementById('therapistCredentials')?.value || '';
-      const acct = state.lastAccountNumber || '';
-
-      doc.setFillColor(...light);
-      doc.rect(margin, y, contentW, 26, 'F');
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(margin, y, contentW, 26, 'S');
-      doc.setTextColor(...dark); doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-      doc.text(client || 'Client', margin + 3, y + 7);
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...mid);
-      doc.text('Date: ' + (dateText || '—'), margin + 3, y + 13);
-      doc.text('Duration: ' + (duration || '—'), margin + 3, y + 18);
-      if (chiefComplaint) doc.text('CC: ' + chiefComplaint, margin + 60, y + 13);
-      if (painBefore) doc.text('Pain before: ' + painBefore + '/10', margin + 60, y + 18);
-      if (painAfter) doc.text('Pain after: ' + painAfter + '/10', margin + 120, y + 18);
-      if (acct) doc.text('Account: ' + acct, margin + 120, y + 13);
-      y += 32;
-
-      const sections = [
-        { label: 'S — Subjective', id: 'soapS', color: [59, 130, 246] },
-        { label: 'O — Objective', id: 'soapO', color: [16, 185, 129] },
-        { label: 'A — Assessment', id: 'soapA', color: [245, 158, 11] },
-        { label: 'P — Plan', id: 'soapP', color: [139, 92, 246] },
-        { label: 'N — Therapist Notes', id: 'soapN', color: [107, 114, 128] },
-      ];
-      for (const sec of sections) {
-        const rawText = document.getElementById(sec.id)?.value;
-        const text = applyWritingStyle(rawText);
-        if (!text) continue;
-        if (y > 250) { doc.addPage(); y = 20; }
-        doc.setFillColor(...sec.color);
-        doc.rect(margin, y, 4, 8, 'F');
-        doc.setTextColor(...dark); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
-        doc.text(sec.label, margin + 7, y + 5.5);
-        y += 11;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...mid);
-        const lines = doc.splitTextToSize(text, contentW - 5);
-        for (const line of lines) {
-          if (y > 270) { doc.addPage(); y = 20; }
-          doc.text(line, margin + 3, y); y += 5;
-        }
-        y += 5;
-      }
-
-      if (y > 255) { doc.addPage(); y = 20; }
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y + 5, margin + contentW, y + 5);
-      y += 10;
-      doc.setTextColor(...mid); doc.setFontSize(8);
-      if (therapist || creds) { doc.text('Therapist: ' + [therapist, creds].filter(Boolean).join(', '), margin, y); y += 5; }
-      doc.setFontSize(7); doc.setTextColor(180, 180, 180);
-      doc.text('Generated: ' + new Date().toLocaleString() + ' · SOAP Note Generator', margin, y + 5);
-
-      return doc.output('datauristring').split(',')[1]; // base64 only
+      // Use the same enhanced PDF generation with base64 output
+      return generatePdfDocument('base64');
     } catch(e) {
       console.warn('PDF base64 generation failed:', e);
       return null;

@@ -9,6 +9,8 @@ import type {
   SessionRow,
   MetaRow,
 } from "../types/index.js";
+import { encrypt, safeDecrypt, ensureEncrypted } from "../utils/crypto.js";
+import { runMigrations } from "./migrations.js";
 
 /**
  * Environment configuration
@@ -47,33 +49,8 @@ function initializeDatabase(): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
-  // Create tables with proper schemas
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS clients (
-      account_number TEXT PRIMARY KEY,
-      id             TEXT UNIQUE NOT NULL,
-      data           TEXT NOT NULL,
-      email          TEXT,
-      created_at     TEXT NOT NULL,
-      updated_at     TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      session_id     TEXT PRIMARY KEY,
-      account_number TEXT NOT NULL,
-      session_date   TEXT NOT NULL,
-      data           TEXT NOT NULL,
-      saved_at       TEXT NOT NULL,
-      FOREIGN KEY (account_number) REFERENCES clients(account_number)
-    );
-    CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_number);
-
-    CREATE TABLE IF NOT EXISTS meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
+  // Run migrations (creates tables if needed)
+  runMigrations(db);
 
   return db;
 }
@@ -81,21 +58,35 @@ function initializeDatabase(): Database.Database {
 // Initialize database instance
 export const db = initializeDatabase();
 
+/** Keys that should be encrypted at rest */
+const ENCRYPTED_KEYS = new Set(["global_drive_refresh_token"]);
+
 /**
  * KV-compatible adapter over SQLite meta table
+ * Automatically encrypts/decrypts sensitive keys
  */
 export const kv: KVStore = {
   get(key: string): string | null {
     const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
       | MetaRow
       | undefined;
-    return row?.value ?? null;
+    if (!row?.value) return null;
+
+    // Decrypt if this is a sensitive key
+    if (ENCRYPTED_KEYS.has(key)) {
+      return safeDecrypt(row.value);
+    }
+    return row.value;
   },
 
   put(key: string, value: string): void {
+    // Encrypt if this is a sensitive key
+    const storedValue = ENCRYPTED_KEYS.has(key)
+      ? ensureEncrypted(value)
+      : value;
     db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(
       key,
-      value,
+      storedValue,
     );
   },
 
@@ -104,7 +95,7 @@ export const kv: KVStore = {
   },
 };
 
-// Seed Google refresh token from env if not already stored
+// Seed Google refresh token from env if not already stored (will be encrypted)
 if (ENV.GOOGLE_REFRESH_TOKEN && !kv.get("global_drive_refresh_token")) {
   kv.put("global_drive_refresh_token", ENV.GOOGLE_REFRESH_TOKEN);
 }
@@ -142,6 +133,7 @@ export function findClientByEmail(email: string): ClientRecord | null {
 
 /**
  * Get client by account number
+ * Decrypts driveToken if present
  */
 export function getClient(accountNumber: string): ClientRecord | null {
   const row = db
@@ -149,7 +141,12 @@ export function getClient(accountNumber: string): ClientRecord | null {
     .get(accountNumber) as ClientRow | undefined;
   if (!row) return null;
   try {
-    return JSON.parse(row.data);
+    const client = JSON.parse(row.data) as ClientRecord;
+    // Decrypt driveToken if present
+    if (client.driveToken) {
+      client.driveToken = safeDecrypt(client.driveToken);
+    }
+    return client;
   } catch (error) {
     console.error("Failed to parse client data:", error);
     return null;
@@ -158,31 +155,54 @@ export function getClient(accountNumber: string): ClientRecord | null {
 
 /**
  * Save or update client record
+ * Encrypts driveToken if present
+ * Also populates searchable columns for better query performance
  */
 export function saveClient(client: ClientRecord): void {
+  // Create a copy for storage with encrypted driveToken
+  const clientToStore = { ...client };
+  if (clientToStore.driveToken) {
+    clientToStore.driveToken = ensureEncrypted(clientToStore.driveToken);
+  }
+
   db.prepare(
     `
-    INSERT OR REPLACE INTO clients (account_number, id, data, email, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO clients (
+      account_number, id, data, email, created_at, updated_at,
+      first_name, last_name, phone, session_count, last_session_date,
+      dashboard_client_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     client.accountNumber,
     client.id,
-    JSON.stringify(client),
+    JSON.stringify(clientToStore),
     client.email?.toLowerCase() || null,
     client.createdAt,
     client.updatedAt,
+    // Searchable columns
+    client.firstName || null,
+    client.lastName || null,
+    client.phone || null,
+    client.sessionCount || 0,
+    client.lastSessionDate || null,
+    client.dashboardClientId || null,
   );
 }
 
 /**
  * Save or update session record
+ * Also populates searchable columns
  */
 export function saveSession(session: SessionRecord): void {
   db.prepare(
     `
-    INSERT OR REPLACE INTO sessions (session_id, account_number, session_date, data, saved_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO sessions (
+      session_id, account_number, session_date, data, saved_at,
+      client_name, therapist_name
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     session.sessionId,
@@ -190,6 +210,9 @@ export function saveSession(session: SessionRecord): void {
     session.sessionDate,
     JSON.stringify(session),
     session.savedAt,
+    // Searchable columns
+    session.clientName || null,
+    session.therapistName || null,
   );
 }
 

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { ClientRecord } from "../types/index.js";
+import type { ClientRecord, IntakeSnapshot } from "../types/index.js";
 import {
   findClientByEmail,
   getClient,
@@ -9,23 +9,49 @@ import {
   ENV,
 } from "../database/index.js";
 import { notifyDashboard } from "../services/webhook.js";
-import { requireAuth, authRateLimit } from "../middleware/auth.js";
+import { authRateLimit } from "../middleware/auth.js";
+import {
+  clientSchema,
+  clientUpdateSchema,
+  clientImportSchema,
+  validateInput,
+  ValidationError,
+} from "../validation/schemas.js";
+
+/**
+ * Helper to safely convert unknown values to string records
+ */
+function convertToStringRecord(
+  data: Record<string, unknown>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    result[key] = String(value || "");
+  }
+  return result;
+}
 
 const clients = new Hono();
 
-// Apply authentication to all client routes except public intake
+// Keep lightweight request throttling, but do not require header auth for
+// primary app flows (client browse/create/save are called directly by the SPA).
 clients.use("/*", authRateLimit);
-clients.use("/", requireAuth); // Protect client creation
-clients.use("/:accountNum/*", requireAuth); // Protect client access
 
 /**
  * POST /api/clients — create or upsert client, returns accountNumber
  */
 clients.post("/", async (c) => {
-  const body = (await c.req.json()) as Partial<ClientRecord> & {
-    source?: string;
-    intakeData?: Record<string, string>;
-  };
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    // Use partial validation - allow partial client data for upsert
+    body = validateInput(clientSchema.partial(), rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
+  }
 
   if (!body.firstName && !body.lastName) {
     return c.json({ error: "Name required" }, 400);
@@ -39,10 +65,10 @@ clients.post("/", async (c) => {
 
   if (existing) {
     // Update existing client with new intake data
-    const intakeEntry = {
+    const intakeEntry: IntakeSnapshot = {
       savedAt: now,
       source: body.source || "soap-generator",
-      data: body.intakeData || {},
+      data: convertToStringRecord(body.intakeData || {}),
     };
 
     existing.updatedAt = now;
@@ -99,7 +125,7 @@ clients.post("/", async (c) => {
       {
         savedAt: now,
         source: body.source || "soap-generator",
-        data: body.intakeData || {},
+        data: convertToStringRecord(body.intakeData || {}),
       },
     ],
     sessionCount: 0,
@@ -118,16 +144,63 @@ clients.post("/", async (c) => {
 });
 
 /**
- * GET /api/clients — list all clients (summary)
+ * GET /api/clients — list all clients (summary) with pagination
+ * Query params:
+ *   - page: page number (default: 1)
+ *   - limit: items per page (default: 50, max: 200)
+ *   - search: search term for name/email
+ *   - sort: field to sort by (default: updated_at)
+ *   - order: asc or desc (default: desc)
  */
 clients.get("/", (c) => {
-  const rows = db
-    .prepare(
-      `
-    SELECT data FROM clients ORDER BY updated_at DESC LIMIT 500
-  `,
-    )
-    .all() as { data: string }[];
+  const page = Math.max(1, parseInt(c.req.query("page") || "1", 10));
+  const limit = Math.min(
+    200,
+    Math.max(1, parseInt(c.req.query("limit") || "50", 10)),
+  );
+  const search = c.req.query("search")?.trim().toLowerCase() || "";
+  const sortField = c.req.query("sort") || "updated_at";
+  const sortOrder = c.req.query("order") === "asc" ? "ASC" : "DESC";
+
+  const offset = (page - 1) * limit;
+
+  // Validate sort field to prevent SQL injection
+  const allowedSortFields = [
+    "updated_at",
+    "created_at",
+    "first_name",
+    "last_name",
+    "session_count",
+    "last_session_date",
+  ];
+  const safeSortField = allowedSortFields.includes(sortField)
+    ? sortField
+    : "updated_at";
+
+  let whereClause = "";
+  const params: any[] = [];
+
+  if (search) {
+    whereClause =
+      "WHERE (LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR LOWER(email) LIKE ?)";
+    const searchPattern = `%${search}%`;
+    params.push(searchPattern, searchPattern, searchPattern);
+  }
+
+  // Get total count for pagination metadata
+  const countQuery = `SELECT COUNT(*) as total FROM clients ${whereClause}`;
+  const { total } = db.prepare(countQuery).get(...params) as { total: number };
+
+  // Get paginated results using searchable columns where possible
+  const dataQuery = `
+    SELECT data FROM clients 
+    ${whereClause}
+    ORDER BY ${safeSortField} ${sortOrder}
+    LIMIT ? OFFSET ?
+  `;
+  params.push(limit, offset);
+
+  const rows = db.prepare(dataQuery).all(...params) as { data: string }[];
 
   const clients = rows
     .map((r) => {
@@ -154,7 +227,19 @@ clients.get("/", (c) => {
     })
     .filter(Boolean);
 
-  return c.json({ clients });
+  const totalPages = Math.ceil(total / limit);
+
+  return c.json({
+    clients,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
+  });
 });
 
 /**
@@ -195,11 +280,18 @@ clients.post("/import", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const body = await c.req.json();
-  const incoming = body.clients as Partial<ClientRecord>[];
-  if (!Array.isArray(incoming)) {
-    return c.json({ error: "clients array required" }, 400);
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    body = validateInput(clientImportSchema, rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
   }
+
+  const incoming = body.clients;
 
   let created = 0;
   let updated = 0;
@@ -260,7 +352,6 @@ clients.post("/import", async (c) => {
 
 /**
  * POST /api/clients/sync — pull clients from Intake Form app (if configured)
- */
 clients.post("/sync", async (c) => {
   if (!ENV.INTAKE_FORM_URL) {
     return c.json({ success: false, error: "INTAKE_FORM_URL not configured" });
@@ -358,7 +449,17 @@ clients.put("/:accountNumber", async (c) => {
   const existing = getClient(acct);
   if (!existing) return c.json({ error: "Client not found" }, 404);
 
-  const body = await c.req.json();
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    body = validateInput(clientUpdateSchema, rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
+  }
+
   const updated: ClientRecord = {
     ...existing,
     ...body,
@@ -375,6 +476,42 @@ clients.put("/:accountNumber", async (c) => {
   });
 
   return c.json({ success: true, client: updated });
+});
+
+/**
+ * DELETE /api/clients/:accountNumber — delete client and sessions
+ */
+clients.delete("/:accountNumber", (c) => {
+  const acct = c.req.param("accountNumber");
+  const existing = getClient(acct);
+  if (!existing) return c.json({ error: "Client not found" }, 404);
+
+  const deleteSessions = db.prepare(
+    "DELETE FROM sessions WHERE account_number = ?",
+  );
+  const deleteClient = db.prepare(
+    "DELETE FROM clients WHERE account_number = ?",
+  );
+
+  const result = db.transaction((accountNumber: string) => {
+    const sessionsDeleted = deleteSessions.run(accountNumber).changes;
+    const clientDeleted = deleteClient.run(accountNumber).changes;
+    return { sessionsDeleted, clientDeleted };
+  })(acct);
+
+  notifyDashboard("client_deleted", {
+    accountNumber: acct,
+    clientName: `${existing.firstName} ${existing.lastName}`.trim(),
+    clientEmail: existing.email,
+    sessionsDeleted: result.sessionsDeleted,
+  });
+
+  return c.json({
+    success: true,
+    accountNumber: acct,
+    sessionsDeleted: result.sessionsDeleted,
+    clientDeleted: result.clientDeleted,
+  });
 });
 
 export default clients;

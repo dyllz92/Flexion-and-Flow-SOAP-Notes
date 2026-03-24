@@ -1,24 +1,35 @@
 import { ENV } from "../database/index.js";
 
 /**
+ * Response from Dashboard webhook containing linked client ID
+ */
+export interface DashboardWebhookResponse {
+  success: boolean;
+  clientId?: number;
+  taskId?: number;
+  submissionId?: string;
+}
+
+/**
  * Notify the Dashboard app about a client or session event.
  * Fire-and-forget — logs errors but never throws.
+ * Returns the Dashboard response (with clientId) if available.
  */
 export async function notifyDashboard(
   eventType: string,
   data: Record<string, unknown>,
-): Promise<void> {
-  if (!ENV.DASHBOARD_WEBHOOK_URL) return;
+): Promise<DashboardWebhookResponse | null> {
+  if (!ENV.DASHBOARD_WEBHOOK_URL) return null;
 
   const secret = ENV.WEBHOOK_SECRET_SOAP || ENV.SESSION_SECRET;
-  if (!secret) return;
+  if (!secret) return null;
 
   const isSoapWebhook = /\/api\/webhook\/soap\/?$/i.test(
     ENV.DASHBOARD_WEBHOOK_URL,
   );
 
   // SOAP completion endpoint only expects completion payloads.
-  if (isSoapWebhook && eventType !== "session_saved") return;
+  if (isSoapWebhook && eventType !== "session_saved") return null;
 
   const payload = isSoapWebhook
     ? {
@@ -31,6 +42,7 @@ export async function notifyDashboard(
           (data.soapNoteId as string) || (data.sessionId as string) || null,
         noteUrl: (data.noteUrl as string) || null,
         status: "completed",
+        accountNumber: (data.accountNumber as string) || null,
       }
     : { event: eventType, ...data };
 
@@ -49,8 +61,15 @@ export async function notifyDashboard(
         `Dashboard webhook failed (${res.status}):`,
         await res.text().catch(() => ""),
       );
+      return null;
     }
+
+    const body = (await res
+      .json()
+      .catch(() => null)) as DashboardWebhookResponse | null;
+    return body;
   } catch (error) {
     console.error("Dashboard webhook error:", error);
+    return null;
   }
 }
