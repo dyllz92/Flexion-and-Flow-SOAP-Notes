@@ -4825,7 +4825,8 @@ THERAPIST NOTES:
   async function uploadPDFToDrive(sessionId, accountNumber, clientName, sessionDate) {
     try {
       const driveStatus = await apiFetch('/api/drive/status').then(r => r.json());
-      if (driveStatus.enabled === false || !driveStatus.connected) return;
+      if (driveStatus.enabled === false && !driveStatus.backupEnabled) return;
+      if (driveStatus.enabled !== false && !driveStatus.connected && !driveStatus.backupEnabled) return;
 
       // Generate PDF as base64
       const base64 = generatePDFBase64();
@@ -4840,9 +4841,13 @@ THERAPIST NOTES:
       });
       const data = await res.json();
       if (data.success) {
-        showCopyFeedback('📁 PDF saved to Google Drive');
-        const badge = document.getElementById('driveBadge');
-        if (badge) { badge.style.display = 'inline-flex'; badge.href = data.url; }
+        if (data.url) {
+          showCopyFeedback('📁 PDF saved to Google Drive');
+          const badge = document.getElementById('driveBadge');
+          if (badge) { badge.style.display = 'inline-flex'; badge.href = data.url; }
+        } else if (data.supabaseUrl) {
+          showCopyFeedback('📁 PDF backed up to Supabase Storage');
+        }
       }
     } catch(e) {
       console.warn('Drive upload failed:', e.message);

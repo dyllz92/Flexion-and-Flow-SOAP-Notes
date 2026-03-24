@@ -30,6 +30,10 @@ import path from "node:path";
 
 const drive = new Hono();
 
+function isSupabaseBackupConfigured(): boolean {
+  return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
 function driveSyncDisabledResponse(c: any) {
   return c.json(
     {
@@ -244,11 +248,6 @@ async function uploadBase64PDFToDrive(
  * POST /api/drive/upload-pdf — Upload PDF to Google Drive
  */
 drive.post("/upload-pdf", async (c) => {
-  const disabledResponse = ensureDriveSyncEnabled(c);
-  if (disabledResponse) {
-    return disabledResponse;
-  }
-
   try {
     const body = (await c.req.json()) as {
       sessionId: string;
@@ -257,58 +256,86 @@ drive.post("/upload-pdf", async (c) => {
       pdfBase64: string;
     };
 
-    const refreshToken = kv.get("global_drive_refresh_token");
-    if (!refreshToken) {
-      return c.json({ error: "Google Drive not connected." }, 400);
+    const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
+    let supabaseUrl: string | null = null;
+    let driveResult: DriveUploadResult | null = null;
+
+    if (isSupabaseBackupConfigured()) {
+      supabaseUrl = await uploadPdfToSupabase(body.filename, pdfBuffer);
+      if (supabaseUrl) {
+        console.log("Supabase PDF uploaded:", supabaseUrl);
+      }
     }
 
-    const accessToken = await refreshGoogleToken(
-      refreshToken,
-      ENV.GOOGLE_CLIENT_ID,
-      ENV.GOOGLE_CLIENT_SECRET,
-    );
+    if (ENV.GOOGLE_DRIVE_SYNC_ENABLED) {
+      const refreshToken = kv.get("global_drive_refresh_token");
+      if (!refreshToken) {
+        if (supabaseUrl) {
+          return c.json({
+            success: true,
+            backupOnly: true,
+            driveEnabled: true,
+            supabaseUrl,
+          });
+        }
+        return c.json({ error: "Google Drive not connected." }, 400);
+      }
 
-    if (!accessToken) {
-      return c.json({ error: "Could not refresh Google token" }, 400);
+      const accessToken = await refreshGoogleToken(
+        refreshToken,
+        ENV.GOOGLE_CLIENT_ID,
+        ENV.GOOGLE_CLIENT_SECRET,
+      );
+
+      if (!accessToken) {
+        if (supabaseUrl) {
+          return c.json({
+            success: true,
+            backupOnly: true,
+            driveEnabled: true,
+            supabaseUrl,
+          });
+        }
+        return c.json({ error: "Could not refresh Google token" }, 400);
+      }
+
+      driveResult = await uploadBase64PDFToDrive(
+        accessToken,
+        ENV.GOOGLE_DRIVE_FOLDER_ID,
+        body.filename,
+        body.pdfBase64,
+      );
+
+      if (!driveResult && !supabaseUrl) {
+        return c.json({ error: "Drive upload failed" }, 500);
+      }
     }
 
-    const result = await uploadBase64PDFToDrive(
-      accessToken,
-      ENV.GOOGLE_DRIVE_FOLDER_ID,
-      body.filename,
-      body.pdfBase64,
-    );
-
-    if (!result) {
-      return c.json({ error: "Drive upload failed" }, 500);
+    if (!ENV.GOOGLE_DRIVE_SYNC_ENABLED && !supabaseUrl) {
+      return c.json({ error: "PDF backup is not configured" }, 503);
     }
 
     // Update session with drive link
-    if (body.sessionId) {
+    if (body.sessionId && driveResult) {
       const row = db
         .prepare("SELECT data FROM sessions WHERE session_id = ?")
         .get(body.sessionId) as { data: string } | undefined;
 
       if (row) {
         const session: SessionRecord = JSON.parse(row.data);
-        session.pdfDriveFileId = result.id;
-        session.pdfDriveUrl = result.webViewLink;
+        session.pdfDriveFileId = driveResult.id;
+        session.pdfDriveUrl = driveResult.webViewLink;
         saveSession(session);
       }
     }
 
-    // Also upload to Supabase Storage in the background
-    const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
-    uploadPdfToSupabase(body.filename, pdfBuffer)
-      .then((url) => {
-        if (url) console.log("Supabase PDF uploaded:", url);
-      })
-      .catch((err) => console.error("Supabase PDF upload error:", err));
-
     return c.json({
       success: true,
-      fileId: result.id,
-      url: result.webViewLink,
+      backupOnly: !driveResult,
+      driveEnabled: ENV.GOOGLE_DRIVE_SYNC_ENABLED,
+      fileId: driveResult?.id || null,
+      url: driveResult?.webViewLink || null,
+      supabaseUrl,
     });
   } catch (error) {
     console.error("PDF upload error:", error);
@@ -321,11 +348,19 @@ drive.post("/upload-pdf", async (c) => {
  */
 drive.get("/status", (c) => {
   if (!ENV.GOOGLE_DRIVE_SYNC_ENABLED) {
-    return c.json({ enabled: false, connected: false });
+    return c.json({
+      enabled: false,
+      connected: false,
+      backupEnabled: isSupabaseBackupConfigured(),
+    });
   }
 
   const token = kv.get("global_drive_refresh_token");
-  return c.json({ enabled: true, connected: !!token });
+  return c.json({
+    enabled: true,
+    connected: !!token,
+    backupEnabled: isSupabaseBackupConfigured(),
+  });
 });
 
 /**
