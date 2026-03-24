@@ -346,6 +346,13 @@ export function renderApp(): string {
                 Click diagram to place marker · Click marker to remove
               </div>
             </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+              <input id="muscleSearchInput" type="text" list="muscleSearchList" placeholder="Type a muscle name (e.g. Rhomboids (L))" oninput="updateMuscleSearch(this.value)" style="flex:1;min-width:220px;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.82rem;outline:none;" />
+              <datalist id="muscleSearchList"></datalist>
+              <button onclick="addMarkerFromSearch()" class="btn btn-sm btn-outline">
+                <i class="fas fa-plus"></i> Add Marker by Muscle
+              </button>
+            </div>
             <div style="display:flex;justify-content:center;overflow:auto;">
               <div id="muscleMapContainer" style="min-width:260px;max-width:400px;width:100%;"></div>
             </div>
@@ -1251,7 +1258,8 @@ export function renderApp(): string {
     currentStep: 1,
     currentView: 'anterior',
     currentGender: 'male',
-    showMusclePolygons: false,
+    showMusclePolygons: true,
+    muscleSearchTerm: '',
     tensionPoints: [], // Array of dot objects: { id, number, x, y, muscleId, muscleName, type, notes, timestamp }
     treatedMuscles: new Set(), // Auto-populated from tension point muscle IDs
     useMedicalShorthand: false,
@@ -1856,6 +1864,68 @@ export function renderApp(): string {
     }).join('');
   }
 
+  function getCurrentViewMuscles() {
+    return state.currentView === 'anterior' ? ANTERIOR_MUSCLES : POSTERIOR_MUSCLES;
+  }
+
+  function updateMuscleSearch(value) {
+    state.muscleSearchTerm = (value || '').trim();
+    populateMuscleSearchList();
+  }
+
+  function populateMuscleSearchList() {
+    const list = document.getElementById('muscleSearchList');
+    if (!list) return;
+
+    const term = (state.muscleSearchTerm || '').toLowerCase();
+    const visibleMuscles = getCurrentViewMuscles().filter(muscle =>
+      !term || muscle.name.toLowerCase().includes(term) || muscle.group.toLowerCase().includes(term)
+    );
+
+    list.innerHTML = visibleMuscles
+      .slice(0, 40)
+      .map(muscle => `<option value="${muscle.name}">${muscle.group}</option>`)
+      .join('');
+  }
+
+  function getMuscleCentroid(points) {
+    const coords = points.split(' ').map(pair => pair.split(',').map(Number));
+    if (!coords.length) return { x: 200, y: 460 };
+    const sum = coords.reduce((acc, [x, y]) => ({ x: acc.x + x, y: acc.y + y }), { x: 0, y: 0 });
+    return {
+      x: Math.round(sum.x / coords.length),
+      y: Math.round(sum.y / coords.length)
+    };
+  }
+
+  function addMarkerFromSearch() {
+    const input = document.getElementById('muscleSearchInput');
+    if (!input) return;
+
+    const term = (input.value || '').trim().toLowerCase();
+    if (!term) {
+      showCopyFeedback('Type a muscle name first');
+      return;
+    }
+
+    const muscles = getCurrentViewMuscles();
+    const exact = muscles.find(m => m.name.toLowerCase() === term);
+    const matches = exact ? [exact] : muscles.filter(m => m.name.toLowerCase().includes(term));
+
+    if (matches.length === 0) {
+      showCopyFeedback('No matching muscle in this view');
+      return;
+    }
+    if (!exact && matches.length > 1) {
+      showCopyFeedback('Multiple matches. Add (L) or (R) to be specific');
+      return;
+    }
+
+    const muscle = matches[0];
+    const center = getMuscleCentroid(muscle.points);
+    saveTensionDot(center.x, center.y, muscle.id, muscle.name, 'pain-area', '');
+  }
+
   // ============================================================
   // TENSION POINTS SYSTEM (Enhanced Muscle Map)
   // ============================================================
@@ -2223,6 +2293,7 @@ export function renderApp(): string {
 
     // Render muscle map
     renderMuscleMap();
+    populateMuscleSearchList();
 
     const polyToggle = document.getElementById('toggleMusclePolygons');
     if (polyToggle) polyToggle.checked = !!state.showMusclePolygons;
@@ -2783,6 +2854,7 @@ export function renderApp(): string {
     document.getElementById('btnAnterior').classList.toggle('active', view === 'anterior');
     document.getElementById('btnPosterior').classList.toggle('active', view === 'posterior');
     renderMuscleMap();
+    populateMuscleSearchList();
   }
 
   function setGender(gender) {
@@ -2790,6 +2862,7 @@ export function renderApp(): string {
     document.getElementById('btnMale').classList.toggle('active', gender === 'male');
     document.getElementById('btnFemale').classList.toggle('active', gender === 'female');
     renderMuscleMap();
+    populateMuscleSearchList();
   }
 
   function toggleMusclePolygons(show) {
@@ -3981,11 +4054,15 @@ THERAPIST NOTES:
     state.soapData = null;
     state.currentView = 'anterior';
     state.currentGender = 'male';
-    state.showMusclePolygons = false;
+    state.showMusclePolygons = true;
+    state.muscleSearchTerm = '';
     state.useMedicalShorthand = false;
 
     const polyToggle = document.getElementById('toggleMusclePolygons');
-    if (polyToggle) polyToggle.checked = false;
+    if (polyToggle) polyToggle.checked = true;
+
+    const muscleSearchInput = document.getElementById('muscleSearchInput');
+    if (muscleSearchInput) muscleSearchInput.value = '';
 
     // Reset fields
     ['clientFirstName', 'clientLastName', 'clientEmail', 'clientDOB', 'chiefComplaint', 
@@ -4013,6 +4090,7 @@ THERAPIST NOTES:
     setView('anterior');
     setGender('male');
     renderMuscleMap();
+    populateMuscleSearchList();
     updateMuscleLists();
     updateWritingStyleBadge();
     updateIntakeReviewPanel();
@@ -4024,6 +4102,8 @@ THERAPIST NOTES:
   window.setView = setView;
   window.setGender = setGender;
   window.toggleMusclePolygons = toggleMusclePolygons;
+  window.updateMuscleSearch = updateMuscleSearch;
+  window.addMarkerFromSearch = addMarkerFromSearch;
   // Removed toggleMuscle - replaced with dot placement system
   window.showTooltip = showTooltip;
   window.hideTooltip = hideTooltip;

@@ -280,11 +280,18 @@ clients.post("/import", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const body = await c.req.json();
-  const incoming = body.clients as Partial<ClientRecord>[];
-  if (!Array.isArray(incoming)) {
-    return c.json({ error: "clients array required" }, 400);
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    body = validateInput(clientImportSchema, rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
   }
+
+  const incoming = body.clients;
 
   let created = 0;
   let updated = 0;
@@ -345,7 +352,6 @@ clients.post("/import", async (c) => {
 
 /**
  * POST /api/clients/sync — pull clients from Intake Form app (if configured)
- */
 clients.post("/sync", async (c) => {
   if (!ENV.INTAKE_FORM_URL) {
     return c.json({ success: false, error: "INTAKE_FORM_URL not configured" });
@@ -443,7 +449,17 @@ clients.put("/:accountNumber", async (c) => {
   const existing = getClient(acct);
   if (!existing) return c.json({ error: "Client not found" }, 404);
 
-  const body = await c.req.json();
+  let body;
+  try {
+    const rawBody = await c.req.json();
+    body = validateInput(clientUpdateSchema, rawBody);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return c.json({ error: `Validation error: ${err.message}` }, 400);
+    }
+    return c.json({ error: "Invalid request body" }, 400);
+  }
+
   const updated: ClientRecord = {
     ...existing,
     ...body,

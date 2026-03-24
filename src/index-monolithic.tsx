@@ -1410,6 +1410,7 @@ function renderApp(): string {
             </div>
             <!-- Region Filter Tabs -->
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;" id="regionTabs"></div>
+            <input id="muscleSearchInput" type="text" placeholder="Search muscles (e.g. rhomboids)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:0.82rem;outline:none;margin-bottom:12px;" />
             <!-- Muscle Map -->
             <div style="display:flex;justify-content:center;overflow:auto;margin-bottom:14px;">
               <div id="muscleMapContainer" style="min-width:280px;max-width:480px;width:100%;"></div>
@@ -2122,6 +2123,8 @@ function renderApp(): string {
     currentStep: 1,
     currentView: 'anterior',
     currentGender: 'male',
+    currentRegion: 'all',
+    muscleSearch: '',
     muscleStates: {}, // muscleId -> 'treated' | 'follow-up'
     pdfText: '',
     soapData: null,
@@ -2137,19 +2140,9 @@ function renderApp(): string {
   ];
 
   // ============================================================
-  // STATE
+  // MUSCLE MAP IMAGE DATA
   // ============================================================
-  const state = {
-    currentStep: 1,
-    currentView: 'anterior',
-    currentGender: 'male',
-    currentRegion: 'all', // Track selected region for filtering
-    muscleStates: {}, // muscleId -> 'treated' | 'follow-up'
-    pdfText: '',
-    soapData: null,
-    lastAccountNumber: null,
-    lastSessionId: null
-  };
+  const MUSCLES = [
     // ─── ANTERIOR ───────────────────────────────────────────────
     // SVG viewBox: 0 0 400 920 (male), body spans X:90-350, Y:15-910
     // NECK
@@ -2408,9 +2401,9 @@ function renderApp(): string {
 
     const musclePaths = muscles.map(m => {
       const st  = state.muscleStates[m.id];
-      let fill  = 'rgba(91,163,217,0.25)';
-      let stroke = 'rgba(91,163,217,0.7)';
-      let sw    = '1.5';
+      let fill  = 'rgba(91,163,217,0.40)';
+      let stroke = 'rgba(36,99,163,0.95)';
+      let sw    = '2';
       if (st === 'treated')   { fill = 'rgba(56,161,105,0.45)';  stroke = '#276749'; sw = '2'; }
       if (st === 'follow-up') { fill = 'rgba(214,158,46,0.45)';  stroke = '#b7791f'; sw = '2'; }
       const pts = gender === 'female' ? scalePoints(m.points) : m.points;
@@ -2462,6 +2455,11 @@ function renderApp(): string {
     // Render muscle map and action panel
     renderMuscleMap();
     renderMuscleActionPanel();
+
+    const muscleSearchInput = document.getElementById('muscleSearchInput');
+    if (muscleSearchInput) {
+      muscleSearchInput.addEventListener('input', (e) => handleMuscleSearch(e.target.value));
+    }
     
     updateSummaryPanel();
 
@@ -2508,6 +2506,11 @@ function renderApp(): string {
     renderMuscleActionPanel();
   }
 
+  function handleMuscleSearch(value) {
+    state.muscleSearch = (value || '').trim().toLowerCase();
+    renderMuscleActionPanel();
+  }
+
   function renderMuscleActionPanel() {
     const panel = document.getElementById('muscleActionPanel');
     if (!panel) return;
@@ -2517,13 +2520,16 @@ function renderApp(): string {
 
     const allMuscles = [...ANTERIOR_MUSCLES, ...POSTERIOR_MUSCLES];
     const regionMuscles = allMuscles.filter(m => region.muscles.includes(m.id));
+    const visibleMuscles = state.muscleSearch
+      ? regionMuscles.filter(m => m.name.toLowerCase().includes(state.muscleSearch) || m.group.toLowerCase().includes(state.muscleSearch))
+      : regionMuscles;
 
-    if (regionMuscles.length === 0) {
-      panel.innerHTML = '<p style="font-size:0.8rem;color:var(--text-light);padding:16px;text-align:center;">No muscles in this region</p>';
+    if (visibleMuscles.length === 0) {
+      panel.innerHTML = '<p style="font-size:0.8rem;color:var(--text-light);padding:16px;text-align:center;">No muscles match your search.</p>';
       return;
     }
 
-    panel.innerHTML = regionMuscles.map(m => {
+    panel.innerHTML = visibleMuscles.map(m => {
       const st = state.muscleStates[m.id];
       const treatedClass = st === 'treated' ? 'background:#e6f7ed;border-color:#c6f6d5;' : '';
       const followupClass = st === 'follow-up' ? 'background:#fef9e8;border-color:#fde68a;' : '';

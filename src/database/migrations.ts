@@ -83,7 +83,6 @@ export const migrations: Migration[] = [
       ];
 
       for (const col of columns) {
-        const colName = col.split(" ")[0];
         try {
           db.exec(`ALTER TABLE clients ADD COLUMN ${col}`);
         } catch (e: any) {
@@ -109,7 +108,6 @@ export const migrations: Migration[] = [
       const columns = ["client_name TEXT", "therapist_name TEXT"];
 
       for (const col of columns) {
-        const colName = col.split(" ")[0];
         try {
           db.exec(`ALTER TABLE sessions ADD COLUMN ${col}`);
         } catch (e: any) {
