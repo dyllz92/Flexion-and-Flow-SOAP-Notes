@@ -120,11 +120,13 @@ drive.get("/callback", async (c) => {
       kv.put("global_drive_refresh_token", refreshToken);
     }
 
+    const safeAccount = JSON.stringify(accountNumber);
+    const safeOrigin = JSON.stringify(origin || "*");
     return c.html(`<!DOCTYPE html><html><body>
       <p style="font-family:sans-serif;padding:20px;">✅ Google Drive connected! You can close this tab.</p>
       <script>
         if (window.opener) {
-          window.opener.postMessage({ type: 'DRIVE_AUTH_SUCCESS', account: '${accountNumber}' }, '${origin}');
+          window.opener.postMessage({ type: 'DRIVE_AUTH_SUCCESS', account: ${safeAccount} }, ${safeOrigin});
           setTimeout(() => window.close(), 1500);
         }
       </script>
