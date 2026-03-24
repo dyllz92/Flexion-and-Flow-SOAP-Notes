@@ -981,7 +981,7 @@ export function renderApp(): string {
     if (!container) return;
     
     try {
-      const response = await fetch('/api/ai-status');
+      const response = await apiFetch('/api/ai-status');
       const data = await response.json();
       
       if (data.configured) {
@@ -1021,7 +1021,7 @@ export function renderApp(): string {
   // Load client profiles from server database (replaces localStorage)
   async function loadClientProfiles() {
     try {
-      const res = await fetch('/api/clients');
+      const res = await apiFetch('/api/clients');
       if (!res.ok) return [];
       const data = await res.json();
       return (data.clients || []).map(c => ({
@@ -2382,12 +2382,6 @@ export function renderApp(): string {
     
     // Render techniques
     renderTechniques();
-    
-    // CSRF Protection: Automatically add CSRF token to state-changing requests
-    const getCsrfToken = () => {
-      const meta = document.querySelector('meta[name="csrf-token"]');
-      return meta ? meta.getAttribute('content') : '';
-    };
 
     const originalFetch = window.fetch;
     window.fetch = async (url, options) => {
@@ -2404,16 +2398,6 @@ export function renderApp(): string {
           return new Response(JSON.stringify({ error: 'Authentication required' }), {
             status: 401,
             headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      }
-
-      const method = normalizedOptions.method?.toUpperCase();
-      if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
-        const csrfToken = getCsrfToken();
-        if (csrfToken) {
-          Object.assign(headers, {
-            'X-CSRF-Token': csrfToken,
           });
         }
       }
@@ -2460,7 +2444,7 @@ export function renderApp(): string {
     // Check API status (server-side key)
     checkAPIStatus();
     
-    // Pre-fetch CSRF token for subsequent API calls
+    // Pre-fetch CSRF token for the shared apiFetch helper
     getCsrfToken();
 
     // Load recent intake form PDFs
@@ -3067,7 +3051,7 @@ export function renderApp(): string {
     const icon = document.getElementById('driveFilesRefreshIcon');
     if (icon) icon.classList.add('fa-spin');
     try {
-      const res = await fetch('/api/drive/files');
+      const res = await apiFetch('/api/drive/files');
       const data = await res.json();
       if (!res.ok || !data.files || data.files.length === 0) {
         if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No PDF files found in Drive folder.</p>';
@@ -3135,7 +3119,7 @@ export function renderApp(): string {
     }
 
     try {
-      const res = await fetch('/api/drive/extract-text/' + encodeURIComponent(fileId));
+      const res = await apiFetch('/api/drive/extract-text/' + encodeURIComponent(fileId));
       const data = await res.json();
       if (!res.ok || !data.text) {
         alert('Could not extract text from ' + fileName);
@@ -3175,7 +3159,7 @@ export function renderApp(): string {
     const icon = document.getElementById('supabaseFilesRefreshIcon');
     if (icon) icon.classList.add('fa-spin');
     try {
-      const res = await fetch('/api/drive/supabase-files');
+      const res = await apiFetch('/api/drive/supabase-files');
       const data = await res.json();
       if (!res.ok || !data.files || data.files.length === 0) {
         if (list) list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-light);font-style:italic;">No intake form PDFs found.</p>';
@@ -3213,7 +3197,7 @@ export function renderApp(): string {
             if (!filename) return;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             try {
-              const urlRes = await fetch('/api/drive/supabase-file-url/' + encodeURIComponent(filename));
+              const urlRes = await apiFetch('/api/drive/supabase-file-url/' + encodeURIComponent(filename));
               const urlData = await urlRes.json();
               if (urlData.url) {
                 window.open(urlData.url, '_blank');
@@ -4387,7 +4371,7 @@ THERAPIST NOTES:
     const list = document.getElementById('accountList');
     list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-light);"><i class="fas fa-spinner fa-spin"></i> Loading clients…</p>';
     try {
-      const res = await fetch('/api/clients');
+      const res = await apiFetch('/api/clients');
       const data = await res.json();
       renderAccountList(data.clients || []);
     } catch(e) {
@@ -4462,7 +4446,7 @@ THERAPIST NOTES:
     const items = document.getElementById('accountList')?.querySelectorAll('[onclick^="openClientFile"]');
     if (!items) { loadAccountList(); return; }
     // Re-fetch and filter
-    fetch('/api/clients').then(r => r.json()).then(data => {
+    apiFetch('/api/clients').then(r => r.json()).then(data => {
       const filtered = q
         ? (data.clients || []).filter(c =>
             [c.firstName, c.lastName, c.email, c.accountNumber].join(' ').toLowerCase().includes(q))
@@ -4480,8 +4464,8 @@ THERAPIST NOTES:
 
     try {
       const [clientRes, sessionsRes] = await Promise.all([
-        fetch('/api/clients/' + accountNumber),
-        fetch('/api/clients/' + accountNumber + '/sessions')
+        apiFetch('/api/clients/' + accountNumber),
+        apiFetch('/api/clients/' + accountNumber + '/sessions')
       ]);
       const client = await clientRes.json();
       const { sessions } = await sessionsRes.json();
@@ -4603,7 +4587,7 @@ THERAPIST NOTES:
     \`;
 
     // Check drive status
-    fetch('/api/drive/status').then(r => r.json()).then(d => {
+    apiFetch('/api/drive/status').then(r => r.json()).then(d => {
       const statusEl = document.getElementById('driveLinkStatus');
       const btnEl = document.getElementById('driveConnectBtn');
       if (d.connected) {
@@ -4630,7 +4614,7 @@ THERAPIST NOTES:
     modal.style.display = 'flex';
 
     try {
-      const res = await fetch('/api/sessions/' + sessionId);
+      const res = await apiFetch('/api/sessions/' + sessionId);
       const session = await res.json();
       renderSessionView(session);
     } catch(e) {
@@ -4718,7 +4702,7 @@ THERAPIST NOTES:
 
   async function checkDriveStatus() {
     try {
-      const res = await fetch('/api/drive/status');
+      const res = await apiFetch('/api/drive/status');
       const d = await res.json();
       const btn = document.getElementById('driveStatusBtn');
       const label = document.getElementById('driveStatusLabel');
@@ -4844,7 +4828,7 @@ THERAPIST NOTES:
   // ─── Upload PDF to Drive after save ──────────────────────────────────────
   async function uploadPDFToDrive(sessionId, accountNumber, clientName, sessionDate) {
     try {
-      const driveStatus = await fetch('/api/drive/status').then(r => r.json());
+      const driveStatus = await apiFetch('/api/drive/status').then(r => r.json());
       if (!driveStatus.connected) return;
 
       // Generate PDF as base64
