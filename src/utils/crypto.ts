@@ -15,6 +15,25 @@ const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const SALT_LENGTH = 32;
 const KEY_LENGTH = 32;
+const ENCRYPTION_PREFIX = "enc:v1:";
+const MIN_ENCRYPTED_LENGTH = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
+
+export type StoredSecretReadResult =
+  | {
+      kind: "plaintext";
+      value: string;
+      storage: "plaintext";
+    }
+  | {
+      kind: "decrypted";
+      value: string;
+      storage: "prefixed" | "legacy";
+    }
+  | {
+      kind: "invalid-encrypted";
+      value: null;
+      storage: "prefixed" | "legacy";
+    };
 
 /**
  * Derive encryption key from password/secret using scrypt
@@ -44,6 +63,70 @@ function getEncryptionSecret(): string {
   return secret;
 }
 
+function decodeBase64Strict(value: string): Buffer | null {
+  if (!value || value.length % 4 !== 0) {
+    return null;
+  }
+
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    return null;
+  }
+
+  try {
+    const decoded = Buffer.from(value, "base64");
+    if (decoded.toString("base64") !== value) {
+      return null;
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function parseEncryptedPayload(
+  value: string,
+): { combined: Buffer; storage: "prefixed" | "legacy" } | null {
+  if (!value) {
+    return null;
+  }
+
+  const storage = value.startsWith(ENCRYPTION_PREFIX) ? "prefixed" : "legacy";
+  const encoded =
+    storage === "prefixed" ? value.slice(ENCRYPTION_PREFIX.length) : value;
+  const combined = decodeBase64Strict(encoded);
+
+  if (!combined || combined.length < MIN_ENCRYPTED_LENGTH) {
+    return null;
+  }
+
+  return { combined, storage };
+}
+
+function decryptCombinedPayload(combined: Buffer): string {
+  const secret = getEncryptionSecret();
+
+  const salt = combined.subarray(0, SALT_LENGTH);
+  const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+  const authTag = combined.subarray(
+    SALT_LENGTH + IV_LENGTH,
+    SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH,
+  );
+  const ciphertext = combined.subarray(
+    SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH,
+  );
+
+  const key = deriveKey(secret, salt);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+
+  const decrypted = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
+
+  return decrypted.toString("utf8");
+}
+
 /**
  * Encrypt a string value
  * Returns base64-encoded string: salt:iv:authTag:ciphertext
@@ -65,7 +148,7 @@ export function encrypt(plaintext: string): string {
 
   // Combine: salt + iv + authTag + ciphertext
   const combined = Buffer.concat([salt, iv, authTag, encrypted]);
-  return combined.toString("base64");
+  return `${ENCRYPTION_PREFIX}${combined.toString("base64")}`;
 }
 
 /**
@@ -76,42 +159,38 @@ export function decrypt(encryptedData: string): string | null {
   if (!encryptedData) return null;
 
   try {
-    const secret = getEncryptionSecret();
-    const combined = Buffer.from(encryptedData, "base64");
-
-    // Validate minimum expected length
-    const minLength = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
-    if (combined.length < minLength) {
-      console.warn(
-        `Encrypted data too short: ${combined.length} bytes, expected at least ${minLength}`,
-      );
+    const payload = parseEncryptedPayload(encryptedData);
+    if (!payload) {
       return null;
     }
-
-    // Extract components
-    const salt = combined.subarray(0, SALT_LENGTH);
-    const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
-    const authTag = combined.subarray(
-      SALT_LENGTH + IV_LENGTH,
-      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH,
-    );
-    const ciphertext = combined.subarray(
-      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH,
-    );
-
-    const key = deriveKey(secret, salt);
-    const decipher = createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
-
-    const decrypted = Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final(),
-    ]);
-
-    return decrypted.toString("utf8");
-  } catch (error) {
-    console.error("Decryption failed:", error.message);
+    return decryptCombinedPayload(payload.combined);
+  } catch {
     return null;
+  }
+}
+
+export function readStoredSecret(value: string): StoredSecretReadResult {
+  if (!value) {
+    return { kind: "plaintext", value: "", storage: "plaintext" };
+  }
+
+  const payload = parseEncryptedPayload(value);
+  if (!payload) {
+    return { kind: "plaintext", value, storage: "plaintext" };
+  }
+
+  try {
+    return {
+      kind: "decrypted",
+      value: decryptCombinedPayload(payload.combined),
+      storage: payload.storage,
+    };
+  } catch {
+    return {
+      kind: "invalid-encrypted",
+      value: null,
+      storage: payload.storage,
+    };
   }
 }
 
@@ -119,14 +198,7 @@ export function decrypt(encryptedData: string): string | null {
  * Check if a value appears to be encrypted (base64 with correct length)
  */
 export function isEncrypted(value: string): boolean {
-  if (!value) return false;
-  try {
-    const decoded = Buffer.from(value, "base64");
-    // Minimum length: salt + iv + authTag + at least 1 byte of data
-    return decoded.length > SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH;
-  } catch {
-    return false;
-  }
+  return parseEncryptedPayload(value) !== null;
 }
 
 /**
@@ -145,16 +217,10 @@ export function ensureEncrypted(value: string): string {
 export function safeDecrypt(value: string): string {
   if (!value) return "";
 
-  // Try to decrypt
-  try {
-    const decrypted = decrypt(value);
-    if (decrypted !== null) {
-      return decrypted;
-    }
-  } catch (error) {
-    console.error("SafeDecrypt: Additional error handling", error);
+  const result = readStoredSecret(value);
+  if (result.kind === "decrypted") {
+    return result.value;
   }
 
-  // If decryption failed, assume it's not encrypted (legacy data)
-  return value;
+  return result.kind === "plaintext" ? result.value : value;
 }

@@ -9,12 +9,7 @@ import type {
   SessionRow,
   MetaRow,
 } from "../types/index.js";
-import {
-  encrypt,
-  safeDecrypt,
-  ensureEncrypted,
-  isEncrypted,
-} from "../utils/crypto.js";
+import { readStoredSecret, ensureEncrypted } from "../utils/crypto.js";
 import { runMigrations } from "./migrations.js";
 
 /**
@@ -68,6 +63,45 @@ export const db = initializeDatabase();
 /** Keys that should be encrypted at rest */
 const ENCRYPTED_KEYS = new Set(["global_drive_refresh_token"]);
 
+function looksLikeGoogleRefreshToken(value: string): boolean {
+  return value.startsWith("1//") || value.startsWith("ya29.");
+}
+
+function rewriteEncryptedMetaValue(key: string, plaintextValue: string): void {
+  db.prepare("UPDATE meta SET value = ? WHERE key = ?").run(
+    ensureEncrypted(plaintextValue),
+    key,
+  );
+}
+
+function resolveStoredToken(
+  storedValue: string,
+  label: string,
+): { value: string | null; shouldRewrite: boolean } {
+  if (!storedValue) {
+    return { value: null, shouldRewrite: false };
+  }
+
+  if (looksLikeGoogleRefreshToken(storedValue)) {
+    return { value: storedValue, shouldRewrite: true };
+  }
+
+  const result = readStoredSecret(storedValue);
+
+  if (result.kind === "plaintext") {
+    return { value: result.value, shouldRewrite: true };
+  }
+
+  if (result.kind === "decrypted") {
+    return { value: result.value, shouldRewrite: result.storage === "legacy" };
+  }
+
+  console.warn(
+    `Stored encrypted value for ${label} could not be decrypted with the current secret.`,
+  );
+  return { value: null, shouldRewrite: false };
+}
+
 /**
  * KV-compatible adapter over SQLite meta table
  * Automatically encrypts/decrypts sensitive keys
@@ -81,27 +115,13 @@ export const kv: KVStore = {
 
     // Decrypt if this is a sensitive key
     if (ENCRYPTED_KEYS.has(key)) {
-      try {
-        const decrypted = safeDecrypt(row.value);
-
-        // If safeDecrypt returned the original value but it's supposed to be encrypted,
-        // this means decryption failed and we have corrupted data
-        if (decrypted === row.value && isEncrypted(row.value)) {
-          console.warn(
-            `Corrupted encrypted data detected for key: ${key}. Clearing...`,
-          );
-          // Clear the corrupted encrypted data
-          db.prepare("DELETE FROM meta WHERE key = ?").run(key);
-          return null;
-        }
-
-        return decrypted;
-      } catch (error) {
-        console.error(`Failed to decrypt key: ${key}`, error);
-        // Clear the corrupted data and return null
-        db.prepare("DELETE FROM meta WHERE key = ?").run(key);
-        return null;
+      const resolved = resolveStoredToken(row.value, `meta key ${key}`);
+      if (resolved.value && resolved.shouldRewrite) {
+        rewriteEncryptedMetaValue(key, resolved.value);
+        console.info(`Migrated stored token for ${key} to encrypted format.`);
       }
+
+      return resolved.value;
     }
     return row.value;
   },
@@ -171,7 +191,22 @@ export function getClient(accountNumber: string): ClientRecord | null {
     const client = JSON.parse(row.data) as ClientRecord;
     // Decrypt driveToken if present
     if (client.driveToken) {
-      client.driveToken = safeDecrypt(client.driveToken);
+      const resolved = resolveStoredToken(
+        client.driveToken,
+        `client ${accountNumber} drive token`,
+      );
+
+      if (!resolved.value) {
+        delete client.driveToken;
+      } else {
+        client.driveToken = resolved.value;
+        if (resolved.shouldRewrite) {
+          saveClient(client);
+          console.info(
+            `Migrated stored Drive token for client ${accountNumber} to encrypted format.`,
+          );
+        }
+      }
     }
     return client;
   } catch (error) {
