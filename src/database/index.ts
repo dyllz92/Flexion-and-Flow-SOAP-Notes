@@ -9,7 +9,12 @@ import type {
   SessionRow,
   MetaRow,
 } from "../types/index.js";
-import { encrypt, safeDecrypt, ensureEncrypted } from "../utils/crypto.js";
+import {
+  encrypt,
+  safeDecrypt,
+  ensureEncrypted,
+  isEncrypted,
+} from "../utils/crypto.js";
 import { runMigrations } from "./migrations.js";
 
 /**
@@ -74,7 +79,27 @@ export const kv: KVStore = {
 
     // Decrypt if this is a sensitive key
     if (ENCRYPTED_KEYS.has(key)) {
-      return safeDecrypt(row.value);
+      try {
+        const decrypted = safeDecrypt(row.value);
+
+        // If safeDecrypt returned the original value but it's supposed to be encrypted,
+        // this means decryption failed and we have corrupted data
+        if (decrypted === row.value && isEncrypted(row.value)) {
+          console.warn(
+            `Corrupted encrypted data detected for key: ${key}. Clearing...`,
+          );
+          // Clear the corrupted encrypted data
+          db.prepare("DELETE FROM meta WHERE key = ?").run(key);
+          return null;
+        }
+
+        return decrypted;
+      } catch (error) {
+        console.error(`Failed to decrypt key: ${key}`, error);
+        // Clear the corrupted data and return null
+        db.prepare("DELETE FROM meta WHERE key = ?").run(key);
+        return null;
+      }
     }
     return row.value;
   },

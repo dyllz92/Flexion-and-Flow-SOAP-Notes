@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from "node:crypto";
 
 /**
  * Encryption utilities for sensitive data at rest
@@ -25,7 +30,7 @@ function getEncryptionSecret(): string {
   const secret = process.env.ENCRYPTION_SECRET || process.env.SESSION_SECRET;
   if (!secret) {
     console.warn(
-      "WARNING: No ENCRYPTION_SECRET set. Using fallback - tokens will not be portable across restarts!"
+      "WARNING: No ENCRYPTION_SECRET set. Using fallback - tokens will not be portable across restarts!",
     );
     // Use a deterministic fallback based on data directory for development
     return `fallback-dev-secret-${process.env.DATA_DIR || "default"}`;
@@ -39,19 +44,19 @@ function getEncryptionSecret(): string {
  */
 export function encrypt(plaintext: string): string {
   if (!plaintext) return "";
-  
+
   const secret = getEncryptionSecret();
   const salt = randomBytes(SALT_LENGTH);
   const key = deriveKey(secret, salt);
   const iv = randomBytes(IV_LENGTH);
-  
+
   const cipher = createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([
     cipher.update(plaintext, "utf8"),
     cipher.final(),
   ]);
   const authTag = cipher.getAuthTag();
-  
+
   // Combine: salt + iv + authTag + ciphertext
   const combined = Buffer.concat([salt, iv, authTag, encrypted]);
   return combined.toString("base64");
@@ -63,32 +68,43 @@ export function encrypt(plaintext: string): string {
  */
 export function decrypt(encryptedData: string): string | null {
   if (!encryptedData) return null;
-  
+
   try {
     const secret = getEncryptionSecret();
     const combined = Buffer.from(encryptedData, "base64");
-    
+
+    // Validate minimum expected length
+    const minLength = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
+    if (combined.length < minLength) {
+      console.warn(
+        `Encrypted data too short: ${combined.length} bytes, expected at least ${minLength}`,
+      );
+      return null;
+    }
+
     // Extract components
     const salt = combined.subarray(0, SALT_LENGTH);
     const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
     const authTag = combined.subarray(
       SALT_LENGTH + IV_LENGTH,
-      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH
+      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH,
     );
-    const ciphertext = combined.subarray(SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
-    
+    const ciphertext = combined.subarray(
+      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH,
+    );
+
     const key = deriveKey(secret, salt);
     const decipher = createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
-    
+
     const decrypted = Buffer.concat([
       decipher.update(ciphertext),
       decipher.final(),
     ]);
-    
+
     return decrypted.toString("utf8");
   } catch (error) {
-    console.error("Decryption failed:", error);
+    console.error("Decryption failed:", error.message);
     return null;
   }
 }
@@ -122,13 +138,17 @@ export function ensureEncrypted(value: string): string {
  */
 export function safeDecrypt(value: string): string {
   if (!value) return "";
-  
+
   // Try to decrypt
-  const decrypted = decrypt(value);
-  if (decrypted !== null) {
-    return decrypted;
+  try {
+    const decrypted = decrypt(value);
+    if (decrypted !== null) {
+      return decrypted;
+    }
+  } catch (error) {
+    console.error("SafeDecrypt: Additional error handling", error);
   }
-  
+
   // If decryption failed, assume it's not encrypted (legacy data)
   return value;
 }
