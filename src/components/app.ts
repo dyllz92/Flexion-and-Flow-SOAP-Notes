@@ -2441,6 +2441,9 @@ export function renderApp(): string {
     document.getElementById('clientAccountsModal').addEventListener('click', function(e) {
       if (e.target === this) closeClientAccounts();
     });
+    document.getElementById('savedIntakeFormsModal').addEventListener('click', function(e) {
+      if (e.target === this) closeSavedIntakeForms();
+    });
     document.getElementById('clientFileModal').addEventListener('click', function(e) {
       if (e.target === this) closeClientFile();
     });
@@ -2742,6 +2745,32 @@ export function renderApp(): string {
     const clientSyncBtn = document.getElementById('clientSyncBtn');
     if (clientSyncBtn) {
       clientSyncBtn.addEventListener('click', syncClientsNow);
+    }
+
+    const savedIntakeFormsBtn = document.getElementById('savedIntakeFormsBtn');
+    if (savedIntakeFormsBtn) {
+      savedIntakeFormsBtn.addEventListener('click', openSavedIntakeForms);
+    }
+
+    // Saved Intake Forms modal buttons
+    const modalCloseSavedIntakeFormsBtn = document.getElementById('modalCloseSavedIntakeFormsBtn');
+    if (modalCloseSavedIntakeFormsBtn) {
+      modalCloseSavedIntakeFormsBtn.addEventListener('click', closeSavedIntakeForms);
+    }
+
+    const closeSavedIntakeFormsBtn = document.getElementById('closeSavedIntakeFormsBtn');
+    if (closeSavedIntakeFormsBtn) {
+      closeSavedIntakeFormsBtn.addEventListener('click', closeSavedIntakeForms);
+    }
+
+    const refreshIntakeFormsBtn = document.getElementById('refreshIntakeFormsBtn');
+    if (refreshIntakeFormsBtn) {
+      refreshIntakeFormsBtn.addEventListener('click', refreshIntakeFormsList);
+    }
+
+    const intakeFormsSearch = document.getElementById('intakeFormsSearch');
+    if (intakeFormsSearch) {
+      intakeFormsSearch.addEventListener('input', filterIntakeFormsList);
     }
 
     // Client File modal buttons
@@ -4279,6 +4308,9 @@ THERAPIST NOTES:
         <button id="clientSyncBtn" class="btn btn-ghost btn-sm" title="Sync client profiles across apps">
           <i class="fas fa-cloud-download-alt"></i> <span id="clientSyncLabel">Sync Clients</span>
         </button>
+        <button id="savedIntakeFormsBtn" class="btn btn-ghost btn-sm" title="View all saved intake forms">
+          <i class="fas fa-clipboard-list"></i> <span>Intake Forms</span>
+        </button>
       </div>
 
       <!-- Client list -->
@@ -4287,6 +4319,56 @@ THERAPIST NOTES:
       <!-- Footer -->
       <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
         <button class="btn btn-ghost btn-sm" id="closeClientAccountsBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SAVED INTAKE FORMS MODAL
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="savedIntakeFormsModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-box" style="max-width:1000px;width:95vw;height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fas fa-clipboard-list" style="margin-right:8px;opacity:0.8;"></i>Saved Intake Forms</h3>
+          <p>All intake forms saved in cloud storage — view, download or load into current session</p>
+        </div>
+        <button class="modal-close" id="modalCloseSavedIntakeFormsBtn"><i class="fas fa-times"></i></button>
+      </div>
+
+      <!-- Toolbar -->
+      <div style="padding:14px 24px;border-bottom:1px solid var(--border);background:#f7faff;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <input id="intakeFormsSearch" type="text" placeholder="Search by filename or client name…"
+          style="flex:1;min-width:200px;padding:9px 14px;border:1.5px solid var(--border);border-radius:50px;font-family:var(--font);font-size:0.82rem;outline:none;"/>
+        <span id="intakeFormsCount" style="font-size:0.75rem;color:var(--text-light);white-space:nowrap;"></span>
+        <button id="refreshIntakeFormsBtn" class="btn btn-ghost btn-sm" title="Refresh intake forms list">
+          <i class="fas fa-sync-alt" id="refreshIntakeFormsIcon"></i> <span>Refresh</span>
+        </button>
+      </div>
+
+      <!-- Intake forms list -->
+      <div style="display:flex;flex:1;overflow:hidden;">
+        <!-- List panel -->
+        <div style="flex:2;border-right:1px solid var(--border);display:flex;flex-direction:column;">
+          <div id="intakeFormsList" style="flex:1;overflow-y:auto;padding:16px;"></div>
+        </div>
+        
+        <!-- Details panel -->
+        <div style="flex:1;display:flex;flex-direction:column;background:#fcfdfe;">
+          <div style="padding:16px;border-bottom:1px solid var(--border);background:#f8fafc;">
+            <h4 style="margin:0;font-size:0.9rem;color:var(--text);font-weight:600;">
+              <i class="fas fa-info-circle" style="margin-right:6px;opacity:0.7;"></i>Details
+            </h4>
+          </div>
+          <div id="intakeFormsDetails" style="flex:1;padding:16px;overflow-y:auto;font-size:0.85rem;">
+            <p style="color:var(--text-light);font-style:italic;">Select an intake form to view details</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+        <button class="btn btn-ghost btn-sm" id="closeSavedIntakeFormsBtn">Close</button>
       </div>
     </div>
   </div>
@@ -4345,6 +4427,310 @@ THERAPIST NOTES:
     document.getElementById('clientAccountsModal').style.display = 'none';
   }
 
+  // ============================================================
+  // SAVED INTAKE FORMS MODAL
+  // ============================================================
+  let _allIntakeForms = []; // cached list of intake forms
+  let _filteredIntakeForms = []; // filtered/searched results
+
+  async function openSavedIntakeForms() {
+    document.getElementById('savedIntakeFormsModal').style.display = 'flex';
+    document.getElementById('intakeFormsSearch').value = '';
+    document.getElementById('intakeFormsDetails').innerHTML = '<p style="color:var(--text-light);font-style:italic;">Select an intake form to view details</p>';
+    await loadAllIntakeForms();
+    document.getElementById('intakeFormsSearch').focus();
+  }
+
+  function closeSavedIntakeForms() {
+    document.getElementById('savedIntakeFormsModal').style.display = 'none';
+  }
+
+  async function loadAllIntakeForms() {
+    const list = document.getElementById('intakeFormsList');
+    const icon = document.getElementById('refreshIntakeFormsIcon');
+    if (icon) icon.classList.add('fa-spin');
+    
+    list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-light);"><i class="fas fa-spinner fa-spin"></i> Loading intake forms…</p>';
+    
+    try {
+      const res = await apiFetch('/api/drive/supabase-files');
+      const data = await res.json();
+      const rawFiles = data.files || [];
+      
+      // Enrich each file with derived metadata
+      _allIntakeForms = rawFiles.map(f => ({
+        ...f,
+        derivedName: deriveClientNameFromFilename(f.name),
+        matchedClient: null, // Will be populated after client matching
+        formattedDate: formatFileDate(f.createdAt)
+      }));
+
+      // Try to match files to existing clients
+      await enrichWithClientMatches();
+      
+      _filteredIntakeForms = [..._allIntakeForms];
+      renderIntakeFormsList();
+    } catch(e) {
+      list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--danger);">Failed to load intake forms.</p>';
+    } finally {
+      if (icon) icon.classList.remove('fa-spin');
+    }
+  }
+
+  function deriveClientNameFromFilename(filename) {
+    // Extract client name from Intake_{ClientName}_{timestamp}.pdf pattern
+    const match = filename.match(/^Intake_([^_]+)_/);
+    if (match) {
+      return match[1].replace(/-/g, ' '); // Convert Dylan-Ennis to Dylan Ennis
+    }
+    return filename.replace('.pdf', ''); // Fallback to filename without extension
+  }
+
+  function formatFileDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch(e) {
+      return dateStr;
+    }
+  }
+
+  async function enrichWithClientMatches() {
+    // Get existing clients for matching
+    try {
+      const res = await apiFetch('/api/clients');
+      const data = await res.json();
+      const clients = data.clients || [];
+
+      _allIntakeForms.forEach(form => {
+        // Try to match derived name to existing clients
+        const derivedName = form.derivedName.toLowerCase();
+        const matches = clients.filter(c => {
+          const fullName = (c.firstName || '') + ' ' + (c.lastName || '');
+          const fullNameClean = fullName.trim().toLowerCase();
+          const lastName = (c.lastName || '').toLowerCase();
+          const firstName = (c.firstName || '').toLowerCase();
+          
+          return fullNameClean === derivedName || 
+                 (firstName && lastName && (derivedName.includes(firstName) && derivedName.includes(lastName)));
+        });
+
+        // Only store match if it's unambiguous
+        if (matches.length === 1) {
+          form.matchedClient = matches[0];
+        }
+      });
+    } catch(e) {
+      console.warn('Could not load clients for matching:', e);
+    }
+  }
+
+  function renderIntakeFormsList() {
+    const list = document.getElementById('intakeFormsList');
+    const count = document.getElementById('intakeFormsCount');
+    
+    if (count) {
+      count.textContent = _filteredIntakeForms.length + ' form' + (_filteredIntakeForms.length !== 1 ? 's' : '');
+    }
+
+    if (_filteredIntakeForms.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:48px 24px;color:var(--text-light);"><i class="fas fa-clipboard-list" style="font-size:2.5rem;opacity:0.25;display:block;margin-bottom:12px;"></i><p style="font-size:0.88rem;">No intake forms found.</p></div>';
+      return;
+    }
+
+    list.innerHTML = _filteredIntakeForms.map(form => {
+      const safeName = escapeHtml(form.derivedName);
+      const safeFilename = escapeHtml(form.name);
+      const safeDate = escapeHtml(form.formattedDate);
+      const accountInfo = form.matchedClient ? 
+        '<span style="font-size:0.7rem;color:var(--accent);font-weight:600;">' + escapeHtml(form.matchedClient.accountNumber || '') + '</span>' : 
+        '<span style="font-size:0.7rem;color:var(--text-light);">Unmatched</span>';
+
+      return '<div class="intake-form-row" data-filename="' + encodeURIComponent(form.name) + '" ' +
+             'style="display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.15s;">' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<i class="fas fa-file-pdf" style="color:#3b82f6;opacity:0.7;flex-shrink:0;"></i>' +
+            '<div style="flex:1;overflow:hidden;">' +
+              '<div style="font-weight:600;font-size:0.85rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + safeFilename + '">' + safeName + '</div>' +
+              '<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">' + safeDate + '</div>' +
+            '</div>' +
+            accountInfo +
+          '</div>' +
+          '<div style="display:flex;gap:6px;margin-left:24px;">' +
+            '<button class="intake-form-view-btn btn btn-ghost btn-xs" data-filename="' + encodeURIComponent(form.name) + '" title="Open PDF">' +
+              '<i class="fas fa-external-link-alt"></i> View' +
+            '</button>' +
+            '<button class="intake-form-load-btn btn btn-primary btn-xs" data-filename="' + encodeURIComponent(form.name) + '" title="Load into current session">' +
+              '<i class="fas fa-play"></i> Load Session' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+
+    // Add click handlers
+    list.querySelectorAll('.intake-form-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return; // Don't select when clicking buttons
+        selectIntakeForm(decodeURIComponent(row.dataset.filename));
+      });
+      
+      row.addEventListener('mouseenter', () => row.style.backgroundColor = 'rgba(59,130,246,0.05)');
+      row.addEventListener('mouseleave', () => row.style.backgroundColor = 'transparent');
+    });
+
+    // Add button handlers
+    list.querySelectorAll('.intake-form-view-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await openIntakeFormPDF(decodeURIComponent(btn.dataset.filename));
+      });
+    });
+
+    list.querySelectorAll('.intake-form-load-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await loadIntakeFormIntoSession(decodeURIComponent(btn.dataset.filename));
+      });
+    });
+  }
+
+  function selectIntakeForm(filename) {
+    const form = _allIntakeForms.find(f => f.name === filename);
+    if (!form) return;
+
+    // Update selection styling
+    document.querySelectorAll('.intake-form-row').forEach(row => {
+      row.style.borderColor = row.dataset.filename === encodeURIComponent(filename) ? 
+        'var(--accent)' : 'var(--border)';
+    });
+
+    // Show details
+    const details = document.getElementById('intakeFormsDetails');
+    const clientInfo = form.matchedClient ? 
+      '<div class="detail-section">' +
+        '<strong>Matched Client:</strong><br>' +
+        escapeHtml(form.matchedClient.firstName || '') + ' ' + escapeHtml(form.matchedClient.lastName || '') + '<br>' +
+        '<span style="font-size:0.8rem;color:var(--text-light);">Account: ' + escapeHtml(form.matchedClient.accountNumber || '') + '</span><br>' +
+        '<span style="font-size:0.8rem;color:var(--text-light);">Email: ' + escapeHtml(form.matchedClient.email || 'Not provided') + '</span>' +
+      '</div>' : 
+      '<div class="detail-section">' +
+        '<strong>Client Match:</strong><br>' +
+        '<span style="color:var(--text-light);">No matching client found</span>' +
+      '</div>';
+
+    details.innerHTML = 
+      '<style>' +
+        '.detail-section { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }' +
+        '.detail-section:last-child { border-bottom: none; margin-bottom: 0; }' +
+        '.detail-actions { display: flex; gap: 8px; margin-top: 12px; }' +
+      '</style>' +
+      
+      '<div class="detail-section">' +
+        '<strong>Filename:</strong><br>' +
+        '<span style="font-family:monospace;font-size:0.8rem;word-break:break-all;">' + escapeHtml(form.name) + '</span>' +
+      '</div>' +
+      
+      '<div class="detail-section">' +
+        '<strong>Created:</strong><br>' +
+        escapeHtml(form.formattedDate) +
+      '</div>' +
+      
+      clientInfo +
+      
+      '<div class="detail-actions">' +
+        '<button class="btn btn-ghost btn-sm" onclick="openIntakeFormPDF(\'' + escJsSingle(filename) + '\')">' +
+          '<i class="fas fa-external-link-alt"></i> View PDF' +
+        '</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="loadIntakeFormIntoSession(\'' + escJsSingle(filename) + '\')">' +
+          '<i class="fas fa-play"></i> Load into Session' +
+        '</button>' +
+      '</div>';
+  }
+
+  async function openIntakeFormPDF(filename) {
+    try {
+      const res = await apiFetch('/api/drive/supabase-file-url/' + encodeURIComponent(filename));
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, '_blank');
+      } else {
+        alert('Could not get file URL');
+      }
+    } catch (e) {
+      alert('Error opening PDF: ' + e.message);
+    }
+  }
+
+  async function loadIntakeFormIntoSession(filename) {
+    if (!confirm('Load "' + filename + '" into the current session? This will replace any existing intake data.')) {
+      return;
+    }
+
+    try {
+      // Get signed URL
+      const urlRes = await apiFetch('/api/drive/supabase-file-url/' + encodeURIComponent(filename));
+      const urlData = await urlRes.json();
+      
+      if (!urlData.url) {
+        alert('Could not get file URL');
+        return;
+      }
+
+      // Fetch the PDF as a blob
+      const pdfRes = await fetch(urlData.url);
+      if (!pdfRes.ok) {
+        throw new Error('Failed to fetch PDF');
+      }
+      
+      const arrayBuffer = await pdfRes.arrayBuffer();
+      
+      // Create a File object to simulate file upload
+      const file = new File([arrayBuffer], filename, { type: 'application/pdf' });
+      
+      // Process using existing PDF pipeline
+      await processFile(file);
+      
+      showCopyFeedback('✓ Loaded intake form: ' + filename);
+      
+      // Close modal and return to main form
+      closeSavedIntakeForms();
+      
+    } catch (e) {
+      console.error('Error loading intake form:', e);
+      alert('Error loading intake form: ' + e.message);
+    }
+  }
+
+  function refreshIntakeFormsList() {
+    loadAllIntakeForms();
+  }
+
+  function filterIntakeFormsList() {
+    const query = document.getElementById('intakeFormsSearch').value.toLowerCase().trim();
+    
+    if (!query) {
+      _filteredIntakeForms = [..._allIntakeForms];
+    } else {
+      _filteredIntakeForms = _allIntakeForms.filter(form => {
+        const clientFullName = form.matchedClient ? 
+          (form.matchedClient.firstName + ' ' + form.matchedClient.lastName).toLowerCase() : '';
+        return form.name.toLowerCase().includes(query) ||
+               form.derivedName.toLowerCase().includes(query) ||
+               (form.matchedClient && clientFullName.includes(query)) ||
+               (form.matchedClient && form.matchedClient.accountNumber && form.matchedClient.accountNumber.toLowerCase().includes(query));
+      });
+    }
+    
+    renderIntakeFormsList();
+  }
+
   async function loadAccountList() {
     const list = document.getElementById('accountList');
     list.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-light);"><i class="fas fa-spinner fa-spin"></i> Loading clients…</p>';
@@ -4385,10 +4771,10 @@ THERAPIST NOTES:
     if (countEl) countEl.textContent = clients.length + ' client' + (clients.length !== 1 ? 's' : '');
 
     if (clients.length === 0) {
-      list.innerHTML = \`<div style="text-align:center;padding:48px 24px;color:var(--text-light);">
-        <i class="fas fa-users" style="font-size:2.5rem;opacity:0.25;display:block;margin-bottom:12px;"></i>
-        <p style="font-size:0.88rem;">No client files yet.<br>Client accounts are created automatically when you save a SOAP note.</p>
-      </div>\`;
+      list.innerHTML = '<div style="text-align:center;padding:48px 24px;color:var(--text-light);">' +
+        '<i class="fas fa-users" style="font-size:2.5rem;opacity:0.25;display:block;margin-bottom:12px;"></i>' +
+        '<p style="font-size:0.88rem;">No client files yet.<br>Client accounts are created automatically when you save a SOAP note.</p>' +
+      '</div>';
       return;
     }
 

@@ -98,10 +98,14 @@ function resolveStoredToken(
     return { value: result.value, shouldRewrite: result.storage === "legacy" };
   }
 
+  // Handle corrupted encrypted data
   console.warn(
     `Stored encrypted value for ${label} could not be decrypted with the current secret.`,
   );
-  return { value: null, shouldRewrite: false };
+  console.info(
+    `Corrupted encrypted data detected for key: ${label}. Clearing.`,
+  );
+  return { value: null, shouldRewrite: true }; // Clear corrupted data
 }
 
 /**
@@ -118,9 +122,17 @@ export const kv: KVStore = {
     // Decrypt if this is a sensitive key
     if (ENCRYPTED_KEYS.has(key)) {
       const resolved = resolveStoredToken(row.value, `meta key ${key}`);
-      if (resolved.value && resolved.shouldRewrite) {
-        rewriteEncryptedMetaValue(key, resolved.value);
-        console.info(`Migrated stored token for ${key} to encrypted format.`);
+
+      if (resolved.shouldRewrite) {
+        if (resolved.value) {
+          // Rewrite valid value in encrypted form
+          rewriteEncryptedMetaValue(key, resolved.value);
+          console.info(`Migrated stored token for ${key} to encrypted format.`);
+        } else {
+          // Clear corrupted encrypted data
+          db.prepare("DELETE FROM meta WHERE key = ?").run(key);
+          console.info(`Cleared corrupted encrypted data for ${key}.`);
+        }
       }
 
       return resolved.value;
@@ -145,8 +157,12 @@ export const kv: KVStore = {
 };
 
 // Seed Google refresh token from env if not already stored (will be encrypted)
-if (ENV.GOOGLE_REFRESH_TOKEN && !kv.get("global_drive_refresh_token")) {
-  kv.put("global_drive_refresh_token", ENV.GOOGLE_REFRESH_TOKEN);
+if (ENV.GOOGLE_REFRESH_TOKEN) {
+  const existingToken = kv.get("global_drive_refresh_token");
+  if (!existingToken) {
+    console.info("Seeding Google refresh token from environment");
+    kv.put("global_drive_refresh_token", ENV.GOOGLE_REFRESH_TOKEN);
+  }
 }
 
 /**
