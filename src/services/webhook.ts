@@ -21,8 +21,13 @@ export async function notifyDashboard(
 ): Promise<DashboardWebhookResponse | null> {
   if (!ENV.DASHBOARD_WEBHOOK_URL) return null;
 
-  const secret = ENV.WEBHOOK_SECRET_SOAP || ENV.SESSION_SECRET;
-  if (!secret) return null;
+  const secret = ENV.WEBHOOK_SECRET_SOAP;
+  if (!secret) {
+    console.error(
+      "DASHBOARD_WEBHOOK_URL is configured but WEBHOOK_SECRET_SOAP is missing.",
+    );
+    return null;
+  }
 
   const isSoapWebhook = /\/api\/webhook\/soap\/?$/i.test(
     ENV.DASHBOARD_WEBHOOK_URL,
@@ -57,9 +62,10 @@ export async function notifyDashboard(
     });
 
     if (!res.ok) {
+      const responseText = await res.text().catch(() => "");
       console.error(
-        `Dashboard webhook failed (${res.status}):`,
-        await res.text().catch(() => ""),
+        `Dashboard webhook failed for ${eventType} (${res.status}):`,
+        responseText,
       );
       return null;
     }
@@ -69,7 +75,7 @@ export async function notifyDashboard(
       .catch(() => null)) as DashboardWebhookResponse | null;
     return body;
   } catch (error) {
-    console.error("Dashboard webhook error:", error);
+    console.error(`Dashboard webhook error for ${eventType}:`, error);
     return null;
   }
 }

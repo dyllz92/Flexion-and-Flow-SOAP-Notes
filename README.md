@@ -51,8 +51,12 @@ GOOGLE_CLIENT_SECRET=GOCSPX-...
 GOOGLE_REDIRECT_URI=https://YOUR-APP.up.railway.app/api/drive/callback
 GOOGLE_DRIVE_FOLDER_ID=           # optional: specific folder ID
 ADMIN_PASSWORD=YourPasswordHere
+SESSION_SECRET=LongRandomSecretForSessionsAndCsrf
 DATA_DIR=/data                     # matches the Railway volume mount
 PORT=3000                          # Railway sets this automatically
+WEBHOOK_SECRET_INTAKE=wh_intake_shared_with_intake_form
+DASHBOARD_WEBHOOK_URL=https://flexion-and-flow-dashboard-production.up.railway.app/api/webhook/soap
+WEBHOOK_SECRET_SOAP=wh_soap_shared_with_dashboard
 ```
 
 ### Steps to Deploy
@@ -61,6 +65,11 @@ PORT=3000                          # Railway sets this automatically
 3. Add a **Volume** mounted at `/data`
 4. Set all environment variables above in Railway dashboard
 5. Railway will auto-build with `npm install && npm run build` and start with `node dist/server.js`
+
+Webhook integration notes:
+- `WEBHOOK_SECRET_INTAKE` must exactly match the Intake Form app secret used for outbound intake webhooks to SOAP Notes.
+- `WEBHOOK_SECRET_SOAP` must exactly match the Dashboard app's `WEBHOOK_SECRET_SOAP` value for SOAP completion notifications.
+- Do not reuse `SESSION_SECRET` as a webhook secret.
 
 ### Google Drive Setup
 1. Go to [Google Cloud Console](https://console.cloud.google.com) → OAuth consent screen → add your Railway domain
@@ -74,6 +83,11 @@ cp .dev.vars.example .dev.vars   # fill in your API keys
 npm install
 npm run dev                       # tsx watch src/server.ts (port 3000)
 ```
+
+Required local integration variables:
+- `SESSION_SECRET`
+- `WEBHOOK_SECRET_INTAKE` if Intake Form sends local webhooks to SOAP Notes
+- `WEBHOOK_SECRET_SOAP` if SOAP Notes sends completion webhooks to Dashboard
 
 ## Data Safety
 - SQLite database is persisted on a Railway persistent volume (`/data`)

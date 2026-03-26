@@ -30,11 +30,13 @@ intake.post("/intake-webhook", async (c) => {
     "unknown";
 
   // Validate webhook secret for security
-  const secret = process.env.WEBHOOK_SECRET_INTAKE || ENV.SESSION_SECRET;
+  const secret = ENV.WEBHOOK_SECRET_INTAKE;
   const providedSecret = c.req.header("X-Webhook-Secret");
 
   if (!secret) {
-    console.error("WEBHOOK_SECRET_INTAKE not configured");
+    console.error(
+      "WEBHOOK_SECRET_INTAKE not configured. Refusing intake webhook requests.",
+    );
     await logSecurityEvent("critical", AUDIT_EVENTS.ENCRYPTION_KEY_MISSING, {
       context: "intake_webhook_secret",
     });

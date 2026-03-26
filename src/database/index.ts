@@ -40,6 +40,18 @@ export const ENV = {
   ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET || "",
 };
 
+if (!ENV.WEBHOOK_SECRET_INTAKE) {
+  console.warn(
+    "WEBHOOK_SECRET_INTAKE not set. /api/intake-webhook will reject requests.",
+  );
+}
+
+if (ENV.DASHBOARD_WEBHOOK_URL && !ENV.WEBHOOK_SECRET_SOAP) {
+  console.warn(
+    "DASHBOARD_WEBHOOK_URL is set without WEBHOOK_SECRET_SOAP. Dashboard notifications are disabled.",
+  );
+}
+
 /**
  * Initialize SQLite database with proper schemas
  */
