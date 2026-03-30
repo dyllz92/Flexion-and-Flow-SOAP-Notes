@@ -903,14 +903,7 @@ export function renderApp(): string {
         } else {
           clearStoredPassword();
           const errEl = document.getElementById('loginError');
-          let message = 'Invalid password';
-          try {
-            const body = await res.json();
-            if (typeof body?.error === 'string' && body.error.trim()) {
-              message = body.error;
-            }
-          } catch {}
-          if (errEl) { errEl.textContent = message; errEl.style.display = 'block'; }
+          if (errEl) { errEl.textContent = 'Invalid password'; errEl.style.display = 'block'; }
         }
       } catch {
         const errEl = document.getElementById('loginError');
