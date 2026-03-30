@@ -29,8 +29,9 @@ def start_node_server():
     os.chdir('/app')
     env = os.environ.copy()
     env['PORT'] = '8001'
-    env['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD', 'admin123')
     
+    # Respect ADMIN_PASSWORD from the environment/.env used by the Node app.
+    # Do not force a fallback here, otherwise it overrides dotenv values.
     node_process = subprocess.Popen(
         ['npx', 'tsx', 'src/server.ts'],
         env=env,
