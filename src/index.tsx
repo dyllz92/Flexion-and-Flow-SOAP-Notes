@@ -18,7 +18,6 @@ import {
   uploadRateLimiter,
 } from "./middleware/rate-limit.js";
 import { cacheControl, securityHeaders } from "./middleware/cache.js";
-import { requireAuth, authRateLimit } from "./middleware/auth.js";
 import { db } from "./database/index.js";
 import { renderApp } from "./components/app.js";
 
@@ -58,40 +57,6 @@ app.use("/api/*", csrfProtection);
 
 // CSRF token endpoint for SPA
 app.get("/api/csrf-token", (c) => getCsrfToken(c));
-
-// Auth verification endpoint for SPA login
-app.post("/api/auth/verify", authRateLimit, requireAuth, (c) => {
-  return c.json({ authenticated: true });
-});
-
-// Require auth for SPA-facing data routes
-// (intake webhook and client export/import have their own webhook-secret auth)
-app.use("/api/clients/*", async (c, next) => {
-  const url = new URL(c.req.url);
-  const seg = url.pathname.split("/").filter(Boolean);
-  // Skip requireAuth for webhook-authenticated routes: /api/clients/export, import, sync
-  const last = seg[seg.length - 1];
-  if (last === "export" || last === "import" || last === "sync") {
-    return next();
-  }
-  return requireAuth(c, next);
-});
-app.use("/api/clients", requireAuth);
-app.use("/api/generate-soap", requireAuth);
-app.use("/api/ai-status", requireAuth);
-app.use("/api/drive/*", async (c, next) => {
-  const url = new URL(c.req.url);
-  const seg = url.pathname.split("/").filter(Boolean);
-  const last = seg[seg.length - 1];
-  // Skip requireAuth for OAuth flow routes
-  if (last === "auth" || last === "callback") {
-    return next();
-  }
-  return requireAuth(c, next);
-});
-app.use("/api/clients/:accountNumber/sessions", requireAuth);
-app.use("/api/clients/:accountNumber/sessions/*", requireAuth);
-app.use("/api/sessions/*", requireAuth);
 
 // Serve static files with caching
 app.use("/static/*", cacheControl, serveStatic({ root: "./public" }));
